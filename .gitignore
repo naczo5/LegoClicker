@@ -1,0 +1,34 @@
+# ── C# build outputs ─────────────────────────────────────────────
+LegoClickerCS/bin/
+LegoClickerCS/obj/
+LegoClickerCS/publish/
+
+# bridge.dll is built from source; don't track the copy inside LegoClickerCS
+LegoClickerCS/bridge.dll
+
+# ── C++ build outputs ────────────────────────────────────────────
+McInjector/bridge.dll
+McInjector/build/
+McInjector/dist/
+
+# ── Logs ─────────────────────────────────────────────────────────
+*.log
+*.txt
+PROJECT_GUIDE.md
+INJECTION_RESEARCH.md
+UTILITY_CLIENTS.md
+
+# ── User / IDE files ─────────────────────────────────────────────
+.vs/
+*.user
+*.suo
+*.DotSettings.user
+.vscode/
+
+# ── OS ───────────────────────────────────────────────────────────
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ── Secrets / local config ───────────────────────────────────────
+# Profile saves live in %AppData%, not the repo
