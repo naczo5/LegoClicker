@@ -14,7 +14,6 @@ McInjector/dist/
 # ── Logs ─────────────────────────────────────────────────────────
 *.log
 *.txt
-PROJECT_GUIDE.md
 INJECTION_RESEARCH.md
 UTILITY_CLIENTS.md
 
