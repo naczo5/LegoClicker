@@ -1,0 +1,5 @@
+Manifest-Version: 1.0
+Agent-Class: me.legoclicker.agent.LegoAgent
+Premain-Class: me.legoclicker.agent.LegoAgent
+Can-Redefine-Classes: true
+Can-Retransform-Classes: true
