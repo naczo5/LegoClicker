@@ -157,19 +157,19 @@ static jfieldID g_lastTickPosYField = nullptr;
 static jfieldID g_lastTickPosZField = nullptr;
 
 // Inventory / Held Item Globals
-static jfieldID g_inventoryField = nullptr; // EntityPlayer.inventory
-static jmethodID g_getCurrentItemMethod = nullptr; // InventoryPlayer.getCurrentItem()
-static jmethodID g_getItemMethod = nullptr; // ItemStack.getItem()
-static jclass g_itemBlockClass = nullptr; // ItemBlock class to check instanceof
-static jmethodID g_getHeldItemMethod = nullptr; // EntityLivingBase.getHeldItem()
-static jmethodID g_getTotalArmorValueMethod = nullptr; // EntityPlayer.getTotalArmorValue()
-static jmethodID g_getDisplayNameMethod = nullptr; // ItemStack.getDisplayName()
-static jmethodID g_getDamageVsEntityMethod = nullptr; // Item.getDamageVsEntity()
-static jclass g_itemSwordClass = nullptr; // ItemSword class to check instanceof
-static jmethodID g_getUnlocalizedNameMethod = nullptr; // Item.getUnlocalizedName()
-static jmethodID g_getRenderItemFromMcMethod = nullptr; // Minecraft.getRenderItem()
-static jmethodID g_renderItemAndEffectIntoGUIMethod = nullptr; // RenderItem.renderItemAndEffectIntoGUI()
-static jmethodID g_renderItemIntoGUIMethod = nullptr; // RenderItem.renderItemIntoGUI()
+static jfieldID  g_inventoryField          = nullptr; // EntityPlayer.inventory
+static jmethodID g_getCurrentItemMethod    = nullptr; // InventoryPlayer.getCurrentItem()
+static jclass    g_itemBlockClass          = nullptr; // ItemBlock class (instanceof check)
+static jmethodID g_getHeldItemMethod       = nullptr; // EntityLivingBase.getHeldItem()
+static jmethodID g_getTotalArmorValueMethod= nullptr; // EntityPlayer.getTotalArmorValue()
+static jclass    g_itemSwordClass          = nullptr; // ItemSword class (instanceof check)
+static jmethodID g_getRenderItemFromMcMethod          = nullptr;
+static jmethodID g_renderItemAndEffectIntoGUIMethod   = nullptr;
+static jmethodID g_renderItemIntoGUIMethod            = nullptr;
+// NOTE: g_getItemMethod, g_getDisplayNameMethod, g_getUnlocalizedNameMethod,
+// g_getDamageVsEntityMethod are intentionally NOT cached globally — they must
+// be fetched from the actual object's class each call to avoid calling a
+// method ID from the wrong class (causes JVM crash when entity classes differ).
 
 // OpenGL Matrix Globals
 static jclass g_activeRenderInfoClass = nullptr;
@@ -1117,14 +1117,14 @@ GameState ReadGameState(JNIEnv* env) {
                     if (g_getCurrentItemMethod) {
                         jobject itemStack = env->CallObjectMethod(inventory, g_getCurrentItemMethod);
                         if (itemStack) {
-                            if (!g_getItemMethod) {
-                                jclass stackClass = env->GetObjectClass(itemStack);
-                                g_getItemMethod = env->GetMethodID(stackClass, "getItem", "()Lnet/minecraft/item/Item;");
-                                if (!g_getItemMethod) g_getItemMethod = env->GetMethodID(stackClass, "func_77973_b", "()Lnet/minecraft/item/Item;");
-                            }
+                            jclass stackClass = env->GetObjectClass(itemStack);
+                            jmethodID getItem = env->GetMethodID(stackClass, "getItem", "()Lnet/minecraft/item/Item;");
+                            if (!getItem) { env->ExceptionClear(); getItem = env->GetMethodID(stackClass, "func_77973_b", "()Lnet/minecraft/item/Item;"); }
+                            if (!getItem) env->ExceptionClear();
+                            env->DeleteLocalRef(stackClass);
                             
-                            if (g_getItemMethod) {
-                                jobject item = env->CallObjectMethod(itemStack, g_getItemMethod);
+                            if (getItem) {
+                                jobject item = env->CallObjectMethod(itemStack, getItem);
                                 if (item) {
                                     bool isBlock = false;
 
@@ -1591,98 +1591,86 @@ std::string GetHeldItemInfoFromStack(JNIEnv* env, jobject heldStack, std::string
     std::string unlocalizedLower;
     float itemBaseDamage = 0.0f;
 
-    if (!g_getDisplayNameMethod) {
+    // --- ItemStack.getDisplayName() ---
+    // Look up fresh from this stack's actual class every call.
+    {
         jclass stackClass = env->GetObjectClass(heldStack);
-        g_getDisplayNameMethod = env->GetMethodID(stackClass, "getDisplayName", "()Ljava/lang/String;");
-        if (!g_getDisplayNameMethod) {
+        jmethodID getDisplayName = env->GetMethodID(stackClass, "getDisplayName", "()Ljava/lang/String;");
+        if (!getDisplayName) {
             env->ExceptionClear();
-            g_getDisplayNameMethod = env->GetMethodID(stackClass, "func_82833_r", "()Ljava/lang/String;");
+            getDisplayName = env->GetMethodID(stackClass, "func_82833_r", "()Ljava/lang/String;");
         }
-        if (!g_getDisplayNameMethod) env->ExceptionClear();
+        if (!getDisplayName) env->ExceptionClear();
         env->DeleteLocalRef(stackClass);
-    }
 
-    if (g_getDisplayNameMethod) {
-        jstring heldName = (jstring)env->CallObjectMethod(heldStack, g_getDisplayNameMethod);
-        if (!env->ExceptionCheck() && heldName) {
-            const char* heldChars = env->GetStringUTFChars(heldName, nullptr);
-            if (heldChars) {
-                heldRawName = StripMinecraftFormatting(heldChars);
-                env->ReleaseStringUTFChars(heldName, heldChars);
+        if (getDisplayName) {
+            jstring heldName = (jstring)env->CallObjectMethod(heldStack, getDisplayName);
+            if (!env->ExceptionCheck() && heldName) {
+                const char* heldChars = env->GetStringUTFChars(heldName, nullptr);
+                if (heldChars) {
+                    heldRawName = StripMinecraftFormatting(heldChars);
+                    env->ReleaseStringUTFChars(heldName, heldChars);
+                }
+                env->DeleteLocalRef(heldName);
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
             }
-            env->DeleteLocalRef(heldName);
-        }
-        else if (env->ExceptionCheck()) {
-            env->ExceptionClear();
         }
     }
 
-    if (!g_getItemMethod) {
+    // --- ItemStack.getItem() -> Item ---
+    {
         jclass stackClass2 = env->GetObjectClass(heldStack);
-        g_getItemMethod = env->GetMethodID(stackClass2, "getItem", "()Lnet/minecraft/item/Item;");
-        if (!g_getItemMethod) {
+        jmethodID getItem = env->GetMethodID(stackClass2, "getItem", "()Lnet/minecraft/item/Item;");
+        if (!getItem) {
             env->ExceptionClear();
-            g_getItemMethod = env->GetMethodID(stackClass2, "func_77973_b", "()Lnet/minecraft/item/Item;");
+            getItem = env->GetMethodID(stackClass2, "func_77973_b", "()Lnet/minecraft/item/Item;");
         }
-        if (!g_getItemMethod) env->ExceptionClear();
+        if (!getItem) env->ExceptionClear();
         env->DeleteLocalRef(stackClass2);
-    }
 
-    if (g_getItemMethod) {
-        jobject heldItem = env->CallObjectMethod(heldStack, g_getItemMethod);
-        if (!env->ExceptionCheck() && heldItem) {
-            isBlock = (g_itemBlockClass && env->IsInstanceOf(heldItem, g_itemBlockClass));
+        if (getItem) {
+            jobject heldItem = env->CallObjectMethod(heldStack, getItem);
+            if (!env->ExceptionCheck() && heldItem) {
+                isBlock = (g_itemBlockClass && env->IsInstanceOf(heldItem, g_itemBlockClass));
 
-            if (!g_getUnlocalizedNameMethod) {
                 jclass itemClass = env->GetObjectClass(heldItem);
-                g_getUnlocalizedNameMethod = env->GetMethodID(itemClass, "getUnlocalizedName", "()Ljava/lang/String;");
-                if (!g_getUnlocalizedNameMethod) {
+
+                // --- Item.getUnlocalizedName() ---
+                jmethodID getUnloc = env->GetMethodID(itemClass, "getUnlocalizedName", "()Ljava/lang/String;");
+                if (!getUnloc) {
                     env->ExceptionClear();
-                    g_getUnlocalizedNameMethod = env->GetMethodID(itemClass, "func_77658_a", "()Ljava/lang/String;");
+                    getUnloc = env->GetMethodID(itemClass, "func_77658_a", "()Ljava/lang/String;");
                 }
-                if (!g_getUnlocalizedNameMethod) env->ExceptionClear();
+                if (!getUnloc) env->ExceptionClear();
+                if (getUnloc) {
+                    jstring unloc = (jstring)env->CallObjectMethod(heldItem, getUnloc);
+                    if (!env->ExceptionCheck() && unloc) {
+                        const char* u = env->GetStringUTFChars(unloc, nullptr);
+                        if (u) { unlocalizedLower = ToLowerAscii(u); env->ReleaseStringUTFChars(unloc, u); }
+                        env->DeleteLocalRef(unloc);
+                    } else if (env->ExceptionCheck()) { env->ExceptionClear(); }
+                }
+
+                // --- Item.getDamageVsEntity() ---
+                jmethodID getDmg = env->GetMethodID(itemClass, "getDamageVsEntity", "()F");
+                if (!getDmg) {
+                    env->ExceptionClear();
+                    getDmg = env->GetMethodID(itemClass, "func_150931_i", "()F");
+                }
+                if (!getDmg) env->ExceptionClear();
+                if (getDmg) {
+                    float rawDmg = env->CallFloatMethod(heldItem, getDmg);
+                    if (!env->ExceptionCheck() && rawDmg > 0.0f && rawDmg < 20.0f)
+                        itemBaseDamage = rawDmg;
+                    else if (env->ExceptionCheck()) env->ExceptionClear();
+                }
+
                 env->DeleteLocalRef(itemClass);
+                env->DeleteLocalRef(heldItem);
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
             }
-
-            if (g_getUnlocalizedNameMethod) {
-                jstring unloc = (jstring)env->CallObjectMethod(heldItem, g_getUnlocalizedNameMethod);
-                if (!env->ExceptionCheck() && unloc) {
-                    const char* u = env->GetStringUTFChars(unloc, nullptr);
-                    if (u) {
-                        unlocalizedLower = ToLowerAscii(u);
-                        env->ReleaseStringUTFChars(unloc, u);
-                    }
-                    env->DeleteLocalRef(unloc);
-                }
-                else if (env->ExceptionCheck()) {
-                    env->ExceptionClear();
-                }
-            }
-
-            if (!g_getDamageVsEntityMethod) {
-                jclass itemClass = env->GetObjectClass(heldItem);
-                g_getDamageVsEntityMethod = env->GetMethodID(itemClass, "getDamageVsEntity", "()F");
-                if (!g_getDamageVsEntityMethod) {
-                    env->ExceptionClear();
-                    g_getDamageVsEntityMethod = env->GetMethodID(itemClass, "func_150931_i", "()F");
-                }
-                if (!g_getDamageVsEntityMethod) env->ExceptionClear();
-                env->DeleteLocalRef(itemClass);
-            }
-            if (g_getDamageVsEntityMethod) {
-                float rawDmg = env->CallFloatMethod(heldItem, g_getDamageVsEntityMethod);
-                if (!env->ExceptionCheck() && rawDmg > 0.0f && rawDmg < 20.0f) {
-                    itemBaseDamage = rawDmg;
-                }
-                else if (env->ExceptionCheck()) {
-                    env->ExceptionClear();
-                }
-            }
-
-            env->DeleteLocalRef(heldItem);
-        }
-        else if (env->ExceptionCheck()) {
-            env->ExceptionClear();
         }
     }
 
@@ -2357,10 +2345,22 @@ void RenderClosestPlayerInfo(int w, int h) {
         double dz = ez - lpz;
         double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
         if (dist < bestDist) {
-            bestDist = dist;
-            closestIndex = i;
-            bestDx = dx;
-            bestDz = dz;
+            // Skip entities with obfuscated/empty names (e.g. Hypixel hidden duel opponents)
+            bool validName = false;
+            if (g_getNameMethod) {
+                jstring ns = (jstring)env->CallObjectMethod(entity, g_getNameMethod);
+                if (!env->ExceptionCheck() && ns) {
+                    const char* nc = env->GetStringUTFChars(ns, nullptr);
+                    if (nc) { validName = !StripMinecraftFormatting(nc).empty(); env->ReleaseStringUTFChars(ns, nc); }
+                    env->DeleteLocalRef(ns);
+                } else if (env->ExceptionCheck()) { env->ExceptionClear(); }
+            }
+            if (validName) {
+                bestDist = dist;
+                closestIndex = i;
+                bestDx = dx;
+                bestDz = dz;
+            }
         }
 
         env->DeleteLocalRef(entity);

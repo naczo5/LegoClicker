@@ -11,9 +11,6 @@ public partial class App : Application
         
         // Install global hooks
         InputHooks.Install();
-        
-        // Show Overlay
-        new HudWindow().Show();
     }
     
     protected override void OnExit(ExitEventArgs e)
