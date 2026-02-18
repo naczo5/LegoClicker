@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LegoClicker — Minecraft Utility Client</title>
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Matrix canvas background -->
+  <canvas id="matrix"></canvas>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <span class="logo">LEGO<span class="accent">CLICKER</span></span>
+      <ul>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#status">Status</a></li>
+        <li><a href="#setup">Setup</a></li>
+        <li><a href="#download" class="nav-dl">Download</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-content">
+      <div class="badge">LUNAR CLIENT 1.8.9 &nbsp;|&nbsp; INJECTABLE</div>
+      <h1>LEGO<span class="accent">CLICKER</span></h1>
+      <p class="tagline">fully vibe coded minecraft utility client.<br>injected directly into lunar client. no bullshit.</p>
+      <div class="hero-btns">
+        <a href="#download" class="btn-primary">GET CLIENT</a>
+        <a href="#features" class="btn-ghost">VIEW FEATURES</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="stat-num" id="cps-counter">16</span><span class="stat-label">MAX CPS</span></div>
+        <div class="stat-sep"></div>
+        <div class="stat"><span class="stat-num">3500+</span><span class="stat-label">LINES OF CODE</span></div>
+        <div class="stat-sep"></div>
+        <div class="stat"><span class="stat-num">FREE</span><span class="stat-label">FOREVER</span></div>
+      </div>
+    </div>
+    <div class="hero-art">
+      <div class="art-ring ring1"></div>
+      <div class="art-ring ring2"></div>
+      <div class="art-ring ring3"></div>
+      <div class="art-icon">☠</div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features" class="section">
+    <div class="section-header">
+      <span class="section-tag">// MODULES</span>
+      <h2>Features</h2>
+      <p>every module vibed into existence from scratch</p>
+    </div>
+
+    <div class="categories">
+
+      <div class="category">
+        <div class="cat-title"><span class="cat-icon">⚔</span> Combat</div>
+        <div class="feature-card">
+          <div class="feat-name">AutoClicker<span class="feat-bind">` (backtick)</span></div>
+          <div class="feat-desc">Left & right-click. Gaussian jitter CPS for human-like variance, adjustable range. Block-only mode for RMB, inventory &amp; chest safety, auto-pauses when GUI is open.</div>
+          <div class="feat-tags"><span>LMB</span><span>RMB</span><span>Block-Only</span><span>CPS Jitter</span></div>
+        </div>
+      </div>
+
+      <div class="category">
+        <div class="cat-title"><span class="cat-icon">👁</span> Render</div>
+        <div class="feature-card">
+          <div class="feat-name">Nametags</div>
+          <div class="feat-desc">Renders player name, health bar and armor points above entities. Color-coded with chroma cycling or custom accent hue support.</div>
+          <div class="feat-tags"><span>Health Bar</span><span>Armor</span><span>Chroma</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Closest Player HUD</div>
+          <div class="feat-desc">Compact panel above the hotbar showing the nearest player's name, distance, direction (Front / Left / Right / Back), health, and held item.</div>
+          <div class="feat-tags"><span>Distance</span><span>Direction</span><span>Held Item</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Chest ESP</div>
+          <div class="feat-desc">Highlights chests through walls with colored outlines and distance labels rendered at the block position.</div>
+          <div class="feat-tags"><span>Through Walls</span><span>Distance</span></div>
+        </div>
+      </div>
+
+      <div class="category">
+        <div class="cat-title"><span class="cat-icon">⚙</span> GUI / Misc</div>
+        <div class="feature-card">
+          <div class="feat-name">In-Game ClickGUI<span class="feat-bind">Right Shift</span></div>
+          <div class="feat-desc">Draggable internal panel with Combat and Render categories. Per-module sliders, toggles, and keybind capture — all inside the game, no alt-tab needed.</div>
+          <div class="feat-tags"><span>Draggable</span><span>Per-module keybinds</span><span>Sliders</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Profiles</div>
+          <div class="feat-desc">JSON profiles saved to <code>%AppData%\LegoClicker\profiles\</code>. Auto-saves on close, auto-loads on startup.</div>
+          <div class="feat-tags"><span>JSON</span><span>Auto-save</span></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- STATUS -->
+  <section id="status" class="section alt-section">
+    <div class="section-header">
+      <span class="section-tag">// STATUS</span>
+      <h2>Bypass Status</h2>
+      <p>last checked: <span id="status-date"></span></p>
+    </div>
+    <div class="status-grid">
+      <div class="status-card">
+        <div class="status-name">Lunar Client 1.8.9</div>
+        <div class="status-dot dot-green"></div>
+        <div class="status-label">WORKING</div>
+      </div>
+      <div class="status-card">
+        <div class="status-name">Watchdog (Hypixel)</div>
+        <div class="status-dot dot-yellow"></div>
+        <div class="status-label">USE AT OWN RISK</div>
+      </div>
+      <div class="status-card">
+        <div class="status-name">Screenshare</div>
+        <div class="status-dot dot-green"></div>
+        <div class="status-label">EXTERNAL</div>
+      </div>
+      <div class="status-card">
+        <div class="status-name">AntiCheat (Generic)</div>
+        <div class="status-dot dot-yellow"></div>
+        <div class="status-label">VARIES</div>
+      </div>
+    </div>
+    <p class="status-note">* AutoClicker uses <strong>Windows SendInput</strong> — hardware-level, external process. No game code is modified. All visuals are rendered via OpenGL SwapBuffers hook.</p>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-tag">// ARCHITECTURE</span>
+      <h2>How it works</h2>
+      <p>a two-component injection chain</p>
+    </div>
+    <div class="arch-grid">
+      <div class="arch-step">
+        <div class="arch-num">01</div>
+        <div class="arch-title">C# Loader</div>
+        <div class="arch-desc">A lightweight WPF launcher finds the <code>javaw.exe</code> process (Lunar Client) and injects <code>bridge.dll</code> via <code>CreateRemoteThread + LoadLibraryA</code>. Hosts system-wide input hooks for keybind dispatch.</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-step">
+        <div class="arch-num">02</div>
+        <div class="arch-title">C++ Bridge DLL</div>
+        <div class="arch-desc">Attaches to the JVM via JVMTI &amp; JNI. Dynamically discovers Minecraft classes at runtime — no hardcoded obfuscated names, works across Lunar versions. Hooks <code>SwapBuffers</code> to render overlays every frame.</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-step">
+        <div class="arch-num">03</div>
+        <div class="arch-title">TCP Bridge</div>
+        <div class="arch-desc">Game state (entities, health, screen name) is streamed to the loader at ~20Hz over TCP port 25590. Config changes and commands are pushed back at ~5Hz. Zero packet modification — purely read-only game state.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SETUP -->
+  <section id="setup" class="section alt-section">
+    <div class="section-header">
+      <span class="section-tag">// SETUP</span>
+      <h2>Requirements &amp; Setup</h2>
+    </div>
+    <div class="setup-cols">
+      <div class="setup-block">
+        <h3>Requirements</h3>
+        <ul class="req-list">
+          <li><span class="dot-green-sm">●</span> Windows 10/11 x64</li>
+          <li><span class="dot-green-sm">●</span> .NET 8.0 Runtime</li>
+          <li><span class="dot-green-sm">●</span> Lunar Client (Java 1.8.9)</li>
+          <li><span class="dot-yellow-sm">●</span> MinGW-w64 (build only)</li>
+        </ul>
+      </div>
+      <div class="setup-block">
+        <h3>Lunar Client JVM Flags</h3>
+        <p>Add these to <strong>Custom JVM Arguments</strong> in Lunar Client settings:</p>
+        <div class="code-block">-XX:+EnableDynamicAgentLoading -XX:-DisableAttachMechanism</div>
+      </div>
+      <div class="setup-block">
+        <h3>Usage</h3>
+        <ol class="steps-list">
+          <li>Launch Lunar Client with JVM flags</li>
+          <li>Run <code>LegoClicker.exe</code></li>
+          <li>Click <strong>Inject / Connect</strong></li>
+          <li>Press <strong>Right Shift</strong> in-game for ClickGUI</li>
+          <li>Press <strong>backtick (` )</strong> to toggle autoclicker</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="download" class="section download-section">
+    <div class="section-header">
+      <span class="section-tag">// DOWNLOAD</span>
+      <h2>Get LegoClicker</h2>
+      <p>open source. always free. fully vibe coded.</p>
+    </div>
+    <div class="dl-box">
+      <div class="dl-info">
+        <div class="dl-row"><span>Version</span><span class="dl-val">latest (main)</span></div>
+        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.8.9</span></div>
+        <div class="dl-row"><span>Platform</span><span class="dl-val">Windows x64</span></div>
+        <div class="dl-row"><span>License</span><span class="dl-val">Open Source</span></div>
+      </div>
+      <a href="https://github.com/naczo5/LegoClicker/releases/tag/Release" class="btn-primary btn-lg" id="github-link">
+        VIEW ON GITHUB
+      </a>
+      <p class="dl-note">build from source — see README for instructions</p>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <span class="logo">LEGO<span class="accent">CLICKER</span></span>
+      <p>fully vibe coded. zero guarantees. use at your own risk.</p>
+      <p class="footer-small">not affiliated with Mojang, Microsoft, or Lunar Client. for educational purposes only.</p>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>
