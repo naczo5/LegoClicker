@@ -2,6 +2,14 @@
 
 A Minecraft utility client for Lunar Client. Consists of a lightweight C# WPF loader and a C++ DLL injected into the game process.
 
+## Screenshots
+
+### Gameplay HUD
+![Gameplay HUD](screenshots/gameplay.png)
+
+### Internal ClickGUI
+![Internal ClickGUI](screenshots/clickgui.png)
+
 ## Features
 
 - **Autoclicker** — left and right click, configurable CPS range with Gaussian jitter, block-only mode, inventory/chest safety
