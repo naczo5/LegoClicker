@@ -193,6 +193,7 @@ public static class InputHooks
             {
                 Application.Current?.Dispatcher.BeginInvoke(() =>
                 {
+                    Clicker.Instance.IsMiningIntent = GameStateClient.Instance.IsConnected && GameStateClient.Instance.CurrentState.LookingAtBlock;
                     Clicker.Instance.StartClicking(true);
                     OnStateChanged?.Invoke();
                 });

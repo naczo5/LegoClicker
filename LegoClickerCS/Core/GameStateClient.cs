@@ -439,6 +439,7 @@ public class GameStateClient : INotifyPropertyChanged
                     rightMinCPS = clicker.RightMinCPS,
                     rightMaxCPS = clicker.RightMaxCPS,
                     rightBlock = clicker.RightClickOnlyBlock,
+                    breakBlocks = clicker.BreakBlocksEnabled,
                     jitter = clicker.JitterEnabled,
                     clickInChests = clicker.ClickInChests,
                     nametags = clicker.NametagsEnabled,
@@ -539,6 +540,9 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "toggleRightBlockOnly":
                     clicker.RightClickOnlyBlock = !clicker.RightClickOnlyBlock;
+                    break;
+                case "toggleBreakBlocks":
+                    clicker.BreakBlocksEnabled = !clicker.BreakBlocksEnabled;
                     break;
             }
 

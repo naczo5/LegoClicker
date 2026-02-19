@@ -58,6 +58,8 @@ public class Clicker : INotifyPropertyChanged
     private float _rightMinCPS = 10.0f;
     private float _rightMaxCPS = 14.0f;
     private bool _rightClickOnlyBlock = false;
+    private bool _breakBlocksEnabled = false;
+    private bool _isMiningIntent = false;
     
     private readonly Random _random = new();
     
@@ -192,6 +194,28 @@ public class Clicker : INotifyPropertyChanged
         {
             _rightClickOnlyBlock = value;
             OnPropertyChanged(nameof(RightClickOnlyBlock));
+            StateChanged?.Invoke();
+        }
+    }
+
+    public bool BreakBlocksEnabled
+    {
+        get => _breakBlocksEnabled;
+        set
+        {
+            _breakBlocksEnabled = value;
+            OnPropertyChanged(nameof(BreakBlocksEnabled));
+            StateChanged?.Invoke();
+        }
+    }
+    
+    public bool IsMiningIntent
+    {
+        get => _isMiningIntent;
+        set
+        {
+            _isMiningIntent = value;
+            OnPropertyChanged(nameof(IsMiningIntent));
             StateChanged?.Invoke();
         }
     }
@@ -420,6 +444,28 @@ public class Clicker : INotifyPropertyChanged
                 if (!holdingBlock)
                 {
                     await Task.Delay(100, token).ConfigureAwait(false);
+                    continue;
+                }
+            }
+            
+            // Break Blocks Logic: 
+            if (_useLeftButton && BreakBlocksEnabled)
+            {
+                bool lookingAtBlock = false;
+                if (GameStateClient.Instance.IsConnected)
+                {
+                    lookingAtBlock = GameStateClient.Instance.CurrentState.LookingAtBlock;
+                }
+                
+                // If they pan off a block, they are no longer intending to mine that block
+                if (!lookingAtBlock)
+                {
+                    IsMiningIntent = false;
+                }
+                
+                if (IsMiningIntent)
+                {
+                    await Task.Delay(50, token).ConfigureAwait(false);
                     continue;
                 }
             }

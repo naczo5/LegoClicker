@@ -25,6 +25,9 @@ public class GameState
     [JsonPropertyName("holdingBlock")]
     public bool HoldingBlock { get; set; }
 
+    [JsonPropertyName("lookingAtBlock")]
+    public bool LookingAtBlock { get; set; }
+
     [JsonPropertyName("posX")]
     public double PosX { get; set; }
 
