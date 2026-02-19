@@ -51,6 +51,7 @@ struct Config {
     bool leftClick = true, rightClick = false;
     bool jitter = true;
     bool rightBlockOnly = false;
+    bool breakBlocks = false;
     bool clickInChests = false;
     bool nametags = false;
     bool closestPlayerInfo = false;
@@ -78,6 +79,7 @@ struct GameState {
     float health = 20.0f;
     double posX = 0, posY = 0, posZ = 0;
     bool holdingBlock = false;
+    bool lookingAtBlock = false;
 };
 static GameState g_gameState;
 static Mutex g_stateMutex;
@@ -166,6 +168,11 @@ static jclass    g_itemSwordClass          = nullptr; // ItemSword class (instan
 static jmethodID g_getRenderItemFromMcMethod          = nullptr;
 static jmethodID g_renderItemAndEffectIntoGUIMethod   = nullptr;
 static jmethodID g_renderItemIntoGUIMethod            = nullptr;
+
+static jfieldID g_objectMouseOverField = nullptr;
+static jclass g_movingObjectPositionClass = nullptr;
+static jfieldID g_typeOfHitField = nullptr;
+static jmethodID g_enumNameMethod = nullptr;
 // NOTE: g_getItemMethod, g_getDisplayNameMethod, g_getUnlocalizedNameMethod,
 // g_getDamageVsEntityMethod are intentionally NOT cached globally — they must
 // be fetched from the actual object's class each call to avoid calling a
@@ -663,6 +670,35 @@ bool DiscoverMappings(JNIEnv* env) {
             env->DeleteLocalRef(gs);
         }
     }
+
+    // objectMouseOver
+    if (mcClass) {
+        g_objectMouseOverField = env->GetFieldID(mcClass, "objectMouseOver", "Lnet/minecraft/util/MovingObjectPosition;");
+        if (!g_objectMouseOverField) { env->ExceptionClear(); g_objectMouseOverField = env->GetFieldID(mcClass, "field_71476_x", "Lnet/minecraft/util/MovingObjectPosition;"); }
+        if (!g_objectMouseOverField) env->ExceptionClear();
+        else Log("Found objectMouseOver field");
+    }
+
+    jclass mopClass = LoadClassWithLoader(env, gcl, "net.minecraft.util.MovingObjectPosition");
+    if (!mopClass) mopClass = env->FindClass("net/minecraft/util/MovingObjectPosition");
+    if (mopClass && !env->ExceptionCheck()) {
+        g_movingObjectPositionClass = (jclass)env->NewGlobalRef(mopClass);
+        g_typeOfHitField = env->GetFieldID(mopClass, "typeOfHit", "Lnet/minecraft/util/MovingObjectPosition$MovingObjectType;");
+        if (!g_typeOfHitField) { env->ExceptionClear(); g_typeOfHitField = env->GetFieldID(mopClass, "field_72313_a", "Lnet/minecraft/util/MovingObjectPosition$MovingObjectType;"); }
+        if (!g_typeOfHitField) env->ExceptionClear();
+        else Log("Found typeOfHit field");
+    }
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    
+    jclass enumClass = env->FindClass("java/lang/Enum");
+    if (enumClass) {
+        g_enumNameMethod = env->GetMethodID(enumClass, "name", "()Ljava/lang/String;");
+        env->DeleteLocalRef(enumClass);
+    }
+
+
+
+
 
     if (!g_getRenderItemFromMcMethod) {
         g_getRenderItemFromMcMethod = env->GetMethodID(mcClass, "getRenderItem", "()Lnet/minecraft/client/renderer/entity/RenderItem;");
@@ -1167,6 +1203,32 @@ GameState ReadGameState(JNIEnv* env) {
             
             env->DeleteLocalRef(player);
     }
+
+    // Check objectMouseOver
+    s.lookingAtBlock = false;
+    if (g_objectMouseOverField && g_typeOfHitField && g_enumNameMethod) {
+        jobject mop = env->GetObjectField(g_mcInstance, g_objectMouseOverField);
+        if (mop) {
+            jobject typeOfHit = env->GetObjectField(mop, g_typeOfHitField);
+            if (typeOfHit) {
+                jstring nameStr = (jstring)env->CallObjectMethod(typeOfHit, g_enumNameMethod);
+                if (nameStr && !env->ExceptionCheck()) {
+                    const char* nameChars = env->GetStringUTFChars(nameStr, nullptr);
+                    if (nameChars) {
+                        if (strcmp(nameChars, "BLOCK") == 0) {
+                            s.lookingAtBlock = true;
+                        }
+                        env->ReleaseStringUTFChars(nameStr, nameChars);
+                    }
+                    env->DeleteLocalRef(nameStr);
+                }
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(typeOfHit);
+            }
+            env->DeleteLocalRef(mop);
+        }
+    }
+
     if (env->ExceptionCheck()) env->ExceptionClear();
     return s;
 }
@@ -2007,11 +2069,15 @@ void RenderNametags(int w, int h) {
                 jmethodID mGetName = cc ? env->GetMethodID(cc, "getName", "()Ljava/lang/String;") : nullptr;
                 if (mGetName) {
                     jstring jn = (jstring)env->CallObjectMethod(cls, mGetName);
-                    if (jn) {
+                    if (env->ExceptionCheck()) {
+                        env->ExceptionClear();
+                    } else if (jn) {
                         const char* cn = env->GetStringUTFChars(jn, nullptr);
                         if (cn) {
                             screenName = cn;
                             env->ReleaseStringUTFChars(jn, cn);
+                        } else if (env->ExceptionCheck()) {
+                            env->ExceptionClear();
                         }
                         env->DeleteLocalRef(jn);
                     }
@@ -2078,17 +2144,26 @@ void RenderNametags(int w, int h) {
         std::string name = "Unknown";
         if (g_getNameMethod) {
             jstring s = (jstring)env->CallObjectMethod(entity, g_getNameMethod);
-            if (s) {
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            } else if (s) {
                 const char* c = env->GetStringUTFChars(s, nullptr);
-                name = c;
-                env->ReleaseStringUTFChars(s, c);
+                if (c) {
+                    name = c;
+                    env->ReleaseStringUTFChars(s, c);
+                } else if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                }
                 env->DeleteLocalRef(s);
             }
         }
         
         // Health
         float health = 20.0f;
-        if (g_getHealthMethod) health = env->CallFloatMethod(entity, g_getHealthMethod);
+        if (g_getHealthMethod) {
+            health = env->CallFloatMethod(entity, g_getHealthMethod);
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
 
         // Project
         float sX = 0, sY = 0;
@@ -3049,12 +3124,12 @@ void RenderClickGUI(int winW, int winH) {
         }
     }
 
-    float sy = contentY + 48.0f;
+    float sy = contentY + 44.0f;
     if (strcmp(selected.id, "autoclicker") == 0) {
         float minVal = GuiSettingSlider(settingsX + 8.0f, sy, settingsW - 16.0f, "min_cps", "Min CPS", cfg.minCPS, 1.0f, 20.0f, scale * 0.88f, true);
-        sy += 36.0f;
+        sy += 32.0f;
         float maxVal = GuiSettingSlider(settingsX + 8.0f, sy, settingsW - 16.0f, "max_cps", "Max CPS", cfg.maxCPS, 1.0f, 20.0f, scale * 0.88f, true);
-        sy += 36.0f;
+        sy += 32.0f;
 
         int minInt = (int)(minVal + 0.5f);
         int maxInt = (int)(maxVal + 0.5f);
@@ -3076,12 +3151,12 @@ void RenderClickGUI(int winW, int winH) {
         }
 
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Left Click", cfg.leftClick, scale * 0.88f)) queueToggle("toggleLeft");
-        sy += 30.0f;
+        sy += 25.0f;
         
         float rMinVal = GuiSettingSlider(settingsX + 8.0f, sy, settingsW - 16.0f, "rmin_cps", "R Min CPS", cfg.rightMinCPS, 1.0f, 20.0f, scale * 0.88f, true);
-        sy += 36.0f;
+        sy += 32.0f;
         float rMaxVal = GuiSettingSlider(settingsX + 8.0f, sy, settingsW - 16.0f, "rmax_cps", "R Max CPS", cfg.rightMaxCPS, 1.0f, 20.0f, scale * 0.88f, true);
-        sy += 36.0f;
+        sy += 32.0f;
 
         int rMinInt = (int)(rMinVal + 0.5f);
         int rMaxInt = (int)(rMaxVal + 0.5f);
@@ -3101,11 +3176,13 @@ void RenderClickGUI(int winW, int winH) {
         }
 
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Right Click", cfg.rightClick, scale * 0.88f)) queueToggle("toggleRight");
-        sy += 30.0f;
+        sy += 25.0f;
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Block Only", cfg.rightBlockOnly, scale * 0.88f)) queueToggle("toggleRightBlockOnly");
-        sy += 30.0f;
+        sy += 25.0f;
+        if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Break Blocks", cfg.breakBlocks, scale * 0.88f)) queueToggle("toggleBreakBlocks");
+        sy += 25.0f;
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Jitter", cfg.jitter, scale * 0.88f)) queueToggle("toggleJitter");
-        sy += 30.0f;
+        sy += 25.0f;
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Click In Chests", cfg.clickInChests, scale * 0.88f)) queueToggle("toggleClickInChests");
     } else if (strcmp(selected.id, "nametags") == 0) {
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Show Health", cfg.nametagShowHealth, scale * 0.88f)) queueToggle("toggleNametagHealth");
@@ -3410,6 +3487,7 @@ void ParseConfig(const std::string& line) {
         g_config.rightMinCPS = getFloat("rightMinCPS");
         g_config.rightMaxCPS = getFloat("rightMaxCPS");
         g_config.rightBlockOnly = getBool("rightBlock");
+        g_config.breakBlocks = getBool("breakBlocks");
         g_config.jitter = getBool("jitter");
         g_config.clickInChests = getBool("clickInChests");
         g_config.nametags = getBool("nametags");
@@ -3479,6 +3557,7 @@ void ServerLoop() {
             jsonToSend += "\"posY\":" + std::to_string(state.posY) + ",";
             jsonToSend += "\"posZ\":" + std::to_string(state.posZ) + ",";
             jsonToSend += "\"holdingBlock\":" + std::string(state.holdingBlock ? "true" : "false") + ",";
+            jsonToSend += "\"lookingAtBlock\":" + std::string(state.lookingAtBlock ? "true" : "false") + ",";
             jsonToSend += "\"entities\":";
 
             std::string entitiesJson = "[]";

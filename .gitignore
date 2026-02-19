@@ -23,6 +23,7 @@ UTILITY_CLIENTS.md
 *.suo
 *.DotSettings.user
 .vscode/
+*.zip
 
 # ── OS ───────────────────────────────────────────────────────────
 Thumbs.db
