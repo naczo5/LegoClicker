@@ -344,6 +344,12 @@ public class GameStateClient : INotifyPropertyChanged
                         state.IsConnected = true;
                         state.LastUpdate = DateTime.Now;
                         CurrentState = state;
+                        bool is121 = InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+                        string actionBar = is121 ? state.ActionBar : "";
+                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            Clicker.Instance.UpdateGtbFromActionBar(actionBar);
+                        }));
                     }
                 }
                 catch (JsonException)
@@ -554,6 +560,14 @@ public class GameStateClient : INotifyPropertyChanged
                     breakBlocks = clicker.BreakBlocksEnabled,
                     jitter = clicker.JitterEnabled,
                     clickInChests = clicker.ClickInChests,
+                    aimAssist = clicker.AimAssistEnabled,
+                    aimAssistFov = clicker.AimAssistFov,
+                    aimAssistRange = clicker.AimAssistRange,
+                    aimAssistStrength = clicker.AimAssistStrength,
+                    gtbHelper = clicker.GtbHelperEnabled,
+                    gtbHint = clicker.GtbCurrentHint,
+                    gtbCount = clicker.GtbMatchCount,
+                    gtbPreview = clicker.GtbMatchesPreview,
                     nametags = clicker.NametagsEnabled,
                     closestPlayerInfo = clicker.ClosestPlayerInfoEnabled,
                     nametagShowHealth = clicker.NametagShowHealth,
@@ -568,6 +582,8 @@ public class GameStateClient : INotifyPropertyChanged
                     keybindJitter        = InputHooks.GetModuleKey("jitter"),
                     keybindClickInChests = InputHooks.GetModuleKey("clickinchests"),
                     keybindBreakBlocks   = InputHooks.GetModuleKey("breakblocks"),
+                    keybindAimAssist     = InputHooks.GetModuleKey("aimassist"),
+                    keybindGtbHelper     = InputHooks.GetModuleKey("gtbhelper"),
                     keybindNametags      = InputHooks.GetModuleKey("nametags"),
                     keybindClosestPlayer = InputHooks.GetModuleKey("closestplayer"),
                     keybindChestEsp      = InputHooks.GetModuleKey("chestesp")
@@ -628,6 +644,12 @@ public class GameStateClient : INotifyPropertyChanged
                 case "toggleClickInChests":
                     clicker.ClickInChests = !clicker.ClickInChests;
                     break;
+                case "toggleAimAssist":
+                    clicker.AimAssistEnabled = !clicker.AimAssistEnabled;
+                    break;
+                case "toggleGtbHelper":
+                    clicker.GtbHelperEnabled = !clicker.GtbHelperEnabled;
+                    break;
                 case "toggleNametags":
                     clicker.NametagsEnabled = !clicker.NametagsEnabled;
                     break;
@@ -673,6 +695,15 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "toggleBreakBlocks":
                     clicker.BreakBlocksEnabled = !clicker.BreakBlocksEnabled;
+                    break;
+                case "setAimAssistFov":
+                    clicker.AimAssistFov = node?["value"]?.GetValue<float>() ?? 30;
+                    break;
+                case "setAimAssistRange":
+                    clicker.AimAssistRange = node?["value"]?.GetValue<float>() ?? 4.5f;
+                    break;
+                case "setAimAssistStrength":
+                    clicker.AimAssistStrength = node?["value"]?.GetValue<int>() ?? 40;
                     break;
             }
 

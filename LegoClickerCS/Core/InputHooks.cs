@@ -71,6 +71,8 @@ public static class InputHooks
         ["jitter"]        = 0,
         ["clickinchests"] = 0,
         ["breakblocks"]   = 0,
+        ["aimassist"]     = 0,
+        ["gtbhelper"]     = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
@@ -112,6 +114,8 @@ public static class InputHooks
             case "jitter":        c.JitterEnabled = !c.JitterEnabled; break;
             case "clickinchests": c.ClickInChests = !c.ClickInChests; break;
             case "breakblocks":   c.BreakBlocksEnabled = !c.BreakBlocksEnabled; break;
+            case "aimassist":     c.AimAssistEnabled = !c.AimAssistEnabled; break;
+            case "gtbhelper":     c.GtbHelperEnabled = !c.GtbHelperEnabled; break;
             case "nametags":      c.NametagsEnabled             = !c.NametagsEnabled;             break;
             case "closestplayer": c.ClosestPlayerInfoEnabled    = !c.ClosestPlayerInfoEnabled;    break;
             case "chestesp":      c.ChestEspEnabled             = !c.ChestEspEnabled;             break;

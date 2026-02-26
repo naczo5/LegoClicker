@@ -20,6 +20,11 @@ public class Profile
     
     public bool JitterEnabled { get; set; } = true;
     public bool ClickInChests { get; set; } = false;
+    public bool AimAssistEnabled { get; set; } = false;
+    public float AimAssistFov { get; set; } = 30.0f;
+    public float AimAssistRange { get; set; } = 4.5f;
+    public int AimAssistStrength { get; set; } = 40;
+    public bool GtbHelperEnabled { get; set; } = false;
     public bool NametagsEnabled { get; set; } = false;
     public bool ClosestPlayerInfoEnabled { get; set; } = false;
     public bool NametagShowHealth { get; set; } = true;
@@ -36,6 +41,8 @@ public class Profile
         ["jitter"]        = 0,
         ["clickinchests"] = 0,
         ["breakblocks"]   = 0,
+        ["aimassist"]     = 0,
+        ["gtbhelper"]     = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
@@ -127,6 +134,11 @@ public static class ProfileManager
             
             JitterEnabled = clicker.JitterEnabled,
             ClickInChests = clicker.ClickInChests,
+            AimAssistEnabled = clicker.AimAssistEnabled,
+            AimAssistFov = clicker.AimAssistFov,
+            AimAssistRange = clicker.AimAssistRange,
+            AimAssistStrength = clicker.AimAssistStrength,
+            GtbHelperEnabled = clicker.GtbHelperEnabled,
             NametagsEnabled = clicker.NametagsEnabled,
             ClosestPlayerInfoEnabled = clicker.ClosestPlayerInfoEnabled,
             NametagShowHealth = clicker.NametagShowHealth,
@@ -154,6 +166,11 @@ public static class ProfileManager
         
         clicker.JitterEnabled = profile.JitterEnabled;
         clicker.ClickInChests = profile.ClickInChests;
+        clicker.AimAssistEnabled = profile.AimAssistEnabled;
+        clicker.AimAssistFov = profile.AimAssistFov;
+        clicker.AimAssistRange = profile.AimAssistRange;
+        clicker.AimAssistStrength = profile.AimAssistStrength;
+        clicker.GtbHelperEnabled = profile.GtbHelperEnabled;
         clicker.NametagsEnabled = profile.NametagsEnabled;
         clicker.ClosestPlayerInfoEnabled = profile.ClosestPlayerInfoEnabled;
         clicker.NametagShowHealth = profile.NametagShowHealth;

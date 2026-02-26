@@ -1,6 +1,6 @@
 # LegoClicker
 
-A Minecraft utility client for Lunar Client. Supports **1.8.9** and **1.21.11** with auto bridge selection in the loader.
+A Minecraft utility client for Lunar Client. Supports **1.8.9** and **1.21.11** with auto bridge selection in the loader, and is now primarily **1.21.11-focused**.
 
 ## Screenshots
 
@@ -16,9 +16,11 @@ A Minecraft utility client for Lunar Client. Supports **1.8.9** and **1.21.11** 
 ## Features
 
 - **Autoclicker** — left and right click, configurable CPS range with Gaussian jitter, block-only mode, inventory/chest safety
+- **Aim Assist (1.21)** — smooth target assist with configurable FOV, range, and strength
 - **Nametags** — in-game player name tags with health bars and armor points, color-coded with chroma/accent support
 - **Closest Player HUD** — compact panel showing the nearest player's name, distance, 4-way direction, health, and held item
 - **Chest ESP** — highlights nearest chests through walls with render count cap and culling
+- **GTB Helper (1.21)** — Hypixel Guess The Build hint solver with in-game candidate overlay
 - **Dual GUI modes** — **1.8.9** uses internal in-game ClickGUI (Insert), **1.21.11** uses external control center
 - **Per-module keybinds** — set a key for any module directly from the in-game GUI
 - **Profiles** — saved to `%AppData%\LegoClicker\profiles\` as JSON

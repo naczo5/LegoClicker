@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using LegoClickerCS.Core;
 
@@ -10,6 +12,14 @@ namespace LegoClickerCS;
 
 public partial class MainWindow : Window
 {
+    private const int DwmaUseImmersiveDarkMode = 20;
+    private const int DwmaBorderColor = 34;
+    private const int DwmaCaptionColor = 35;
+    private const int DwmaTextColor = 36;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
     private bool _controlMode;
     private string? _pendingKeybindModuleId;
     private static readonly Dictionary<string, string> ModuleTitles = new()
@@ -19,6 +29,8 @@ public partial class MainWindow : Window
         ["jitter"] = "Jitter",
         ["clickinchests"] = "Click in Chests",
         ["breakblocks"] = "Break Blocks",
+        ["aimassist"] = "Aim Assist",
+        ["gtbhelper"] = "GTB Helper",
         ["nametags"] = "Nametags",
         ["chestesp"] = "Chest ESP",
         ["closestplayer"] = "Closest Player"
@@ -37,6 +49,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => ApplyNativeTitleBarTheme();
 
         DataContext = Clicker.Instance;
         
@@ -87,6 +100,7 @@ public partial class MainWindow : Window
         Width = 1020;
         Height = 760;
         ResizeMode = ResizeMode.CanResizeWithGrip;
+        ApplyNativeTitleBarTheme();
 
         LoaderPanel.Visibility = Visibility.Collapsed;
         ControlPanel.Visibility = Visibility.Visible;
@@ -94,6 +108,35 @@ public partial class MainWindow : Window
         ShowInTaskbar = true;
         Show();
         Activate();
+    }
+
+    private void ApplyNativeTitleBarTheme()
+    {
+        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        int darkMode = 1;
+        _ = DwmSetWindowAttribute(hwnd, DwmaUseImmersiveDarkMode, ref darkMode, sizeof(int));
+
+        if (TryFindResource("PanelColor") is Color panelColor)
+        {
+            int caption = ToColorRef(panelColor);
+            _ = DwmSetWindowAttribute(hwnd, DwmaCaptionColor, ref caption, sizeof(int));
+            int border = ToColorRef(panelColor);
+            _ = DwmSetWindowAttribute(hwnd, DwmaBorderColor, ref border, sizeof(int));
+        }
+
+        if (TryFindResource("TextColor") is Color textColor)
+        {
+            int text = ToColorRef(textColor);
+            _ = DwmSetWindowAttribute(hwnd, DwmaTextColor, ref text, sizeof(int));
+        }
+
+    }
+
+    private static int ToColorRef(Color color)
+    {
+        return color.R | (color.G << 8) | (color.B << 16);
     }
 
     private void EnsureControlModeIfNeeded(GameStateClient gs)
@@ -154,7 +197,7 @@ public partial class MainWindow : Window
             if (gs.IsConnected)
             {
                 InjectionStatusText.Text = "Status: Connected & Injected";
-                InjectionStatusText.Foreground = new SolidColorBrush(Color.FromRgb(100, 255, 150));
+                InjectionStatusText.Foreground = (Brush)(TryFindResource("AccentBrush") ?? new SolidColorBrush(Color.FromRgb(167, 125, 255)));
                 InjectionProgressBar.Visibility = Visibility.Collapsed;
                 InjectionProgressBar.Value = 100;
                 InjectButton.Content = "Connected";
@@ -182,6 +225,10 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        var profile = ProfileManager.CreateFromClicker();
+        profile.Name = "config";
+        ProfileManager.SaveProfile(profile);
+
         InputHooks.OnStateChanged -= InputHooks_OnStateChanged;
         InputHooks.OnKeyCaptured -= InputHooks_OnKeyCaptured;
         base.OnClosed(e);
@@ -218,6 +265,8 @@ public partial class MainWindow : Window
         SetKeybindButtonContent(KeybindJitterButton, "jitter");
         SetKeybindButtonContent(KeybindClickInChestsButton, "clickinchests");
         SetKeybindButtonContent(KeybindBreakBlocksButton, "breakblocks");
+        SetKeybindButtonContent(KeybindAimAssistButton, "aimassist");
+        SetKeybindButtonContent(KeybindGtbHelperButton, "gtbhelper");
         SetKeybindButtonContent(KeybindNametagsButton, "nametags");
         SetKeybindButtonContent(KeybindChestEspButton, "chestesp");
         SetKeybindButtonContent(KeybindClosestPlayerButton, "closestplayer");

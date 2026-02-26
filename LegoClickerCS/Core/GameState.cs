@@ -19,6 +19,9 @@ public class GameState
     [JsonPropertyName("screenName")]
     public string ScreenName { get; set; } = "unknown";
 
+    [JsonPropertyName("actionBar")]
+    public string ActionBar { get; set; } = "";
+
     [JsonPropertyName("health")]
     public float Health { get; set; } = -1;
 

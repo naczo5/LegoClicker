@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Linq;
 
 namespace LegoClickerCS.Core;
 
@@ -15,6 +16,8 @@ public class Clicker : INotifyPropertyChanged
     // P/Invoke declarations
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
     
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -35,16 +38,19 @@ public class Clicker : INotifyPropertyChanged
     }
     
     private const uint INPUT_MOUSE = 0;
+    private const uint MOUSEEVENTF_MOVE = 0x0001;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
     private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
     private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
+    private const int VK_LBUTTON = 0x01;
     
     // State
     private bool _isArmed;
     private bool _isClicking;
     private bool _useLeftButton = true;
     private CancellationTokenSource? _clickCts;
+    private CancellationTokenSource? _aimAssistCts;
     
     // Settings
     private float _minCPS = 8.0f;
@@ -273,9 +279,31 @@ public class Clicker : INotifyPropertyChanged
     {
         StopClicking();
         Disarm();
+        StopAimAssistLoop();
+    }
+
+    private void StartAimAssistLoop()
+    {
+        if (_aimAssistCts != null) return;
+        _aimAssistCts = new CancellationTokenSource();
+        Task.Run(() => AimAssistLoop(_aimAssistCts.Token));
+    }
+
+    private void StopAimAssistLoop()
+    {
+        _aimAssistCts?.Cancel();
+        _aimAssistCts = null;
     }
     
     private bool _clickInChests = false;
+    private bool _aimAssistEnabled = false;
+    private float _aimAssistFov = 30.0f;
+    private float _aimAssistRange = 4.5f;
+    private int _aimAssistStrength = 40;
+    private bool _gtbHelperEnabled = false;
+    private string _gtbCurrentHint = "-";
+    private int _gtbMatchCount = 0;
+    private string _gtbMatchesPreview = "-";
 
     public bool ClickInChests
     {
@@ -285,6 +313,118 @@ public class Clicker : INotifyPropertyChanged
             _clickInChests = value;
             OnPropertyChanged(nameof(ClickInChests));
             StateChanged?.Invoke();
+        }
+    }
+
+    public bool AimAssistEnabled
+    {
+        get => _aimAssistEnabled;
+        set
+        {
+            _aimAssistEnabled = value;
+            OnPropertyChanged(nameof(AimAssistEnabled));
+            if (_aimAssistEnabled) StartAimAssistLoop();
+            else StopAimAssistLoop();
+            StateChanged?.Invoke();
+        }
+    }
+
+    public float AimAssistFov
+    {
+        get => _aimAssistFov;
+        set
+        {
+            float clamped = Math.Clamp(value, 1.0f, 180.0f);
+            if (Math.Abs(_aimAssistFov - clamped) > float.Epsilon)
+            {
+                _aimAssistFov = clamped;
+                OnPropertyChanged(nameof(AimAssistFov));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    public float AimAssistRange
+    {
+        get => _aimAssistRange;
+        set
+        {
+            float clamped = Math.Clamp(value, 1.0f, 12.0f);
+            if (Math.Abs(_aimAssistRange - clamped) > float.Epsilon)
+            {
+                _aimAssistRange = clamped;
+                OnPropertyChanged(nameof(AimAssistRange));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    public int AimAssistStrength
+    {
+        get => _aimAssistStrength;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_aimAssistStrength != clamped)
+            {
+                _aimAssistStrength = clamped;
+                OnPropertyChanged(nameof(AimAssistStrength));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    public bool GtbHelperEnabled
+    {
+        get => _gtbHelperEnabled;
+        set
+        {
+            _gtbHelperEnabled = value;
+            OnPropertyChanged(nameof(GtbHelperEnabled));
+            if (!value)
+            {
+                SetGtbState("", 0, "");
+            }
+            StateChanged?.Invoke();
+        }
+    }
+
+    public string GtbCurrentHint
+    {
+        get => _gtbCurrentHint;
+        private set
+        {
+            if (_gtbCurrentHint != value)
+            {
+                _gtbCurrentHint = value;
+                OnPropertyChanged(nameof(GtbCurrentHint));
+            }
+        }
+    }
+
+    public int GtbMatchCount
+    {
+        get => _gtbMatchCount;
+        private set
+        {
+            if (_gtbMatchCount != value)
+            {
+                _gtbMatchCount = value;
+                OnPropertyChanged(nameof(GtbMatchCount));
+            }
+        }
+    }
+
+    public string GtbMatchesPreview
+    {
+        get => _gtbMatchesPreview;
+        private set
+        {
+            if (_gtbMatchesPreview != value)
+            {
+                _gtbMatchesPreview = value;
+                OnPropertyChanged(nameof(GtbMatchesPreview));
+            }
         }
     }
 
@@ -391,7 +531,64 @@ public class Clicker : INotifyPropertyChanged
             StateChanged?.Invoke();
         }
     }
+
+    public void UpdateGtbFromActionBar(string actionBarText)
+    {
+        if (!GtbHelperEnabled)
+        {
+            SetGtbState("", 0, "");
+            return;
+        }
+
+        GtbWordSolver.TryLearnSolvedWord(actionBarText);
+        var (mask, matches) = GtbWordSolver.Solve(actionBarText, maxResults: 25);
+        if (string.IsNullOrWhiteSpace(mask))
+        {
+            SetGtbState("", 0, "");
+            return;
+        }
+
+        string preview = matches.Count == 0
+            ? "No matches"
+            : string.Join(", ", matches.Select(m => m));
+        SetGtbState(mask, matches.Count, preview);
+    }
+
+    private void SetGtbState(string hint, int count, string preview)
+    {
+        GtbCurrentHint = string.IsNullOrWhiteSpace(hint) ? "-" : hint;
+        GtbMatchCount = count;
+        GtbMatchesPreview = string.IsNullOrWhiteSpace(preview) ? "-" : preview;
+    }
     
+    private async Task AimAssistLoop(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                bool supportedVersion = GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+                bool shouldRun =
+                    AimAssistEnabled &&
+                    supportedVersion &&
+                    GameStateClient.Instance.IsConnected &&
+                    WindowDetection.IsMinecraftActive() &&
+                    !WindowDetection.IsCursorVisible();
+
+                if (shouldRun)
+                {
+                    bool leftHeld = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                    bool autoLeftClicking = IsClicking && _useLeftButton;
+                    if (leftHeld || autoLeftClicking)
+                        TryApplyAimAssist();
+                }
+
+                await Task.Delay(8, token).ConfigureAwait(false);
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
 
     private async Task ClickLoop(CancellationToken token)
     {
@@ -540,7 +737,7 @@ public class Clicker : INotifyPropertyChanged
             }
             
             double targetInterval = 1000.0 / cps; // in milliseconds
-            
+
             // Perform click
             PerformClick(_useLeftButton);
             
@@ -576,7 +773,69 @@ public class Clicker : INotifyPropertyChanged
         
         SendInput(2, inputs, Marshal.SizeOf<INPUT>());
     }
-    
+
+    private void TryApplyAimAssist()
+    {
+        var state = GameStateClient.Instance.CurrentState;
+        if (state.Entities.Count == 0) return;
+
+        var rect = WindowDetection.GetMinecraftWindowRect();
+        if (!rect.HasValue) return;
+
+        int width = rect.Value.Right - rect.Value.Left;
+        int height = rect.Value.Bottom - rect.Value.Top;
+        if (width <= 0 || height <= 0) return;
+
+        double centerX = width * 0.5;
+        double centerY = height * 0.5;
+        double maxAngle = AimAssistFov * 0.5;
+        double bestScore = double.MaxValue;
+        double bestDx = 0;
+        double bestDy = 0;
+
+        foreach (var entity in state.Entities)
+        {
+            if (entity.Dist <= 0.01 || entity.Dist > AimAssistRange) continue;
+            if (entity.Sx < 0 || entity.Sx > width || entity.Sy < 0 || entity.Sy > height) continue;
+
+            double dx = entity.Sx - centerX;
+            double dy = entity.Sy - centerY;
+            double radial = Math.Sqrt(dx * dx + dy * dy);
+            double angle = Math.Atan2(radial, centerX) * (180.0 / Math.PI);
+            if (angle > maxAngle) continue;
+
+            double score = dx * dx + dy * dy;
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestDx = dx;
+                bestDy = dy;
+            }
+        }
+
+        if (bestScore == double.MaxValue) return;
+
+        double strength = AimAssistStrength / 100.0;
+        int moveX = (int)Math.Round(bestDx * strength);
+        int moveY = (int)Math.Round(bestDy * strength);
+
+        if (moveX == 0 && Math.Abs(bestDx) > 1) moveX = Math.Sign(bestDx);
+        if (moveY == 0 && Math.Abs(bestDy) > 1) moveY = Math.Sign(bestDy);
+
+        moveX = Math.Clamp(moveX, -40, 40);
+        moveY = Math.Clamp(moveY, -40, 40);
+
+        if (moveX == 0 && moveY == 0) return;
+
+        INPUT[] input = new INPUT[1];
+        input[0].Type = INPUT_MOUSE;
+        input[0].Mi.Dx = moveX;
+        input[0].Mi.Dy = moveY;
+        input[0].Mi.DwFlags = MOUSEEVENTF_MOVE;
+
+        SendInput(1, input, Marshal.SizeOf<INPUT>());
+    }
+     
     private float GaussianRandom(float mean, float stddev)
     {
         // Box-Muller transform

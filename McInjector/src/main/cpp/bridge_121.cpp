@@ -106,6 +106,7 @@ struct Config {
     float maxCPS         = 14.0f;
     bool  jitter         = false;
     bool  clickInChests  = false;
+    bool  aimAssist      = false;
     bool  nametags       = false;
     bool  chestEsp       = false;
     bool  closestPlayer  = false;
@@ -118,6 +119,10 @@ struct Config {
     float rightMaxCPS    = 14.0f;
     bool  rightBlockOnly = false;
     bool  breakBlocks    = false;
+    bool  gtbHelper      = false;
+    int   gtbCount       = 0;
+    std::string gtbHint;
+    std::string gtbPreview;
 };
 static Config g_config;
 static Mutex  g_configMutex;
@@ -175,6 +180,7 @@ static void ParseConfig(const std::string& line) {
     g_config.maxCPS        = getFloat("maxCPS");
     g_config.jitter        = getBool("jitter");
     g_config.clickInChests = getBool("clickInChests");
+    g_config.aimAssist     = getBool("aimAssist");
     g_config.nametags      = getBool("nametags");
     g_config.chestEsp      = getBool("chestEsp");
     g_config.closestPlayer = getBool("closestPlayerInfo");
@@ -187,6 +193,10 @@ static void ParseConfig(const std::string& line) {
     g_config.rightMaxCPS   = getFloat("rightMaxCPS");
     g_config.rightBlockOnly= getBool("rightBlock");
     g_config.breakBlocks   = getBool("breakBlocks");
+    g_config.gtbHelper     = getBool("gtbHelper");
+    g_config.gtbHint       = getStr("gtbHint");
+    g_config.gtbCount      = getInt("gtbCount", 0);
+    g_config.gtbPreview    = getStr("gtbPreview");
 }
 
 // ===================== GLOBALS =====================
@@ -238,6 +248,7 @@ static std::string g_screenType;              // FQ name of Screen base class
 
 // Per-frame JNI state (read in SwapBuffers, consumed in TCP)
 static std::string g_jniScreenName;
+static std::string g_jniActionBar;
 static bool        g_jniGuiOpen     = false;
 static bool        g_jniInWorld     = false;
 static bool        g_jniLookingAtBlock = false;
@@ -245,6 +256,9 @@ static bool        g_jniBreakingBlock  = false;
 static bool        g_jniHoldingBlock   = false;
 static Mutex       g_jniStateMtx;
 static std::string g_lastLoggedScreen;
+static jfieldID    g_inGameHudField_121 = nullptr; // MinecraftClient.inGameHud
+static std::vector<jfieldID> g_hudTextFields_121;  // InGameHud Text fields
+static DWORD       g_lastHudTextProbeMs = 0;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -1007,6 +1021,7 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     { LockGuard lk(g_configMutex); cfg = g_config; }
     int maxPlayersToProcess = 1;
     if (cfg.nametags) maxPlayersToProcess = (std::max)(maxPlayersToProcess, (std::max)(1, (std::min)(20, cfg.nametagMaxCount)));
+    if (cfg.aimAssist) maxPlayersToProcess = (std::max)(maxPlayersToProcess, 12);
 
     // Accumulate in localList; atomically publish to g_playerList at scope exit.
     std::vector<PlayerData121> localList;
@@ -2440,6 +2455,32 @@ static void Log(const std::string& msg) {
     out << msg << "\n";
 }
 
+static bool FileExistsA(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    return f.good();
+}
+
+static bool IsLikelyFontBinary(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f.good()) return false;
+    unsigned char hdr[4] = {0};
+    f.read((char*)hdr, 4);
+    if (f.gcount() < 4) return false;
+
+    // TrueType/OpenType headers: 00 01 00 00, "OTTO", "true", "ttcf"
+    if (hdr[0] == 0x00 && hdr[1] == 0x01 && hdr[2] == 0x00 && hdr[3] == 0x00) return true;
+    if (hdr[0] == 'O' && hdr[1] == 'T' && hdr[2] == 'T' && hdr[3] == 'O') return true;
+    if (hdr[0] == 't' && hdr[1] == 'r' && hdr[2] == 'u' && hdr[3] == 'e') return true;
+    if (hdr[0] == 't' && hdr[1] == 't' && hdr[2] == 'c' && hdr[3] == 'f') return true;
+    return false;
+}
+
+static std::string GetBridgeDir() {
+    size_t pos = g_logPath.find_last_of("\\/");
+    if (pos == std::string::npos) return ".";
+    return g_logPath.substr(0, pos);
+}
+
 // ===================== JNI HELPERS (ported from 1.8.9 bridge) =====================
 static std::string GetClassNameFromClass(JNIEnv* env, jclass cls) {
     if (!cls) return "";
@@ -3103,6 +3144,104 @@ static bool IsInWorldNow(JNIEnv* env) {
     return true;
 }
 
+static void EnsureHudTextFields(JNIEnv* env, jclass mcCls, jobject hudObj) {
+    if (!env || !mcCls) return;
+
+    if (!g_inGameHudField_121) {
+        g_inGameHudField_121 = env->GetFieldID(mcCls, "field_1705", "Lnet/minecraft/class_329;");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_inGameHudField_121 = nullptr; }
+        if (!g_inGameHudField_121) {
+            g_inGameHudField_121 = env->GetFieldID(mcCls, "inGameHud", "Lnet/minecraft/class_329;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_inGameHudField_121 = nullptr; }
+        }
+    }
+
+    if (!hudObj) return;
+    if (!g_hudTextFields_121.empty()) return;
+    DWORD now = GetTickCount();
+    if (now - g_lastHudTextProbeMs < 2000) return;
+    g_lastHudTextProbeMs = now;
+
+    jclass hudCls = env->GetObjectClass(hudObj);
+    if (!hudCls || env->ExceptionCheck()) { env->ExceptionClear(); return; }
+
+    auto addHudTextField = [&](const char* name) {
+        jfieldID fid = env->GetFieldID(hudCls, name, "Lnet/minecraft/class_2561;");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); fid = nullptr; }
+        if (!fid) return;
+        for (auto existing : g_hudTextFields_121)
+            if (existing == fid) return;
+        g_hudTextFields_121.push_back(fid);
+    };
+
+    const char* knownNames[] = {
+        "field_2015",      // common overlay/action bar text field
+        "overlayMessage",
+        "field_2014",
+        "title",
+        "subtitle",
+        nullptr
+    };
+    for (int i = 0; knownNames[i]; i++) addHudTextField(knownNames[i]);
+
+    if (g_hudTextFields_121.empty()) {
+        jclass cClass = env->FindClass("java/lang/Class");
+        jclass cField = env->FindClass("java/lang/reflect/Field");
+        jclass cMod = env->FindClass("java/lang/reflect/Modifier");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); cClass = nullptr; cField = nullptr; cMod = nullptr; }
+        if (cClass && cField && cMod) {
+            jmethodID mGetFields = env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
+            jmethodID mFName = env->GetMethodID(cField, "getName", "()Ljava/lang/String;");
+            jmethodID mFType = env->GetMethodID(cField, "getType", "()Ljava/lang/Class;");
+            jmethodID mFMod  = env->GetMethodID(cField, "getModifiers", "()I");
+            jmethodID mIsStatic = env->GetStaticMethodID(cMod, "isStatic", "(I)Z");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); mGetFields = nullptr; }
+
+            if (mGetFields && mFName && mFType && mFMod && mIsStatic) {
+                jobjectArray fields = (jobjectArray)env->CallObjectMethod(hudCls, mGetFields);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); fields = nullptr; }
+                if (fields) {
+                    jsize count = env->GetArrayLength(fields);
+                    for (jsize i = 0; i < count; i++) {
+                        jobject fld = env->GetObjectArrayElement(fields, i);
+                        if (!fld) continue;
+
+                        jint mod = env->CallIntMethod(fld, mFMod);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); env->DeleteLocalRef(fld); continue; }
+                        if (env->CallStaticBooleanMethod(cMod, mIsStatic, mod) == JNI_TRUE) {
+                            env->DeleteLocalRef(fld);
+                            continue;
+                        }
+
+                        jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); ft = nullptr; }
+                        std::string typeName = ft ? GetClassNameFromClass(env, ft) : "";
+                        if (ft) env->DeleteLocalRef(ft);
+                        if (typeName != "net.minecraft.class_2561") { env->DeleteLocalRef(fld); continue; }
+
+                        jstring jfn = (jstring)env->CallObjectMethod(fld, mFName);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); jfn = nullptr; }
+                        if (!jfn) { env->DeleteLocalRef(fld); continue; }
+                        const char* cfn = env->GetStringUTFChars(jfn, nullptr);
+                        std::string fn = cfn ? cfn : "";
+                        if (cfn) env->ReleaseStringUTFChars(jfn, cfn);
+                        env->DeleteLocalRef(jfn);
+
+                        if (!fn.empty()) addHudTextField(fn.c_str());
+                        env->DeleteLocalRef(fld);
+                    }
+                    env->DeleteLocalRef(fields);
+                }
+            }
+        }
+        if (cClass) env->DeleteLocalRef(cClass);
+        if (cField) env->DeleteLocalRef(cField);
+        if (cMod) env->DeleteLocalRef(cMod);
+    }
+
+    env->DeleteLocalRef(hudCls);
+}
+
 static void UpdateJniState() {
     if (!g_stateJniReady || !g_jvm || !g_mcInstance || !g_screenField) return;
     JNIEnv* env = nullptr;
@@ -3114,6 +3253,7 @@ static void UpdateJniState() {
     bool guiOpen = (scr != nullptr);
     bool inWorld = false;
     std::string screenName;
+    std::string actionBarText;
     if (scr) {
         // Build a name chain: "thisClass|super1|super2...".
         // This makes C# GUI detection robust even when only base classes are known.
@@ -3284,10 +3424,34 @@ static void UpdateJniState() {
             } else env->ExceptionClear();
         }
 
+        if (inWorld) {
+            EnsureHudTextFields(env, mcCls, nullptr);
+            if (g_inGameHudField_121) {
+                jobject hudObj = env->GetObjectField(g_mcInstance, g_inGameHudField_121);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); hudObj = nullptr; }
+                if (hudObj) {
+                    EnsureHudTextFields(env, mcCls, hudObj);
+                    for (auto fid : g_hudTextFields_121) {
+                        jobject txtObj = env->GetObjectField(hudObj, fid);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); txtObj = nullptr; }
+                        if (!txtObj) continue;
+
+                        std::string txt = CallTextToString(env, txtObj);
+                        env->DeleteLocalRef(txtObj);
+                        if (txt.empty() || txt.find('_') == std::string::npos) continue;
+                        if (actionBarText.empty() || txt.size() > actionBarText.size())
+                            actionBarText = txt;
+                    }
+                    env->DeleteLocalRef(hudObj);
+                }
+            }
+        }
+
         env->DeleteLocalRef(mcCls);
 
         { LockGuard lk(g_jniStateMtx);
             g_jniScreenName = screenName;
+            g_jniActionBar = actionBarText;
             g_jniGuiOpen = guiOpen;
             g_jniInWorld = inWorld;
             g_jniLookingAtBlock = lookingAtBlock;
@@ -3299,6 +3463,7 @@ static void UpdateJniState() {
 
     { LockGuard lk(g_jniStateMtx);
         g_jniScreenName = screenName;
+        g_jniActionBar = actionBarText;
         g_jniGuiOpen = guiOpen;
         g_jniInWorld = inWorld;
         g_jniLookingAtBlock = lookingAtBlock;
@@ -3353,15 +3518,15 @@ static void ApplyStyle() {
     s.Colors[ImGuiCol_Border]           = ImVec4(0.17f,  0.17f,  0.19f,  1.0f);
     s.Colors[ImGuiCol_Text]             = ImVec4(0.93f,  0.94f,  0.96f,  1.0f);
     s.Colors[ImGuiCol_TextDisabled]     = ImVec4(0.45f,  0.46f,  0.50f,  1.0f);
-    s.Colors[ImGuiCol_Header]           = ImVec4(0.18f,  0.30f,  0.48f,  0.70f);
-    s.Colors[ImGuiCol_HeaderHovered]    = ImVec4(0.18f,  0.30f,  0.48f,  0.85f);
-    s.Colors[ImGuiCol_HeaderActive]     = ImVec4(0.20f,  0.35f,  0.55f,  1.00f);
+    s.Colors[ImGuiCol_Header]           = ImVec4(0.36f,  0.24f,  0.52f,  0.70f);
+    s.Colors[ImGuiCol_HeaderHovered]    = ImVec4(0.44f,  0.30f,  0.64f,  0.86f);
+    s.Colors[ImGuiCol_HeaderActive]     = ImVec4(0.52f,  0.34f,  0.74f,  1.00f);
     s.Colors[ImGuiCol_FrameBg]          = ImVec4(0.15f,  0.15f,  0.20f,  1.00f);
     s.Colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.20f,  0.20f,  0.28f,  1.00f);
     s.Colors[ImGuiCol_FrameBgActive]    = ImVec4(0.25f,  0.25f,  0.34f,  1.00f);
-    s.Colors[ImGuiCol_SliderGrab]       = ImVec4(0.40f,  0.60f,  0.90f,  1.00f);
-    s.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.55f,  0.75f,  1.00f,  1.00f);
-    s.Colors[ImGuiCol_CheckMark]        = ImVec4(0.55f,  0.80f,  1.00f,  1.00f);
+    s.Colors[ImGuiCol_SliderGrab]       = ImVec4(0.65f,  0.45f,  0.92f,  1.00f);
+    s.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.73f,  0.55f,  0.98f,  1.00f);
+    s.Colors[ImGuiCol_CheckMark]        = ImVec4(0.86f,  0.74f,  1.00f,  1.00f);
     s.Colors[ImGuiCol_Button]           = ImVec4(0.22f,  0.12f,  0.14f,  0.90f);
     s.Colors[ImGuiCol_ButtonHovered]    = ImVec4(0.65f,  0.12f,  0.18f,  1.00f);
     s.Colors[ImGuiCol_ButtonActive]     = ImVec4(0.80f,  0.15f,  0.20f,  1.00f);
@@ -3462,7 +3627,7 @@ static void RenderClickGUI() {
     ImGui::BeginChild("##sidebar", ImVec2(SIDE_W, PANEL_H), false);
     ImGui::SetCursorPosY(8);
     auto catStyle = [](bool sel) {
-        if (sel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.85f, 1.0f, 1.0f));
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.64f, 1.0f, 1.0f));
         else     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.82f, 0.85f, 1.0f));
     };
     catStyle(selCategory == 0);
@@ -3505,11 +3670,13 @@ static void RenderClickGUI() {
     if (selCategory == 0) {
         // Combat
         ModuleRow("ac",   "AutoClicker",   cfg.armed,      0, "toggleArmed");
+        ModuleRow("aa",   "Aim Assist",    cfg.aimAssist,  1, "toggleAimAssist");
     } else {
         // Render
         ModuleRow("ce",  "Chest ESP",      cfg.chestEsp,   0, "toggleChestEsp");
         ModuleRow("nt",  "Nametags",       cfg.nametags,   1, "toggleNametags");
         ModuleRow("cp",  "Closest Player", cfg.closestPlayer, 2, "toggleClosestPlayerInfo");
+        ModuleRow("gtb", "GTB Helper",     cfg.gtbHelper,  3, "toggleGtbHelper");
     }
     ImGui::EndChild();
 
@@ -3518,7 +3685,7 @@ static void RenderClickGUI() {
     ImGui::SetCursorPos(ImVec2(setX, PANEL_Y));
     ImGui::BeginChild("##settings", ImVec2(SET_W, PANEL_H), false);
     ImGui::SetCursorPos(ImVec2(8, 6));
-    ImGui::TextColored(ImVec4(0.0f, 0.84f, 0.70f, 1.0f), "Settings");
+    ImGui::TextColored(ImVec4(0.78f, 0.64f, 1.0f, 1.0f), "Settings");
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -3549,7 +3716,7 @@ static void RenderClickGUI() {
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.55f, 0.80f, 1.00f, 1.0f), "Right Click");
+        ImGui::TextColored(ImVec4(0.78f, 0.64f, 1.0f, 1.0f), "Right Click");
 
         bool rc = cfg.rightClick;
         if (ImGui::Checkbox("Enable Right Click", &rc)) SendCmd("toggleRight");
@@ -3567,6 +3734,11 @@ static void RenderClickGUI() {
             if (ImGui::Checkbox("Block Only", &rbo)) SendCmd("toggleRightBlockOnly");
         }
 
+    } else if (selCategory == 0 && selModule == 1) {
+        bool aa = cfg.aimAssist;
+        if (ImGui::Checkbox("Enable Aim Assist", &aa)) SendCmd("toggleAimAssist");
+        ImGui::TextDisabled("Adjust FOV/range/strength in Control Center.");
+
     } else if (selCategory == 1 && selModule == 0) {
         ImGui::TextDisabled("No extra settings.");
 
@@ -3578,6 +3750,8 @@ static void RenderClickGUI() {
 
     } else if (selCategory == 1 && selModule == 2) {
         ImGui::TextDisabled("No extra settings.");
+    } else if (selCategory == 1 && selModule == 3) {
+        ImGui::TextDisabled("In-game hint panel only.");
     }
 
     ImGui::EndChild();
@@ -3728,7 +3902,7 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
             if (inWorldNow) {
                 if (cfg.closestPlayer)
                     UpdateClosestPlayerOverlay(env);
-                if (cfg.nametags || cfg.closestPlayer)
+                if (cfg.nametags || cfg.closestPlayer || cfg.aimAssist)
                     UpdatePlayerListOverlay(env);
                 if (cfg.chestEsp)
                     UpdateChestList(env);
@@ -3800,11 +3974,38 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
         io.Fonts->Clear();
         ImFontConfig fontCfg;
         fontCfg.RasterizerDensity = 1.0f;
-        fontCfg.SizePixels = 13.0f * dpiScale;
+        fontCfg.SizePixels = 16.0f * dpiScale;
         fontCfg.OversampleH = 3;
         fontCfg.OversampleV = 2;
         fontCfg.PixelSnapH = true;
-        io.Fonts->AddFontDefault(&fontCfg);
+        ImFont* loadedFont = nullptr;
+        std::string bridgeDir = GetBridgeDir();
+        std::vector<std::string> fontCandidates = {
+            bridgeDir + "\\minecraftia.ttf",
+            bridgeDir + "\\Minecraftia.ttf",
+            bridgeDir + "\\Data\\minecraftia.ttf",
+            bridgeDir + "\\Data\\Minecraftia.ttf",
+            "C:\\Windows\\Fonts\\minecraftia.ttf",
+            "C:\\Windows\\Fonts\\Minecraftia.ttf"
+        };
+
+        for (const auto& fontPath : fontCandidates) {
+            if (!FileExistsA(fontPath)) continue;
+            if (!IsLikelyFontBinary(fontPath)) {
+                Log("Skipping invalid font file (not binary TTF/OTF): " + fontPath);
+                continue;
+            }
+            loadedFont = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), fontCfg.SizePixels, &fontCfg);
+            if (loadedFont) {
+                Log("Loaded ImGui font: " + fontPath);
+                break;
+            }
+        }
+
+        if (!loadedFont) {
+            io.Fonts->AddFontDefault(&fontCfg);
+            Log("Minecraftia not found, using default ImGui font.");
+        }
         io.FontGlobalScale = 1.0f;
         ImGuiStyle& st = ImGui::GetStyle();
         st.ScaleAllSizes(dpiScale);
@@ -4340,6 +4541,55 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 }
             } // cfg.chestEsp
 
+            if (cfg.gtbHelper) {
+                std::string hint = cfg.gtbHint;
+                std::string preview = cfg.gtbPreview;
+                if (hint.empty() || hint == "-") hint = "waiting for hint...";
+                if (preview == "-") preview.clear();
+
+                std::vector<std::string> lines;
+                if (!preview.empty()) {
+                    std::stringstream ss(preview);
+                    std::string part;
+                    while (std::getline(ss, part, ',')) {
+                        size_t b = part.find_first_not_of(' ');
+                        size_t e = part.find_last_not_of(' ');
+                        if (b == std::string::npos || e == std::string::npos) continue;
+                        std::string clean = part.substr(b, e - b + 1);
+                        if (clean.size() > 56) clean = clean.substr(0, 56) + "...";
+                        lines.push_back(clean);
+                    }
+                    if (lines.empty()) lines.push_back(preview);
+                }
+
+                const int maxLines = 8;
+                if ((int)lines.size() > maxLines) {
+                    lines.resize(maxLines);
+                    if (!lines.empty()) lines.back() += " ...";
+                }
+
+                const float panelW = (std::min)(360.0f, io.DisplaySize.x - 20.0f);
+                const float lineH = ImGui::GetFontSize() + 2.0f;
+                const float panelH = 18.0f + lineH + (lines.empty() ? 0.0f : (8.0f + lineH * (float)lines.size())) + 10.0f;
+                const float x1 = io.DisplaySize.x - 10.0f;
+                const float y1 = io.DisplaySize.y - 10.0f;
+                const float x0 = (std::max)(10.0f, x1 - panelW);
+                const float y0 = (std::max)(10.0f, y1 - panelH);
+
+                fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 150), 5.0f);
+                fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 210, 90, 220), 5.0f, 0, 1.2f);
+
+                char hintBuf[320];
+                snprintf(hintBuf, sizeof(hintBuf), "GTB: %s (%d)", hint.c_str(), (std::max)(0, cfg.gtbCount));
+                fg->AddText(ImVec2(x0 + 9.0f, y0 + 8.0f), IM_COL32(255, 226, 150, 245), hintBuf);
+
+                float y = y0 + 8.0f + lineH + 6.0f;
+                for (const auto& line : lines) {
+                    std::string row = "- " + line;
+                    fg->AddText(ImVec2(x0 + 10.0f, y), IM_COL32(240, 240, 240, 235), row.c_str());
+                    y += lineH;
+                }
+            }
 
             // Module list (top-right) - original-like (right aligned colored bars)
             struct ModLine { const char* text; ImU32 accent; float width; };
@@ -4363,8 +4613,10 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             if (cfg.clickInChests) pushMod("Click in Chests", IM_COL32(50, 200, 220, 255));
             if (cfg.closestPlayer) pushMod("Closest Player", IM_COL32(60, 170, 255, 255));
             if (cfg.rightClick)    pushMod("Rightclick", IM_COL32(255, 170, 60, 255));
+            if (cfg.aimAssist)    pushMod("Aim Assist", IM_COL32(167, 125, 255, 255));
             if (cfg.chestEsp)      pushMod("Chest ESP", IM_COL32(120, 120, 255, 255));
             if (cfg.nametags)      pushMod("Nametags", IM_COL32(185, 85, 255, 255));
+            if (cfg.gtbHelper)     pushMod("GTB Helper", IM_COL32(255, 210, 90, 255));
             if (cfg.jitter)        pushMod("Jitter", IM_COL32(255, 80, 120, 255));
             if (cfg.breakBlocks)   pushMod("Break Blocks", IM_COL32(220, 220, 220, 255));
 
@@ -4530,12 +4782,14 @@ glfw_done:;
             // Send state
             {
                 std::string sn;
+                std::string actionBar;
                 bool jniGui;
                 bool lookBlock;
                 bool breakBlock;
                 bool holdBlock;
                 { LockGuard lk(g_jniStateMtx);
                     sn = g_jniScreenName;
+                    actionBar = g_jniActionBar;
                     jniGui = g_jniGuiOpen;
                     lookBlock = g_jniLookingAtBlock;
                     breakBlock = g_jniBreakingBlock;
@@ -4549,19 +4803,112 @@ glfw_done:;
                 // JSON-escape the screen name
                 std::string snEsc;
                 for (char c : sn) { if (c == '"' || c == '\\') snEsc += '\\'; snEsc += c; }
+                std::string actionEsc;
+                for (char c : actionBar) { if (c == '"' || c == '\\') actionEsc += '\\'; actionEsc += c; }
 
-                char stateBuf[512];
-                snprintf(stateBuf, sizeof(stateBuf),
-                    "{\"type\":\"state\",\"guiOpen\":%s"
-                    ",\"screenName\":\"%s\""
-                    ",\"health\":20,\"posX\":0,\"posY\":0,\"posZ\":0"
-                    ",\"holdingBlock\":%s,\"lookingAtBlock\":%s,\"breakingBlock\":%s,\"entities\":[]}\n",
-                    anyGui ? "true" : "false",
-                    snEsc.c_str(),
-                    holdBlock ? "true" : "false",
-                    lookBlock ? "true" : "false",
-                    breakBlock ? "true" : "false");
-                std::string state = stateBuf;
+                std::vector<PlayerData121> players;
+                { LockGuard lk(g_playerListMutex); players = g_playerList; }
+
+                BgCamState camState;
+                { LockGuard lk(g_bgCamMutex); camState = g_bgCamState; }
+
+                int winW = 1920, winH = 1080;
+                if (g_hwnd && IsWindow(g_hwnd)) {
+                    RECT rc{};
+                    if (GetClientRect(g_hwnd, &rc)) {
+                        winW = (std::max)(1, (int)(rc.right - rc.left));
+                        winH = (std::max)(1, (int)(rc.bottom - rc.top));
+                    }
+                }
+
+                std::string state;
+                state.reserve(4096);
+                state += "{\"type\":\"state\",\"guiOpen\":";
+                state += anyGui ? "true" : "false";
+                state += ",\"screenName\":\"";
+                state += snEsc;
+                state += "\",\"actionBar\":\"";
+                state += actionEsc;
+                state += "\",\"health\":20,\"posX\":0,\"posY\":0,\"posZ\":0";
+                state += ",\"holdingBlock\":";
+                state += holdBlock ? "true" : "false";
+                state += ",\"lookingAtBlock\":";
+                state += lookBlock ? "true" : "false";
+                state += ",\"breakingBlock\":";
+                state += breakBlock ? "true" : "false";
+                state += ",\"entities\":[";
+
+                bool first = true;
+                LegoVec3 camPos = { camState.camX, camState.camY, camState.camZ };
+                for (const auto& p : players) {
+                    float sx = -1.0f, sy = -1.0f;
+                    bool projected = false;
+
+                    if (camState.camFound) {
+                        auto projectPoint = [&](const LegoVec3& pos, float* outX, float* outY) -> bool {
+                            return camState.matsOk
+                                ? WorldToScreen(pos, camPos, camState.view, camState.proj, winW, winH, outX, outY)
+                                : WorldToScreen_Angles(pos, camPos, camState.yaw, camState.pitch, 70.0f, winW, winH, outX, outY);
+                        };
+
+                        // Aim-assist target point: closest projected point on player's body box to screen center.
+                        const double halfW = 0.30;
+                        const double xOffsets[3] = { -halfW, 0.0, halfW };
+                        const double zOffsets[3] = { -halfW, 0.0, halfW };
+                        const double yOffsets[5] = { 0.15, 0.55, 0.95, 1.35, 1.75 };
+                        const double centerX = winW * 0.5;
+                        const double centerY = winH * 0.5;
+
+                        double bestScore = 1e30;
+                        float bestSx = -1.0f, bestSy = -1.0f;
+                        bool bestFound = false;
+                        for (double yo : yOffsets) {
+                            for (double xo : xOffsets) {
+                                for (double zo : zOffsets) {
+                                    LegoVec3 bodyPoint = { p.ex + xo, p.ey + yo, p.ez + zo };
+                                    float tx = -1.0f, ty = -1.0f;
+                                    if (!projectPoint(bodyPoint, &tx, &ty)) continue;
+                                    double dx = tx - centerX;
+                                    double dy = ty - centerY;
+                                    double score = dx * dx + dy * dy;
+                                    if (score < bestScore) {
+                                        bestScore = score;
+                                        bestSx = tx;
+                                        bestSy = ty;
+                                        bestFound = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (bestFound) {
+                            sx = bestSx;
+                            sy = bestSy;
+                            projected = true;
+                        } else {
+                            LegoVec3 fallbackPos = { p.ex, p.ey + 1.575, p.ez };
+                            projected = projectPoint(fallbackPos, &sx, &sy);
+                        }
+                    }
+
+                    std::string nameEsc;
+                    for (char c : p.name) { if (c == '"' || c == '\\') nameEsc += '\\'; nameEsc += c; }
+
+                    if (!first) state += ",";
+                    first = false;
+                    state += "{\"sx\":";
+                    state += std::to_string(projected ? sx : -1.0f);
+                    state += ",\"sy\":";
+                    state += std::to_string(projected ? sy : -1.0f);
+                    state += ",\"dist\":";
+                    state += std::to_string(p.dist);
+                    state += ",\"name\":\"";
+                    state += nameEsc;
+                    state += "\",\"hp\":";
+                    state += std::to_string(p.hp);
+                    state += "}";
+                }
+                state += "]}\n";
                 send(cli, state.c_str(), (int)state.size(), 0);
             }
 
