@@ -26,7 +26,7 @@ A Minecraft utility client for Lunar Client. Supports **1.8.9** and **1.21.11** 
 ## Requirements
 
 - Windows 10/11 x64
-- [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (build only)
 - [Lunar Client](https://www.lunarclient.com/) (tested on Java Minecraft **1.8.9** and **1.21.11**)
 - MinGW-w64 (for building the DLL — not needed to run)
 
@@ -59,13 +59,15 @@ Requires MinGW-w64 at `C:\mingw64\mingw64\bin\g++.exe` and JDK 17 headers at `C:
 ```bat
 cd LegoClickerCS
 dotnet build
-dotnet run
+dotnet publish -c Release
 ```
+
+`dotnet publish -c Release` creates a **self-contained win-x64** release, so end users can run `LegoClicker.exe` without installing .NET.
 
 ## Usage
 
 1. Launch Lunar Client with the JVM flags above
-2. Run `LegoClicker.exe` (or `dotnet run` from `LegoClickerCS/`)
+2. Run `LegoClicker.exe` from `LegoClickerCS\bin\Release\net8.0-windows\win-x64\publish\`
 3. Click **Inject / Connect** in the loader window
 4. For **1.8.9**, press **Insert** in-game to open internal ClickGUI
 5. For **1.21.11**, use the external control center window after connect
