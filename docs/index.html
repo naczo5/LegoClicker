@@ -28,9 +28,9 @@
   <!-- HERO -->
   <section class="hero">
     <div class="hero-content">
-      <div class="badge">LUNAR CLIENT 1.8.9 &nbsp;|&nbsp; INJECTABLE</div>
+      <div class="badge">LUNAR CLIENT 1.8.9 + 1.21.11 &nbsp;|&nbsp; AUTO DETECT</div>
       <h1>LEGO<span class="accent">CLICKER</span></h1>
-      <p class="tagline">fully vibe coded minecraft utility client.<br>injected directly into lunar client. no bullshit.</p>
+      <p class="tagline">dual-version lunar utility client.<br>1.8.9 internal gui + 1.21.11 external control center.</p>
       <div class="hero-btns">
         <a href="#download" class="btn-primary">GET CLIENT</a>
         <a href="#features" class="btn-ghost">VIEW FEATURES</a>
@@ -56,7 +56,7 @@
     <div class="section-header">
       <span class="section-tag">// MODULES</span>
       <h2>Features</h2>
-      <p>every module vibed into existence from scratch</p>
+      <p>modernized modules for both legacy and latest lunar flows</p>
     </div>
 
     <div class="categories">
@@ -74,35 +74,63 @@
         <div class="cat-title"><span class="cat-icon">👁</span> Render</div>
         <div class="feature-card">
           <div class="feat-name">Nametags</div>
-          <div class="feat-desc">Renders player name, health bar and armor points above entities. Color-coded with chroma cycling or custom accent hue support.</div>
+          <div class="feat-desc">Renders player name tags with health/armor overlays and smoother movement updates to reduce visual jitter while tracking targets.</div>
           <div class="feat-tags"><span>Health Bar</span><span>Armor</span><span>Chroma</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">Closest Player HUD</div>
-          <div class="feat-desc">Compact panel above the hotbar showing the nearest player's name, distance, direction (Front / Left / Right / Back), health, and held item.</div>
-          <div class="feat-tags"><span>Distance</span><span>Direction</span><span>Held Item</span></div>
+          <div class="feat-desc">Compact panel above the hotbar showing nearest player info, including 4-way direction arrow, distance, health, armor and held item.</div>
+          <div class="feat-tags"><span>Distance</span><span>4-Way Arrow</span><span>Held Item</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">Chest ESP</div>
-          <div class="feat-desc">Highlights chests through walls with colored outlines and distance labels rendered at the block position.</div>
-          <div class="feat-tags"><span>Through Walls</span><span>Distance</span></div>
+          <div class="feat-desc">Highlights nearest chests with capped render count, smoothing, and distance culling for cleaner visual tracking.</div>
+          <div class="feat-tags"><span>Through Walls</span><span>Nearest Priority</span><span>Capped Render</span></div>
         </div>
       </div>
 
       <div class="category">
         <div class="cat-title"><span class="cat-icon">⚙</span> GUI / Misc</div>
         <div class="feature-card">
-          <div class="feat-name">In-Game ClickGUI<span class="feat-bind">Right Shift</span></div>
-          <div class="feat-desc">Draggable internal panel with Combat and Render categories. Per-module sliders, toggles, and keybind capture — all inside the game, no alt-tab needed.</div>
-          <div class="feat-tags"><span>Draggable</span><span>Per-module keybinds</span><span>Sliders</span></div>
+          <div class="feat-name">1.8.9 Internal ClickGUI<span class="feat-bind">Insert</span></div>
+          <div class="feat-desc">Classic in-game internal panel for 1.8.9 with module toggles and settings directly on render overlay.</div>
+          <div class="feat-tags"><span>In-Game</span><span>Internal</span><span>Fast Toggle</span></div>
         </div>
         <div class="feature-card">
-          <div class="feat-name">Profiles</div>
+          <div class="feat-name">1.21.11 External Control Center</div>
+          <div class="feat-desc">Dedicated external WPF control center for 1.21.11 with modern module layout, keybind controls, and live config sync.</div>
+          <div class="feat-tags"><span>External UI</span><span>Module Switches</span><span>Keybind UI</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Profiles + Keybinds</div>
           <div class="feat-desc">JSON profiles saved to <code>%AppData%\LegoClicker\profiles\</code>. Auto-saves on close, auto-loads on startup.</div>
-          <div class="feat-tags"><span>JSON</span><span>Auto-save</span></div>
+          <div class="feat-tags"><span>JSON</span><span>Auto-save</span><span>Per-module keys</span></div>
         </div>
       </div>
 
+    </div>
+  </section>
+
+  <!-- SCREENSHOTS -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-tag">// PREVIEW</span>
+      <h2>Screenshots</h2>
+      <p>1.8.9 internal flow + 1.21.11 external control center</p>
+    </div>
+    <div class="shots-grid">
+      <figure class="shot-card">
+        <img src="screenshots/gameplay.png" alt="Gameplay HUD on Lunar Client 1.8.9" loading="lazy" />
+        <figcaption>1.8.9 gameplay HUD overlays</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img src="screenshots/clickgui.png" alt="Internal ClickGUI on Lunar Client 1.8.9" loading="lazy" />
+        <figcaption>1.8.9 internal ClickGUI</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img src="screenshots/121_gui.png" alt="External control center for Lunar Client 1.21.11" loading="lazy" />
+        <figcaption>1.21.11 external control center</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -120,14 +148,14 @@
         <div class="status-label">WORKING</div>
       </div>
       <div class="status-card">
+        <div class="status-name">Lunar Client 1.21.11</div>
+        <div class="status-dot dot-green"></div>
+        <div class="status-label">WORKING</div>
+      </div>
+      <div class="status-card">
         <div class="status-name">Watchdog (Hypixel)</div>
         <div class="status-dot dot-yellow"></div>
         <div class="status-label">USE AT OWN RISK</div>
-      </div>
-      <div class="status-card">
-        <div class="status-name">Screenshare</div>
-        <div class="status-dot dot-green"></div>
-        <div class="status-label">EXTERNAL</div>
       </div>
       <div class="status-card">
         <div class="status-name">AntiCheat (Generic)</div>
@@ -135,7 +163,7 @@
         <div class="status-label">VARIES</div>
       </div>
     </div>
-    <p class="status-note">* AutoClicker uses <strong>Windows SendInput</strong> — hardware-level, external process. No game code is modified. All visuals are rendered via OpenGL SwapBuffers hook.</p>
+    <p class="status-note">* GUI mode split: <strong>1.8.9 = internal in-game ClickGUI</strong>, <strong>1.21.11 = external control center</strong>. AutoClicker still uses Windows <strong>SendInput</strong> and visuals are rendered via SwapBuffers hook.</p>
   </section>
 
   <!-- HOW IT WORKS -->
@@ -149,7 +177,7 @@
       <div class="arch-step">
         <div class="arch-num">01</div>
         <div class="arch-title">C# Loader</div>
-        <div class="arch-desc">A lightweight WPF launcher finds the <code>javaw.exe</code> process (Lunar Client) and injects <code>bridge.dll</code> via <code>CreateRemoteThread + LoadLibraryA</code>. Hosts system-wide input hooks for keybind dispatch.</div>
+          <div class="arch-desc">A lightweight WPF launcher finds the <code>javaw.exe</code> process and auto-selects <code>bridge.dll</code> (1.8.9) or <code>bridge_121.dll</code> (1.21.11) via <code>CreateRemoteThread + LoadLibraryA</code>.</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-step">
@@ -161,7 +189,7 @@
       <div class="arch-step">
         <div class="arch-num">03</div>
         <div class="arch-title">TCP Bridge</div>
-        <div class="arch-desc">Game state (entities, health, screen name) is streamed to the loader at ~20Hz over TCP port 25590. Config changes and commands are pushed back at ~5Hz. Zero packet modification — purely read-only game state.</div>
+          <div class="arch-desc">Game state is streamed to the loader over TCP port 25590. Config + module keybind state are pushed back continuously. Zero packet modification — purely read-only game state.</div>
       </div>
     </div>
   </section>
@@ -178,7 +206,7 @@
         <ul class="req-list">
           <li><span class="dot-green-sm">●</span> Windows 10/11 x64</li>
           <li><span class="dot-green-sm">●</span> .NET 8.0 Runtime</li>
-          <li><span class="dot-green-sm">●</span> Lunar Client (Java 1.8.9)</li>
+          <li><span class="dot-green-sm">●</span> Lunar Client (Java 1.8.9 or 1.21.11)</li>
           <li><span class="dot-yellow-sm">●</span> MinGW-w64 (build only)</li>
         </ul>
       </div>
@@ -193,7 +221,8 @@
           <li>Launch Lunar Client with JVM flags</li>
           <li>Run <code>LegoClicker.exe</code></li>
           <li>Click <strong>Inject / Connect</strong></li>
-          <li>Press <strong>Right Shift</strong> in-game for ClickGUI</li>
+          <li>Use <strong>Insert</strong> for 1.8.9 internal ClickGUI</li>
+          <li>For 1.21.11, use the external control center window</li>
           <li>Press <strong>backtick (` )</strong> to toggle autoclicker</li>
         </ol>
       </div>
@@ -210,7 +239,7 @@
     <div class="dl-box">
       <div class="dl-info">
         <div class="dl-row"><span>Version</span><span class="dl-val">latest (main)</span></div>
-        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.8.9</span></div>
+        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.8.9 / 1.21.11</span></div>
         <div class="dl-row"><span>Platform</span><span class="dl-val">Windows x64</span></div>
         <div class="dl-row"><span>License</span><span class="dl-val">Open Source</span></div>
       </div>

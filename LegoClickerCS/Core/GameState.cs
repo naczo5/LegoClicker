@@ -28,6 +28,9 @@ public class GameState
     [JsonPropertyName("lookingAtBlock")]
     public bool LookingAtBlock { get; set; }
 
+    [JsonPropertyName("breakingBlock")]
+    public bool BreakingBlock { get; set; }
+
     [JsonPropertyName("posX")]
     public double PosX { get; set; }
 

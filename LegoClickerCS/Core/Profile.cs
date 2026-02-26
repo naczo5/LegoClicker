@@ -24,11 +24,18 @@ public class Profile
     public bool ClosestPlayerInfoEnabled { get; set; } = false;
     public bool NametagShowHealth { get; set; } = true;
     public bool NametagShowArmor { get; set; } = true;
+    public bool NametagShowHeldItem { get; set; } = true;
+    public int NametagMaxCount { get; set; } = 8;
 
     public bool ChestEspEnabled { get; set; } = false;
+    public int ChestEspMaxCount { get; set; } = 5;
     public Dictionary<string, int> ModuleKeys { get; set; } = new()
     {
         ["autoclicker"]   = 0xC0,
+        ["rightclick"]    = 0,
+        ["jitter"]        = 0,
+        ["clickinchests"] = 0,
+        ["breakblocks"]   = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
@@ -124,7 +131,10 @@ public static class ProfileManager
             ClosestPlayerInfoEnabled = clicker.ClosestPlayerInfoEnabled,
             NametagShowHealth = clicker.NametagShowHealth,
             NametagShowArmor = clicker.NametagShowArmor,
+            NametagShowHeldItem = clicker.NametagShowHeldItem,
+            NametagMaxCount = clicker.NametagMaxCount,
             ChestEspEnabled = clicker.ChestEspEnabled,
+            ChestEspMaxCount = clicker.ChestEspMaxCount,
             ModuleKeys = new Dictionary<string, int>(InputHooks.ModuleKeys),
             Theme = ThemeManager.CurrentTheme
         };
@@ -148,7 +158,10 @@ public static class ProfileManager
         clicker.ClosestPlayerInfoEnabled = profile.ClosestPlayerInfoEnabled;
         clicker.NametagShowHealth = profile.NametagShowHealth;
         clicker.NametagShowArmor = profile.NametagShowArmor;
+        clicker.NametagShowHeldItem = profile.NametagShowHeldItem;
+        clicker.NametagMaxCount = profile.NametagMaxCount;
         clicker.ChestEspEnabled = profile.ChestEspEnabled;
+        clicker.ChestEspMaxCount = profile.ChestEspMaxCount;
         foreach (var kvp in profile.ModuleKeys)
             InputHooks.SetModuleKey(kvp.Key, kvp.Value);
         ThemeManager.ApplyTheme(profile.Theme);

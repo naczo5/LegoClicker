@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using LegoClickerCS;
 
 namespace LegoClickerCS.Core;
 
@@ -29,6 +30,9 @@ public class GameStateClient : INotifyPropertyChanged
     private bool _isConnected;
     private bool _isInjected;
     private string _statusMessage = "Not injected";
+    private string _injectedVersion = "1.8.9";
+    private int _injectionProgress;
+    private bool _isInjectionInProgress;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action? StateUpdated;
@@ -58,6 +62,13 @@ public class GameStateClient : INotifyPropertyChanged
                 _isConnected = value;
                 OnPropertyChanged(nameof(IsConnected));
                 OnPropertyChanged(nameof(StatusMessage));
+                if (value)
+                {
+                    _isInjectionInProgress = false;
+                    _injectionProgress = 100;
+                    OnPropertyChanged(nameof(IsInjectionInProgress));
+                    OnPropertyChanged(nameof(InjectionProgress));
+                }
             }
         }
     }
@@ -91,6 +102,53 @@ public class GameStateClient : INotifyPropertyChanged
         }
     }
 
+    public string InjectedVersion
+    {
+        get => _injectedVersion;
+        private set
+        {
+            if (_injectedVersion != value)
+            {
+                _injectedVersion = value;
+                OnPropertyChanged(nameof(InjectedVersion));
+            }
+        }
+    }
+
+    public int InjectionProgress
+    {
+        get => _injectionProgress;
+        private set
+        {
+            int clamped = Math.Clamp(value, 0, 100);
+            if (_injectionProgress != clamped)
+            {
+                _injectionProgress = clamped;
+                OnPropertyChanged(nameof(InjectionProgress));
+            }
+        }
+    }
+
+    public bool IsInjectionInProgress
+    {
+        get => _isInjectionInProgress;
+        private set
+        {
+            if (_isInjectionInProgress != value)
+            {
+                _isInjectionInProgress = value;
+                OnPropertyChanged(nameof(IsInjectionInProgress));
+            }
+        }
+    }
+
+    private void SetInjectionStage(int progress, string stageText)
+    {
+        IsInjectionInProgress = true;
+        InjectionProgress = progress;
+        StatusMessage = $"{stageText} ({InjectionProgress}%)";
+    }
+
     // === Injection ===
 
     /// <summary>
@@ -101,70 +159,104 @@ public class GameStateClient : INotifyPropertyChanged
     /// Uses the same method name to keep compatibility with existing UI calls,
     /// but functionally it's now a "Connect" operation.
     /// </summary>
-    public async Task<bool> InjectAsync()
+    public async Task<bool> InjectAsync(string version = "auto")
     {
         if (IsInjected || IsConnected)
         {
             StatusMessage = "Already connected/injected";
+            IsInjectionInProgress = false;
+            InjectionProgress = 100;
             return true;
         }
 
-        StatusMessage = "Connecting...";
+        var mcProcess = FindMinecraftProcess();
+        string resolvedVersion = ResolveInjectionVersion(version, mcProcess);
+
+        SetInjectionStage(5, "Checking existing bridge");
 
         // 1. Try to connect directly (assuming already injected)
-        await ConnectAsync();
+        await ConnectAsync(
+            maxAttempts: 8,
+            onAttempt: (attempt, total) =>
+            {
+                int mapped = 5 + (attempt * 15 / total);
+                SetInjectionStage(mapped, $"Checking existing bridge ({attempt}/{total})");
+            },
+            reportFailure: false);
 
         if (IsConnected)
         {
             IsInjected = true;
+            InjectedVersion = resolvedVersion;
+            IsInjectionInProgress = false;
+            InjectionProgress = 100;
             return true;
         }
 
         // 2. Inject Native Bridge
-        StatusMessage = "Injecting bridge...";
-        var mcProcess = FindMinecraftProcess();
+        SetInjectionStage(20, "Injecting bridge");
         if (mcProcess == null)
         {
             StatusMessage = "ERROR: Minecraft/Lunar not running.";
+            IsInjectionInProgress = false;
             return false;
         }
         
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        string dllPath = Path.Combine(baseDir, "bridge.dll");
+        string dllName = resolvedVersion == "1.21" ? "bridge_121.dll" : "bridge.dll";
+        string dllPath = Path.Combine(baseDir, dllName);
         
         Log($"Attempting to inject: {dllPath} into PID {mcProcess.Id}");
 
         if (!File.Exists(dllPath))
         {
-             StatusMessage = "ERROR: bridge.dll not found.";
-             Log("bridge.dll not found at " + dllPath);
+             StatusMessage = $"ERROR: {dllName} not found.";
+             Log($"{dllName} not found at " + dllPath);
+             IsInjectionInProgress = false;
              return false;
         }
 
-        bool injected = NativeInjector.Inject(mcProcess.Id, dllPath);
+        bool injected = await Task.Run(() =>
+            NativeInjector.Inject(mcProcess.Id, dllPath, (pct, msg) =>
+            {
+                int mapped = 20 + (pct * 60 / 100);
+                SetInjectionStage(mapped, msg);
+            }));
         if (!injected)
         {
              StatusMessage = "ERROR: Injection failed. Check logs.";
              Log("NativeInjector.Inject returned false.");
+             IsInjectionInProgress = false;
              return false;
         }
         
         Log("Injection successful (ostensibly). Waiting for bridge...");
+        SetInjectionStage(85, "Bridge injected, waiting for connection");
         
         // 4. Connect
         Log("Attempting to connect to bridge...");
-        await ConnectAsync();
+        await ConnectAsync(
+            maxAttempts: 30,
+            onAttempt: (attempt, total) =>
+            {
+                int mapped = 85 + (attempt * 14 / total);
+                SetInjectionStage(mapped, $"Waiting for bridge startup ({attempt}/{total})");
+            });
         
         if (IsConnected)
         {
             IsInjected = true;
+            InjectedVersion = resolvedVersion;
             Log("Connected successfully!");
+            IsInjectionInProgress = false;
+            InjectionProgress = 100;
             return true;
         }
         else
         {
              StatusMessage = "ERROR: Connectivity failed after injection.";
              Log("Failed to connect to bridge TCP server.");
+             IsInjectionInProgress = false;
              return false;
         }
     }
@@ -177,16 +269,17 @@ public class GameStateClient : INotifyPropertyChanged
 
     // === TCP Connection ===
 
-    public async Task ConnectAsync()
+    public async Task ConnectAsync(int maxAttempts = 20, Action<int, int>? onAttempt = null, bool reportFailure = true)
     {
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
 
-        // Retry connection for up to 10 seconds
-        for (int attempt = 0; attempt < 20; attempt++)
+        // Retry connection with configurable attempt count (500ms delay between attempts)
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
         {
             if (token.IsCancellationRequested) return;
+            onAttempt?.Invoke(attempt + 1, maxAttempts);
 
             try
             {
@@ -200,23 +293,29 @@ public class GameStateClient : INotifyPropertyChanged
             {
                 _client?.Dispose();
                 _client = null;
-                await Task.Delay(500, token);
+                if (attempt + 1 < maxAttempts)
+                    await Task.Delay(500, token);
             }
         }
 
         if (!IsConnected)
         {
-            StatusMessage = "ERROR: Could not connect to agent on port " + _port;
+            if (reportFailure)
+                StatusMessage = "ERROR: Could not connect to agent on port " + _port;
             return;
         }
 
         // Start config sender task
         _ = Task.Run(() => ConfigSenderLoop(token), token);
+        _ = Task.Run(() => ReadLoop(token), token);
+    }
 
-        // Read loop
+    private async Task ReadLoop(CancellationToken token)
+    {
         try
         {
-            using var stream = _client!.GetStream();
+            if (_client == null) return;
+            using var stream = _client.GetStream();
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
             while (!token.IsCancellationRequested && _client.Connected)
@@ -225,7 +324,7 @@ public class GameStateClient : INotifyPropertyChanged
                 if (line == null) break;
 
                 // Debug log occasionally
-                if (line.Contains("\"entities\":[{\"name\"")) 
+                if (line.Contains("\"entities\":[{\"name\""))
                 {
                     Log("Received Entity Data: " + line);
                 }
@@ -244,9 +343,6 @@ public class GameStateClient : INotifyPropertyChanged
                     {
                         state.IsConnected = true;
                         state.LastUpdate = DateTime.Now;
-
-                        // Distance is now calculated by bridge and sent in JSON
-
                         CurrentState = state;
                     }
                 }
@@ -311,6 +407,8 @@ public class GameStateClient : INotifyPropertyChanged
         _client = null;
         IsConnected = false;
         IsInjected = false;
+        IsInjectionInProgress = false;
+        InjectionProgress = 0;
         StatusMessage = "Not injected";
     }
 
@@ -373,6 +471,20 @@ public class GameStateClient : INotifyPropertyChanged
         }
 
         return null;
+    }
+
+    private static string ResolveInjectionVersion(string requestedVersion, Process? process)
+    {
+        if (string.Equals(requestedVersion, "1.21", StringComparison.OrdinalIgnoreCase))
+            return "1.21";
+        if (string.Equals(requestedVersion, "1.8.9", StringComparison.OrdinalIgnoreCase))
+            return "1.8.9";
+
+        string title = process?.MainWindowTitle?.ToLowerInvariant() ?? string.Empty;
+        if (title.Contains("1.21.11") || title.Contains("1.21")) return "1.21";
+        if (title.Contains("1.8.9")) return "1.8.9";
+
+        return "1.21";
     }
 
 
@@ -446,9 +558,16 @@ public class GameStateClient : INotifyPropertyChanged
                     closestPlayerInfo = clicker.ClosestPlayerInfoEnabled,
                     nametagShowHealth = clicker.NametagShowHealth,
                     nametagShowArmor = clicker.NametagShowArmor,
+                    nametagShowHeldItem = clicker.NametagShowHeldItem,
+                    nametagMaxCount = clicker.NametagMaxCount,
                     chestEsp = clicker.ChestEspEnabled,
+                    chestEspMaxCount = clicker.ChestEspMaxCount,
                     // Per-module keybinds
                     keybindAutoclicker   = InputHooks.GetModuleKey("autoclicker"),
+                    keybindRightClick    = InputHooks.GetModuleKey("rightclick"),
+                    keybindJitter        = InputHooks.GetModuleKey("jitter"),
+                    keybindClickInChests = InputHooks.GetModuleKey("clickinchests"),
+                    keybindBreakBlocks   = InputHooks.GetModuleKey("breakblocks"),
                     keybindNametags      = InputHooks.GetModuleKey("nametags"),
                     keybindClosestPlayer = InputHooks.GetModuleKey("closestplayer"),
                     keybindChestEsp      = InputHooks.GetModuleKey("chestesp")
@@ -485,6 +604,14 @@ public class GameStateClient : INotifyPropertyChanged
             var clicker = Clicker.Instance;
             switch (action)
             {
+                case "toggleExternalGui":
+                    if (InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var mw = System.Windows.Application.Current?.MainWindow as MainWindow;
+                        if (mw != null)
+                            mw.Dispatcher.Invoke(mw.ShowControlCenterFromBridge);
+                    }
+                    break;
                 case "toggleArmed":
                     clicker.ToggleArmed();
                     break;
@@ -512,6 +639,9 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "toggleNametagArmor":
                     clicker.NametagShowArmor = !clicker.NametagShowArmor;
+                    break;
+                case "toggleNametagHeldItem":
+                    clicker.NametagShowHeldItem = !clicker.NametagShowHeldItem;
                     break;
                 case "toggleChestEsp":
                     clicker.ChestEspEnabled = !clicker.ChestEspEnabled;

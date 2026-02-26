@@ -7,11 +7,11 @@
   --bg:        #050508;
   --bg2:       #0a0a0f;
   --bg3:       #0f0f18;
-  --accent:    #00ff88;
-  --accent2:   #00cfff;
+  --accent:    #b28cff;
+  --accent2:   #de7dff;
   --text:      #d0d8e8;
   --muted:     #5a6070;
-  --border:    rgba(0,255,136,0.15);
+  --border:    rgba(178,140,255,0.20);
   --card-bg:   rgba(255,255,255,0.03);
   --font-mono: 'Share Tech Mono', monospace;
   --font-ui:   'Rajdhani', sans-serif;
@@ -97,7 +97,7 @@ nav ul a:hover { color: var(--accent); }
   transition: background 0.2s !important;
 }
 
-.nav-dl:hover { background: rgba(0,255,136,0.1) !important; }
+.nav-dl:hover { background: rgba(178,140,255,0.14) !important; }
 
 /* ────────────────────────────────────────────
    ACCENT
@@ -124,7 +124,7 @@ nav ul a:hover { color: var(--accent); }
 
 .badge {
   display: inline-block;
-  background: rgba(0,255,136,0.08);
+  background: rgba(178,140,255,0.12);
   border: 1px solid var(--border);
   color: var(--accent);
   font-family: var(--font-mono);
@@ -141,6 +141,7 @@ nav ul a:hover { color: var(--accent); }
   font-weight: 700;
   letter-spacing: 0.05em;
   line-height: 1;
+  white-space: nowrap;
   margin-bottom: 1.2rem;
   color: #fff;
 }
@@ -164,7 +165,7 @@ nav ul a:hover { color: var(--accent); }
 .btn-primary {
   display: inline-block;
   background: var(--accent);
-  color: #000;
+  color: #140d22;
   font-family: var(--font-ui);
   font-weight: 700;
   font-size: 0.9rem;
@@ -177,7 +178,7 @@ nav ul a:hover { color: var(--accent); }
 }
 
 .btn-primary:hover {
-  box-shadow: 0 0 24px rgba(0,255,136,0.5);
+  box-shadow: 0 0 24px rgba(178,140,255,0.55);
   transform: translateY(-2px);
 }
 
@@ -368,8 +369,8 @@ nav ul a:hover { color: var(--accent); }
 }
 
 .feature-card:hover {
-  border-color: rgba(0,255,136,0.4);
-  box-shadow: 0 0 20px rgba(0,255,136,0.08);
+  border-color: rgba(178,140,255,0.45);
+  box-shadow: 0 0 20px rgba(178,140,255,0.15);
   transform: translateY(-3px);
 }
 
@@ -389,7 +390,7 @@ nav ul a:hover { color: var(--accent); }
   font-family: var(--font-mono);
   font-size: 0.65rem;
   color: var(--accent);
-  background: rgba(0,255,136,0.1);
+  background: rgba(178,140,255,0.12);
   border: 1px solid var(--border);
   padding: 2px 8px;
   border-radius: 3px;
@@ -409,10 +410,48 @@ nav ul a:hover { color: var(--accent); }
   font-size: 0.65rem;
   letter-spacing: 0.1em;
   color: var(--accent2);
-  background: rgba(0,207,255,0.07);
-  border: 1px solid rgba(0,207,255,0.2);
+  background: rgba(222,125,255,0.08);
+  border: 1px solid rgba(222,125,255,0.25);
   padding: 2px 8px;
   border-radius: 3px;
+}
+
+/* ────────────────────────────────────────────
+   SCREENSHOTS
+───────────────────────────────────────────── */
+.shots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.shot-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s;
+}
+
+.shot-card:hover {
+  border-color: rgba(178,140,255,0.45);
+  box-shadow: 0 0 20px rgba(178,140,255,0.15);
+  transform: translateY(-3px);
+}
+
+.shot-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: #0b0b10;
+}
+
+.shot-card figcaption {
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 /* ────────────────────────────────────────────
@@ -503,7 +542,7 @@ nav ul a:hover { color: var(--accent); }
 .arch-num {
   font-family: var(--font-mono);
   font-size: 2.5rem;
-  color: rgba(0,255,136,0.15);
+  color: rgba(178,140,255,0.20);
   font-weight: 700;
   line-height: 1;
   margin-bottom: 0.5rem;

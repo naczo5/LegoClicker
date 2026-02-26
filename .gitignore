@@ -10,12 +10,14 @@ LegoClickerCS/bridge.dll
 McInjector/bridge.dll
 McInjector/build/
 McInjector/dist/
+*.dll
 
 # ── Logs ─────────────────────────────────────────────────────────
 *.log
 *.txt
 INJECTION_RESEARCH.md
 UTILITY_CLIENTS.md
+CRASH_LOG_LOCATIONS.md
 
 # ── User / IDE files ─────────────────────────────────────────────
 .vs/
@@ -24,6 +26,10 @@ UTILITY_CLIENTS.md
 *.DotSettings.user
 .vscode/
 *.zip
+/AGENTS
+*.bat
+*.md
+!README.md
 
 # ── OS ───────────────────────────────────────────────────────────
 Thumbs.db

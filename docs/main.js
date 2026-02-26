@@ -32,7 +32,7 @@
 
       // head char is brighter
       const head = drops[i] * FONT_SIZE < canvas.height * 0.15;
-      ctx.fillStyle = head ? '#aaffdd' : '#00ff88';
+      ctx.fillStyle = head ? '#f0d8ff' : '#b28cff';
       ctx.globalAlpha = head ? 0.9 : 0.4 + Math.random() * 0.3;
       ctx.fillText(char, i * FONT_SIZE, y);
       ctx.globalAlpha = 1;
@@ -91,27 +91,39 @@
   const el = document.querySelector('.hero h1');
   if (!el) return;
 
-  const original = el.innerHTML;
+  const originalHtml = el.innerHTML;
+  const originalText = el.textContent || '';
   const glitchChars = '!<>-_\\/[]{}—=+*^?#______█▓▒░';
+  let glitchTimer = null;
 
   function glitch() {
+    if (glitchTimer !== null) return;
     let iter = 0;
-    const interval = setInterval(() => {
-      el.innerHTML = original.split('').map((char, idx) => {
-        if (idx < iter) return char;
-        if (char === ' ' || char === '<' || char === '>' || char.match(/[a-z]/i) === null) return char;
+    glitchTimer = setInterval(() => {
+      el.textContent = originalText.split('').map((char, idx) => {
+        if (idx < iter || char === ' ' || char.match(/[a-z]/i) === null) return char;
         return glitchChars[Math.floor(Math.random() * glitchChars.length)];
       }).join('');
 
-      if (iter >= original.length) {
-        el.innerHTML = original;
-        clearInterval(interval);
+      if (iter >= originalText.length) {
+        clearInterval(glitchTimer);
+        glitchTimer = null;
+        el.innerHTML = originalHtml;
       }
       iter += 3;
     }, 40);
   }
 
+  function resetTitle() {
+    if (glitchTimer !== null) {
+      clearInterval(glitchTimer);
+      glitchTimer = null;
+    }
+    el.innerHTML = originalHtml;
+  }
+
   el.addEventListener('mouseenter', glitch);
+  el.addEventListener('mouseleave', resetTitle);
 })();
 
 /* ── Typing cursor on tagline ────────────── */

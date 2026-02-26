@@ -3313,8 +3313,8 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
         if (currentHwnd) g_gameHwnd = currentHwnd;
         EnsureWndProcHook(currentHwnd);
 
-        // Poll Right Shift for ClickGUI toggle (LWJGL bypasses WM_KEYDOWN)
-        // Poll Right Shift for ClickGUI toggle
+        // Poll Insert for ClickGUI toggle (LWJGL bypasses WM_KEYDOWN)
+        // Poll Insert for ClickGUI toggle
         PollKeyboardToggle();
 
         // Get window size

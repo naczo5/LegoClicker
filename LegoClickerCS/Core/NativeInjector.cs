@@ -31,6 +31,9 @@ public static class NativeInjector
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
     // Access Rights
     private const uint PROCESS_CREATE_THREAD = 0x0002;
     private const uint PROCESS_QUERY_INFORMATION = 0x0400;
@@ -42,6 +45,9 @@ public static class NativeInjector
     private const uint MEM_COMMIT = 0x1000;
     private const uint MEM_RESERVE = 0x2000;
     private const uint PAGE_READWRITE = 0x04;
+    private const uint WAIT_OBJECT_0 = 0x00000000;
+    private const uint WAIT_TIMEOUT = 0x00000102;
+    private const uint INFINITE = 0xFFFFFFFF;
 
     private static void Log(string message)
     {
@@ -52,23 +58,31 @@ public static class NativeInjector
         catch { }
     }
 
-    public static bool Inject(int pid, string dllPath)
+    private static void ReportProgress(Action<int, string>? progress, int percent, string message)
     {
-        Log($"Starting injection into PID {pid} with DLL: {dllPath}");
+        progress?.Invoke(Math.Clamp(percent, 0, 100), message);
+        Log(message);
+    }
+
+    public static bool Inject(int pid, string dllPath, Action<int, string>? progress = null)
+    {
+        ReportProgress(progress, 2, $"Starting injection into PID {pid}");
 
         if (!File.Exists(dllPath))
         {
-            Log($"DLL not found: {dllPath}");
+            ReportProgress(progress, 100, $"DLL not found: {dllPath}");
             return false;
         }
+        ReportProgress(progress, 8, "DLL found.");
 
         IntPtr hProcess = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ, false, pid);
 
         if (hProcess == IntPtr.Zero)
         {
-            Log($"Failed to open process {pid}. Error: {Marshal.GetLastWin32Error()}");
+            ReportProgress(progress, 100, $"Failed to open process {pid}. Error: {Marshal.GetLastWin32Error()}");
             return false;
         }
+        ReportProgress(progress, 15, "Process handle opened.");
 
         try
         {
@@ -78,18 +92,18 @@ public static class NativeInjector
 
             if (pRemotePath == IntPtr.Zero)
             {
-                Log($"VirtualAllocEx failed. Error: {Marshal.GetLastWin32Error()}");
+                ReportProgress(progress, 100, $"VirtualAllocEx failed. Error: {Marshal.GetLastWin32Error()}");
                 return false;
             }
-            Log($"Allocated memory at: {pRemotePath}");
+            ReportProgress(progress, 30, $"Allocated remote memory: {pRemotePath}");
 
             // 2. Write DLL path to memory
             if (!WriteProcessMemory(hProcess, pRemotePath, pathBytes, (uint)pathBytes.Length, out _))
             {
-                Log($"WriteProcessMemory failed. Error: {Marshal.GetLastWin32Error()}");
+                ReportProgress(progress, 100, $"WriteProcessMemory failed. Error: {Marshal.GetLastWin32Error()}");
                 return false;
             }
-            Log("Wrote DLL path to memory.");
+            ReportProgress(progress, 50, "Wrote DLL path to remote memory.");
 
             // 3. Get LoadLibraryA address
             IntPtr hKernel32 = GetModuleHandle("kernel32.dll");
@@ -97,23 +111,34 @@ public static class NativeInjector
 
             if (pLoadLibrary == IntPtr.Zero)
             {
-                Log("Failed to find LoadLibraryA.");
+                ReportProgress(progress, 100, "Failed to find LoadLibraryA.");
                 return false;
             }
-            Log($"Found LoadLibraryA at: {pLoadLibrary}");
+            ReportProgress(progress, 65, $"Found LoadLibraryA: {pLoadLibrary}");
 
             // 4. Create Remote Thread
             IntPtr hThread = CreateRemoteThread(hProcess, IntPtr.Zero, 0, pLoadLibrary, pRemotePath, 0, IntPtr.Zero);
 
             if (hThread == IntPtr.Zero)
             {
-                Log($"CreateRemoteThread failed. Error: {Marshal.GetLastWin32Error()}");
+                ReportProgress(progress, 100, $"CreateRemoteThread failed. Error: {Marshal.GetLastWin32Error()}");
                 return false;
             }
-            Log($"Remote thread created. Handle: {hThread}");
+            ReportProgress(progress, 80, $"Remote thread created: {hThread}");
 
-            // Wait for thread to finish (optional, but good for debugging)
-            // WaitForSingleObject(hThread, 5000); 
+            uint wait = WaitForSingleObject(hThread, INFINITE);
+            if (wait == WAIT_OBJECT_0)
+            {
+                ReportProgress(progress, 100, "Injection completed.");
+            }
+            else if (wait == WAIT_TIMEOUT)
+            {
+                ReportProgress(progress, 95, "Injection thread still running (timeout).");
+            }
+            else
+            {
+                ReportProgress(progress, 95, $"WaitForSingleObject result: 0x{wait:X}");
+            }
 
             CloseHandle(hThread);
             return true;

@@ -67,6 +67,10 @@ public static class InputHooks
     public static Dictionary<string, int> ModuleKeys { get; } = new()
     {
         ["autoclicker"]   = 0xC0,
+        ["rightclick"]    = 0,
+        ["jitter"]        = 0,
+        ["clickinchests"] = 0,
+        ["breakblocks"]   = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
@@ -104,6 +108,10 @@ public static class InputHooks
         switch (moduleId)
         {
             case "autoclicker":   c.ToggleArmed(); break;
+            case "rightclick":    c.RightClickEnabled = !c.RightClickEnabled; break;
+            case "jitter":        c.JitterEnabled = !c.JitterEnabled; break;
+            case "clickinchests": c.ClickInChests = !c.ClickInChests; break;
+            case "breakblocks":   c.BreakBlocksEnabled = !c.BreakBlocksEnabled; break;
             case "nametags":      c.NametagsEnabled             = !c.NametagsEnabled;             break;
             case "closestplayer": c.ClosestPlayerInfoEnabled    = !c.ClosestPlayerInfoEnabled;    break;
             case "chestesp":      c.ChestEspEnabled             = !c.ChestEspEnabled;             break;
@@ -193,7 +201,16 @@ public static class InputHooks
             {
                 Application.Current?.Dispatcher.BeginInvoke(() =>
                 {
-                    Clicker.Instance.IsMiningIntent = GameStateClient.Instance.IsConnected && GameStateClient.Instance.CurrentState.LookingAtBlock;
+                    if (GameStateClient.Instance.IsConnected)
+                    {
+                        var state = GameStateClient.Instance.CurrentState;
+                        // 1.21: keep intent based on LookingAtBlock; the actual pause is gated by BreakingBlock/intent in Clicker.
+                        Clicker.Instance.IsMiningIntent = state.LookingAtBlock;
+                    }
+                    else
+                    {
+                        Clicker.Instance.IsMiningIntent = false;
+                    }
                     Clicker.Instance.StartClicking(true);
                     OnStateChanged?.Invoke();
                 });

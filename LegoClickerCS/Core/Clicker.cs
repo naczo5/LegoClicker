@@ -336,6 +336,22 @@ public class Clicker : INotifyPropertyChanged
         }
     }
 
+    private int _nametagMaxCount = 8;
+    public int NametagMaxCount
+    {
+        get => _nametagMaxCount;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 20);
+            if (_nametagMaxCount != clamped)
+            {
+                _nametagMaxCount = clamped;
+                OnPropertyChanged(nameof(NametagMaxCount));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
     private bool _chestEspEnabled = false;
     public bool ChestEspEnabled
     {
@@ -345,6 +361,22 @@ public class Clicker : INotifyPropertyChanged
             _chestEspEnabled = value;
             OnPropertyChanged(nameof(ChestEspEnabled));
             StateChanged?.Invoke();
+        }
+    }
+
+    private int _chestEspMaxCount = 5;
+    public int ChestEspMaxCount
+    {
+        get => _chestEspMaxCount;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 20);
+            if (_chestEspMaxCount != clamped)
+            {
+                _chestEspMaxCount = clamped;
+                OnPropertyChanged(nameof(ChestEspMaxCount));
+                StateChanged?.Invoke();
+            }
         }
     }
 
@@ -381,15 +413,19 @@ public class Clicker : INotifyPropertyChanged
                 {
                     string screen = state.ScreenName;
                     
-                    // Always block in these specific GUIs
-                    bool alwaysBlock = screen.Contains("GuiInventory") || 
-                                       screen.Contains("GuiCrafting") ||
-                                       screen.Contains("GuiFurnace") ||
-                                       screen.Contains("GuiRepair"); // Anvil
-
+                    // Always block in these specific GUIs (1.8.9 + 1.21 names + Fabric mappings)
+                    bool alwaysBlock = screen.Contains("GuiInventory")   || screen.Contains("InventoryScreen")  || screen.Contains("class_490") || // Inventory
+                                       screen.Contains("GuiCrafting")    || screen.Contains("CraftingScreen")   || screen.Contains("class_479") || // Crafting
+                                       screen.Contains("GuiFurnace")     || screen.Contains("FurnaceScreen")    || screen.Contains("class_3871") || // Furnace
+                                       screen.Contains("AbstractFurnace") ||
+                                       screen.Contains("GuiRepair")      || screen.Contains("AnvilScreen")      || screen.Contains("class_471");   // Anvil
+                                       
                     // Conditionally block in Chests/Containers
-                    bool isChest = screen.Contains("GuiChest") || 
-                                   screen.Contains("GuiContainer");
+                    bool isChest = screen.Contains("GuiChest")     || screen.Contains("ContainerScreen") || screen.Contains("class_481") || // Chest/Generic container
+                                   screen.Contains("GuiContainer")  || screen.Contains("HopperScreen")    || screen.Contains("class_488") || // Hopper
+                                   screen.Contains("ShulkerBox")    || screen.Contains("class_495")       ||
+                                   // Generic fallback for any container screen in 1.21 if exact matches fail:
+                                   screen.Contains("HandledScreen") || screen.Contains("class_465");
 
                     bool shouldBlock = false;
 
@@ -451,22 +487,34 @@ public class Clicker : INotifyPropertyChanged
             // Break Blocks Logic: 
             if (_useLeftButton && BreakBlocksEnabled)
             {
-                bool lookingAtBlock = false;
                 if (GameStateClient.Instance.IsConnected)
                 {
-                    lookingAtBlock = GameStateClient.Instance.CurrentState.LookingAtBlock;
-                }
-                
-                // If they pan off a block, they are no longer intending to mine that block
-                if (!lookingAtBlock)
-                {
-                    IsMiningIntent = false;
-                }
-                
-                if (IsMiningIntent)
-                {
-                    await Task.Delay(50, token).ConfigureAwait(false);
-                    continue;
+                    var state = GameStateClient.Instance.CurrentState;
+
+                    if (GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 1.21: only pause when we are actually breaking a block.
+                        if (!state.LookingAtBlock)
+                            IsMiningIntent = false;
+
+                        if (state.BreakingBlock || IsMiningIntent)
+                        {
+                            await Task.Delay(25, token).ConfigureAwait(false);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        // 1.8.9: legacy behavior (intent-based).
+                        if (!state.LookingAtBlock)
+                            IsMiningIntent = false;
+
+                        if (IsMiningIntent)
+                        {
+                            await Task.Delay(50, token).ConfigureAwait(false);
+                            continue;
+                        }
+                    }
                 }
             }
             
