@@ -569,6 +569,7 @@ public class GameStateClient : INotifyPropertyChanged
                     gtbCount = clicker.GtbMatchCount,
                     gtbPreview = clicker.GtbMatchesPreview,
                     nametags = clicker.NametagsEnabled,
+                    showModuleList = clicker.ShowModuleList,
                     closestPlayerInfo = clicker.ClosestPlayerInfoEnabled,
                     nametagShowHealth = clicker.NametagShowHealth,
                     nametagShowArmor = clicker.NametagShowArmor,
@@ -576,6 +577,10 @@ public class GameStateClient : INotifyPropertyChanged
                     nametagMaxCount = clicker.NametagMaxCount,
                     chestEsp = clicker.ChestEspEnabled,
                     chestEspMaxCount = clicker.ChestEspMaxCount,
+                    reachEnabled = clicker.ReachEnabled,
+                    reachMin = clicker.ReachMin,
+                    reachMax = clicker.ReachMax,
+                    reachChance = clicker.ReachChance,
                     // Per-module keybinds
                     keybindAutoclicker   = InputHooks.GetModuleKey("autoclicker"),
                     keybindRightClick    = InputHooks.GetModuleKey("rightclick"),
@@ -704,6 +709,18 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "setAimAssistStrength":
                     clicker.AimAssistStrength = node?["value"]?.GetValue<int>() ?? 40;
+                    break;
+                case "toggleReach":
+                    clicker.ReachEnabled = !clicker.ReachEnabled;
+                    break;
+                case "setReachMin":
+                    clicker.ReachMin = node?["value"]?.GetValue<float>() ?? 3.0f;
+                    break;
+                case "setReachMax":
+                    clicker.ReachMax = node?["value"]?.GetValue<float>() ?? 6.0f;
+                    break;
+                case "setReachChance":
+                    clicker.ReachChance = (int)(node?["value"]?.GetValue<float>() ?? 100f);
                     break;
             }
 

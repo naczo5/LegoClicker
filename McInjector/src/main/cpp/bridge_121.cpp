@@ -31,6 +31,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -109,6 +110,7 @@ struct Config {
     bool  aimAssist      = false;
     bool  nametags       = false;
     bool  chestEsp       = false;
+    bool  showModuleList = true;
     bool  closestPlayer  = false;
     bool  nametagHealth  = true;
     bool  nametagArmor   = true;
@@ -123,6 +125,10 @@ struct Config {
     int   gtbCount       = 0;
     std::string gtbHint;
     std::string gtbPreview;
+    bool  reachEnabled   = false;
+    float reachMin       = 3.0f;
+    float reachMax       = 6.0f;
+    int   reachChance    = 100;
 };
 static Config g_config;
 static Mutex  g_configMutex;
@@ -183,6 +189,8 @@ static void ParseConfig(const std::string& line) {
     g_config.aimAssist     = getBool("aimAssist");
     g_config.nametags      = getBool("nametags");
     g_config.chestEsp      = getBool("chestEsp");
+    std::string showModuleListRaw = getStr("showModuleList");
+    g_config.showModuleList = showModuleListRaw.empty() ? true : (showModuleListRaw == "true");
     g_config.closestPlayer = getBool("closestPlayerInfo");
     g_config.nametagHealth = getBool("nametagShowHealth");
     g_config.nametagArmor  = getBool("nametagShowArmor");
@@ -197,6 +205,10 @@ static void ParseConfig(const std::string& line) {
     g_config.gtbHint       = getStr("gtbHint");
     g_config.gtbCount      = getInt("gtbCount", 0);
     g_config.gtbPreview    = getStr("gtbPreview");
+    g_config.reachEnabled  = getBool("reachEnabled");
+    g_config.reachMin      = getFloat("reachMin");
+    g_config.reachMax      = getFloat("reachMax");
+    g_config.reachChance   = getInt("reachChance", 100);
 }
 
 // ===================== GLOBALS =====================
@@ -259,6 +271,13 @@ static std::string g_lastLoggedScreen;
 static jfieldID    g_inGameHudField_121 = nullptr; // MinecraftClient.inGameHud
 static std::vector<jfieldID> g_hudTextFields_121;  // InGameHud Text fields
 static DWORD       g_lastHudTextProbeMs = 0;
+
+// ===================== REACH MODULE JNI GLOBALS =====================
+static bool g_reachJniInit = false;
+static jmethodID g_getAttributes_121 = nullptr;
+static jmethodID g_getCustomInstance_121 = nullptr;
+static jmethodID g_setBaseValue_121 = nullptr;
+static jobject g_reachRegistryEntry_121 = nullptr;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -1009,8 +1028,582 @@ static bool IsChestBlockEntity(JNIEnv* env, jobject be) {
     return (env->IsInstanceOf(be, g_chestBlockEntityClass_121) == JNI_TRUE);
 }
 
+// Global cached player and its Reach attribute instance
+static jobject g_cachedLocalPlayer = nullptr;
+static jobject g_cachedReachAttrInst = nullptr;
+
+static bool g_reachMethodsResolved = false;
+static jmethodID g_dynGetAttributes = nullptr;   // class_1309 -> class_5131
+static jmethodID g_dynGetCustomInstance = nullptr; // class_5131 (class_6880) -> class_1324
+static jmethodID g_dynGetAttributeInstance = nullptr; // class_5131 (class_6880) -> class_1324 (fallback, e.g. method_55698)
+static jmethodID g_dynRegistryEntryToString = nullptr; // class_6880 () -> String
+static jmethodID g_dynRegistryEntryMatchesIdentifier = nullptr; // class_6880 (class_2960) -> boolean
+static jmethodID g_dynSetBaseValue = nullptr;    // class_1324 (D)V
+static jclass    g_identifierClass_121 = nullptr; // net.minecraft.class_2960
+static jmethodID g_identifierFromString_121 = nullptr; // Identifier.parse-like static method
+static jobject   g_entityReachIdentifier_121 = nullptr; // minecraft:player.entity_interaction_range
+static jobject   g_blockReachIdentifier_121 = nullptr; // minecraft:player.block_interaction_range
+
+static jmethodID FindMethodBySignature(JNIEnv* env, jclass tgtCls, const std::string& retTypeStr, int paramCount, const std::string& p1TypeStr = "") {
+    jclass cClass = env->FindClass("java/lang/Class");
+    jclass cMethod = env->FindClass("java/lang/reflect/Method");
+    jmethodID mGetMethods = env->GetMethodID(cClass, "getDeclaredMethods", "()[Ljava/lang/reflect/Method;");
+    jmethodID mGetName = env->GetMethodID(cMethod, "getName", "()Ljava/lang/String;");
+    jmethodID mGetRetType = env->GetMethodID(cMethod, "getReturnType", "()Ljava/lang/Class;");
+    jmethodID mGetParamTypes = env->GetMethodID(cMethod, "getParameterTypes", "()[Ljava/lang/Class;");
+
+    jobjectArray methods = (jobjectArray)env->CallObjectMethod(tgtCls, mGetMethods);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); methods = nullptr; }
+    if (!methods) return nullptr;
+    
+    jsize count = env->GetArrayLength(methods);
+    jmethodID found = nullptr;
+    
+    for (int i=0; i<count; ++i) {
+        jobject m = env->GetObjectArrayElement(methods, i);
+        if (!m) continue;
+        jclass rType = (jclass)env->CallObjectMethod(m, mGetRetType);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); rType = nullptr; }
+        jobjectArray pTypes = (jobjectArray)env->CallObjectMethod(m, mGetParamTypes);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); pTypes = nullptr; }
+        jsize pCount = pTypes ? env->GetArrayLength(pTypes) : 0;
+        
+        if (pCount == paramCount) {
+            std::string rName = rType ? GetClassNameFromClass(env, rType) : "";
+            if (rName == retTypeStr || (retTypeStr == "V" && rName == "void") || (retTypeStr == "D" && rName == "double") || (retTypeStr == "Z" && rName == "boolean")) {
+                bool pMatch = true;
+                if (paramCount == 1 && !p1TypeStr.empty() && pTypes) {
+                    jclass p1Cls = (jclass)env->GetObjectArrayElement(pTypes, 0);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); p1Cls = nullptr; }
+                    std::string p1Name = p1Cls ? GetClassNameFromClass(env, p1Cls) : "";
+                    if (p1Name != p1TypeStr && !(p1TypeStr == "D" && p1Name == "double")) {
+                        pMatch = false;
+                    }
+                    if (p1Cls) env->DeleteLocalRef(p1Cls);
+                }
+                if (pMatch) {
+                    jstring nameStr = (jstring)env->CallObjectMethod(m, mGetName);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); nameStr = nullptr; }
+                    if (nameStr) {
+                        const char* nameC = env->GetStringUTFChars(nameStr, nullptr);
+                        
+                        std::string sig = "(";
+                        if (paramCount == 1 && p1TypeStr == "D") sig += "D";
+                        else if (paramCount == 1) {
+                            std::string fixedP = p1TypeStr;
+                            for(size_t pos=0; pos<fixedP.length(); pos++) { if (fixedP[pos] == '.') fixedP[pos] = '/'; }
+                            sig += "L" + fixedP + ";";
+                        }
+                        sig += ")";
+                        
+                        if (retTypeStr == "V") sig += "V";
+                        else if (retTypeStr == "D") sig += "D";
+                        else if (retTypeStr == "Z") sig += "Z";
+                        else {
+                            std::string fixedR = retTypeStr;
+                            for(size_t pos=0; pos<fixedR.length(); pos++) { if (fixedR[pos] == '.') fixedR[pos] = '/'; }
+                            sig += "L" + fixedR + ";";
+                        }
+                        
+                        found = env->GetMethodID(tgtCls, nameC, sig.c_str());
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); found = nullptr; }
+                        
+                        if (found) Log("FindMethodBySignature: Found " + std::string(nameC) + sig);
+                        
+                        env->ReleaseStringUTFChars(nameStr, nameC);
+                        env->DeleteLocalRef(nameStr);
+                    }
+                }
+            }
+        }
+        if (rType) env->DeleteLocalRef(rType);
+        if (pTypes) env->DeleteLocalRef(pTypes);
+        env->DeleteLocalRef(m);
+        if (found) break;
+    }
+    env->DeleteLocalRef(methods);
+    env->DeleteLocalRef(cMethod);
+    env->DeleteLocalRef(cClass);
+    return found;
+}
+
 static void EnsureClosestPlayerCaches(JNIEnv* env);
 static void EnsureEntityMethods(JNIEnv* env, jobject entObj);
+static void DiscoverWorldPlayersListField(JNIEnv* env, jobject worldObj);
+
+static std::string NormalizeReachKey(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char ch : raw) {
+        if (std::isalnum((unsigned char)ch)) out.push_back((char)std::tolower((unsigned char)ch));
+    }
+    return out;
+}
+
+static bool IsBlockReachKey(const std::string& raw) {
+    std::string normalized = NormalizeReachKey(raw);
+    return normalized.find("blockinteractionrange") != std::string::npos;
+}
+
+static int ScoreEntityReachKey(const std::string& raw) {
+    std::string normalized = NormalizeReachKey(raw);
+    if (normalized.find("entityinteractionrange") != std::string::npos) return 220;
+    if (normalized.find("playerentityinteractionrange") != std::string::npos) return 220;
+    if (normalized.find("attackrange") != std::string::npos) return 140;
+    if (normalized.find("interactionrange") != std::string::npos && normalized.find("entity") != std::string::npos) return 100;
+    return -1;
+}
+
+static std::string SafeObjectToString(JNIEnv* env, jobject obj) {
+    if (!env || !obj) return "";
+    jclass objCls = env->FindClass("java/lang/Object");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); objCls = nullptr; }
+    if (!objCls) return "";
+
+    jmethodID mToStr = env->GetMethodID(objCls, "toString", "()Ljava/lang/String;");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); mToStr = nullptr; }
+    if (!mToStr) {
+        env->DeleteLocalRef(objCls);
+        return "";
+    }
+
+    jstring js = (jstring)env->CallObjectMethod(obj, mToStr);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); js = nullptr; }
+    std::string out;
+    if (js) {
+        const char* cstr = env->GetStringUTFChars(js, nullptr);
+        out = cstr ? cstr : "";
+        if (cstr) env->ReleaseStringUTFChars(js, cstr);
+        env->DeleteLocalRef(js);
+    }
+    env->DeleteLocalRef(objCls);
+    return out;
+}
+
+static void EnsureReachIdentifiers(JNIEnv* env) {
+    if (!env || !g_gameClassLoader) return;
+
+    if (!g_identifierClass_121) {
+        jclass idCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_2960");
+        if (!idCls) {
+            idCls = env->FindClass("net/minecraft/class_2960");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); idCls = nullptr; }
+        }
+        if (idCls) {
+            g_identifierClass_121 = (jclass)env->NewGlobalRef(idCls);
+            env->DeleteLocalRef(idCls);
+        }
+    }
+    if (!g_identifierClass_121) return;
+
+    if (!g_identifierFromString_121) {
+        const char* names[] = {
+            "method_60656", "method_12829", "method_60654",
+            "method_45136", "method_45138", "method_48331",
+            "a", "b", "c", "e", "f", "g",
+            nullptr
+        };
+
+        for (int i = 0; names[i]; ++i) {
+            jmethodID mid = env->GetStaticMethodID(g_identifierClass_121, names[i], "(Ljava/lang/String;)Lnet/minecraft/class_2960;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); mid = nullptr; }
+            if (!mid) continue;
+
+            jstring js = env->NewStringUTF("minecraft:player.entity_interaction_range");
+            jobject testId = env->CallStaticObjectMethod(g_identifierClass_121, mid, js);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); testId = nullptr; }
+            env->DeleteLocalRef(js);
+            if (!testId) continue;
+
+            std::string parsed = SafeObjectToString(env, testId);
+            env->DeleteLocalRef(testId);
+            if (ScoreEntityReachKey(parsed) >= 0) {
+                g_identifierFromString_121 = mid;
+                Log("EnsureReachIdentifiers: selected parser " + std::string(names[i]) + " -> " + parsed);
+                break;
+            }
+        }
+
+        if (!g_identifierFromString_121) Log("EnsureReachIdentifiers: FAILED to resolve Identifier parse method.");
+    }
+    if (!g_identifierFromString_121) return;
+
+    auto makeId = [&](const char* value) -> jobject {
+        jstring js = env->NewStringUTF(value);
+        jobject idObj = env->CallStaticObjectMethod(g_identifierClass_121, g_identifierFromString_121, js);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); idObj = nullptr; }
+        env->DeleteLocalRef(js);
+        return idObj;
+    };
+
+    if (!g_entityReachIdentifier_121) {
+        jobject id = makeId("minecraft:player.entity_interaction_range");
+        if (!id) id = makeId("player.entity_interaction_range");
+        if (id) {
+            Log("EnsureReachIdentifiers: entity identifier = " + SafeObjectToString(env, id));
+            g_entityReachIdentifier_121 = env->NewGlobalRef(id);
+            env->DeleteLocalRef(id);
+        } else {
+            Log("EnsureReachIdentifiers: FAILED to create entity reach identifier.");
+        }
+    }
+
+    if (!g_blockReachIdentifier_121) {
+        jobject id = makeId("minecraft:player.block_interaction_range");
+        if (!id) id = makeId("player.block_interaction_range");
+        if (id) {
+            Log("EnsureReachIdentifiers: block identifier = " + SafeObjectToString(env, id));
+            g_blockReachIdentifier_121 = env->NewGlobalRef(id);
+            env->DeleteLocalRef(id);
+        } else {
+            Log("EnsureReachIdentifiers: FAILED to create block reach identifier.");
+        }
+    }
+}
+
+static jobject CallReachAttributeLookup(JNIEnv* env, jobject attrCont, jobject registryEntry) {
+    if (!env || !attrCont || !registryEntry) return nullptr;
+
+    jobject inst = nullptr;
+    if (g_dynGetCustomInstance) {
+        inst = env->CallObjectMethod(attrCont, g_dynGetCustomInstance, registryEntry);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); inst = nullptr; }
+    }
+
+    if (!inst && g_dynGetAttributeInstance && g_dynGetAttributeInstance != g_dynGetCustomInstance) {
+        inst = env->CallObjectMethod(attrCont, g_dynGetAttributeInstance, registryEntry);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); inst = nullptr; }
+    }
+
+    return inst;
+}
+
+static jobject TryResolveReachAttributeFromRegistry(JNIEnv* env, jobject attrCont) {
+    if (!env || !attrCont || !g_gameClassLoader || (!g_dynGetCustomInstance && !g_dynGetAttributeInstance)) return nullptr;
+    EnsureReachIdentifiers(env);
+
+    jclass attrsCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_5134");
+    if (!attrsCls) return nullptr;
+
+    jclass objCls = env->FindClass("java/lang/Object");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); objCls = nullptr; }
+    if (!objCls) {
+        env->DeleteLocalRef(attrsCls);
+        return nullptr;
+    }
+
+    jmethodID mToStr = env->GetMethodID(objCls, "toString", "()Ljava/lang/String;");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); mToStr = nullptr; }
+    if (!mToStr) {
+        env->DeleteLocalRef(objCls);
+        env->DeleteLocalRef(attrsCls);
+        return nullptr;
+    }
+
+    jobject bestInst = nullptr;
+    int bestScore = -1;
+    std::string bestLabel;
+    std::vector<std::string> sampledLabels;
+
+    jclass cClass = env->FindClass("java/lang/Class");
+    jclass cField = env->FindClass("java/lang/reflect/Field");
+    jclass cMod = env->FindClass("java/lang/reflect/Modifier");
+    jmethodID mGetFields = cClass ? env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;") : nullptr;
+    jmethodID mFType = cField ? env->GetMethodID(cField, "getType", "()Ljava/lang/Class;") : nullptr;
+    jmethodID mFMod = cField ? env->GetMethodID(cField, "getModifiers", "()I") : nullptr;
+    jmethodID mFGet = cField ? env->GetMethodID(cField, "get", "(Ljava/lang/Object;)Ljava/lang/Object;") : nullptr;
+    jmethodID mIsStatic = cMod ? env->GetStaticMethodID(cMod, "isStatic", "(I)Z") : nullptr;
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        mGetFields = mFType = mFMod = mFGet = mIsStatic = nullptr;
+    }
+
+    jobjectArray fields = nullptr;
+    jclass regEntryCls = nullptr;
+    int scannedFields = 0;
+    int scannedEntries = 0;
+    if (mGetFields && mFType && mFMod && mFGet && mIsStatic) {
+        fields = (jobjectArray)env->CallObjectMethod(attrsCls, mGetFields);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); fields = nullptr; }
+        regEntryCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_6880");
+        if (fields && regEntryCls) {
+            jsize fc = env->GetArrayLength(fields);
+            for (int i = 0; i < fc; ++i) {
+                jobject fld = env->GetObjectArrayElement(fields, i);
+                if (!fld) continue;
+                ++scannedFields;
+
+                jint mod = env->CallIntMethod(fld, mFMod);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); env->DeleteLocalRef(fld); continue; }
+                bool isStatic = (env->CallStaticBooleanMethod(cMod, mIsStatic, mod) == JNI_TRUE);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); env->DeleteLocalRef(fld); continue; }
+                if (!isStatic) { env->DeleteLocalRef(fld); continue; }
+
+                jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); ft = nullptr; }
+                bool isRegistryEntry = (ft && env->IsAssignableFrom(ft, regEntryCls));
+                if (ft) env->DeleteLocalRef(ft);
+                if (!isRegistryEntry) { env->DeleteLocalRef(fld); continue; }
+
+                jobject registryEntry = env->CallObjectMethod(fld, mFGet, nullptr);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); registryEntry = nullptr; }
+                if (!registryEntry) { env->DeleteLocalRef(fld); continue; }
+                ++scannedEntries;
+
+                bool isEntityReachEntry = false;
+                bool isBlockReachEntry = false;
+                if (g_dynRegistryEntryMatchesIdentifier) {
+                    if (g_entityReachIdentifier_121) {
+                        isEntityReachEntry = (env->CallBooleanMethod(registryEntry, g_dynRegistryEntryMatchesIdentifier, g_entityReachIdentifier_121) == JNI_TRUE);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); isEntityReachEntry = false; }
+                    }
+                    if (g_blockReachIdentifier_121) {
+                        isBlockReachEntry = (env->CallBooleanMethod(registryEntry, g_dynRegistryEntryMatchesIdentifier, g_blockReachIdentifier_121) == JNI_TRUE);
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); isBlockReachEntry = false; }
+                    }
+                }
+
+                if (isBlockReachEntry) {
+                    env->DeleteLocalRef(registryEntry);
+                    env->DeleteLocalRef(fld);
+                    continue;
+                }
+
+                if (isEntityReachEntry) {
+                    jobject inst = CallReachAttributeLookup(env, attrCont, registryEntry);
+                    if (inst) {
+                        if (bestInst) env->DeleteLocalRef(bestInst);
+                        bestInst = inst;
+                        bestScore = 1000;
+                        bestLabel = "identifier:player.entity_interaction_range";
+                    }
+                    env->DeleteLocalRef(registryEntry);
+                    env->DeleteLocalRef(fld);
+                    continue;
+                }
+
+                std::string entryKey;
+                if (g_dynRegistryEntryToString) {
+                    jstring jsKey = (jstring)env->CallObjectMethod(registryEntry, g_dynRegistryEntryToString);
+                    if (!env->ExceptionCheck() && jsKey) {
+                        const char* cstr = env->GetStringUTFChars(jsKey, nullptr);
+                        entryKey = cstr ? cstr : "";
+                        if (cstr) env->ReleaseStringUTFChars(jsKey, cstr);
+                        env->DeleteLocalRef(jsKey);
+                    } else {
+                        env->ExceptionClear();
+                    }
+                }
+
+                std::string lookupLabel = entryKey;
+                if (lookupLabel.empty()) {
+                    jstring jsEntry = (jstring)env->CallObjectMethod(registryEntry, mToStr);
+                    if (!env->ExceptionCheck() && jsEntry) {
+                        const char* cstr = env->GetStringUTFChars(jsEntry, nullptr);
+                        lookupLabel = cstr ? cstr : "";
+                        if (cstr) env->ReleaseStringUTFChars(jsEntry, cstr);
+                        env->DeleteLocalRef(jsEntry);
+                    } else {
+                        env->ExceptionClear();
+                    }
+                }
+
+                jobject instCandidate = nullptr;
+                std::string instanceLabel;
+                if (lookupLabel.empty()) {
+                    instCandidate = CallReachAttributeLookup(env, attrCont, registryEntry);
+                    if (instCandidate) instanceLabel = SafeObjectToString(env, instCandidate);
+                }
+
+                if (!lookupLabel.empty() && sampledLabels.size() < 16) sampledLabels.push_back(lookupLabel);
+                if (!instanceLabel.empty() && sampledLabels.size() < 16) sampledLabels.push_back("inst:" + instanceLabel);
+                if (IsBlockReachKey(lookupLabel)) {
+                    if (instCandidate) env->DeleteLocalRef(instCandidate);
+                    env->DeleteLocalRef(registryEntry);
+                    env->DeleteLocalRef(fld);
+                    continue;
+                }
+
+                int score = ScoreEntityReachKey(lookupLabel);
+                if (score < 0 && !instanceLabel.empty()) score = ScoreEntityReachKey(instanceLabel);
+                if (score >= 0) {
+                    jobject inst = instCandidate;
+                    if (!inst) {
+                        inst = CallReachAttributeLookup(env, attrCont, registryEntry);
+                    }
+                    if (inst && score > bestScore) {
+                        if (bestInst) env->DeleteLocalRef(bestInst);
+                        bestInst = inst;
+                        bestScore = score;
+                        bestLabel = !lookupLabel.empty() ? lookupLabel : instanceLabel;
+                    } else if (inst) {
+                        env->DeleteLocalRef(inst);
+                    }
+                } else if (instCandidate) {
+                    env->DeleteLocalRef(instCandidate);
+                }
+
+                env->DeleteLocalRef(registryEntry);
+                env->DeleteLocalRef(fld);
+            }
+        }
+    }
+
+    if (bestInst && bestScore >= 0) {
+        Log("UpdateReach: Registry-selected entity reach attribute (" + std::to_string(bestScore) + "): " + bestLabel);
+    } else if (bestInst) {
+        env->DeleteLocalRef(bestInst);
+        bestInst = nullptr;
+    } else if (!sampledLabels.empty()) {
+        std::string joined = sampledLabels[0];
+        for (size_t i = 1; i < sampledLabels.size(); ++i) joined += " | " + sampledLabels[i];
+        Log("UpdateReach: Registry entries scanned (entity reach not found): " + joined);
+    } else {
+        Log("UpdateReach: Registry scan produced no usable labels.");
+    }
+
+    if (!bestInst) {
+        Log("UpdateReach: scanned " + std::to_string(scannedFields) + " fields, " + std::to_string(scannedEntries) + " registry entries.");
+    }
+
+    if (regEntryCls) env->DeleteLocalRef(regEntryCls);
+    if (fields) env->DeleteLocalRef(fields);
+    if (cMod) env->DeleteLocalRef(cMod);
+    if (cField) env->DeleteLocalRef(cField);
+    if (cClass) env->DeleteLocalRef(cClass);
+    env->DeleteLocalRef(objCls);
+    env->DeleteLocalRef(attrsCls);
+    return bestInst;
+}
+
+static void EnsureReachJni(JNIEnv* env) {
+    if (g_reachJniInit) return;
+    g_reachJniInit = true;
+
+    Log("EnsureReachJni: Resolving dynamic Reach methods");
+    if (!g_gameClassLoader) return;
+
+    // 1. LivingEntity -> getAttributes
+    jclass livingEntCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_1309");
+    if (livingEntCls) {
+        g_dynGetAttributes = FindMethodBySignature(env, livingEntCls, "net.minecraft.class_5131", 0);
+        env->DeleteLocalRef(livingEntCls);
+        if (!g_dynGetAttributes) Log("EnsureReachJni: FAILED to find getAttributes on class_1309");
+    }
+    
+    // 2. AttributeContainer -> getCustomInstance(RegistryEntry<EntityAttribute>)
+    jclass attrContCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_5131");
+    if (attrContCls) {
+        g_dynGetCustomInstance = FindMethodBySignature(env, attrContCls, "net.minecraft.class_1324", 1, "net.minecraft.class_6880");
+        g_dynGetAttributeInstance = env->GetMethodID(attrContCls, "method_55698", "(Lnet/minecraft/class_6880;)Lnet/minecraft/class_1324;");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_dynGetAttributeInstance = nullptr; }
+        if (!g_dynGetAttributeInstance) {
+            g_dynGetAttributeInstance = env->GetMethodID(attrContCls, "getAttributeInstance", "(Lnet/minecraft/class_6880;)Lnet/minecraft/class_1324;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_dynGetAttributeInstance = nullptr; }
+        }
+        if (!g_dynGetAttributeInstance) {
+            g_dynGetAttributeInstance = env->GetMethodID(attrContCls, "getInstance", "(Lnet/minecraft/class_6880;)Lnet/minecraft/class_1324;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_dynGetAttributeInstance = nullptr; }
+        }
+        env->DeleteLocalRef(attrContCls);
+        if (!g_dynGetCustomInstance && !g_dynGetAttributeInstance) {
+            Log("EnsureReachJni: FAILED to find attribute instance getter on class_5131");
+        } else if (g_dynGetAttributeInstance && g_dynGetAttributeInstance != g_dynGetCustomInstance) {
+            Log("EnsureReachJni: found fallback attribute instance getter (method_55698/getAttributeInstance/getInstance).");
+        }
+    }
+    
+    // 3. AttributeInstance -> setBaseValue
+    jclass attrInstCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_1324");
+    if (attrInstCls) {
+        g_dynSetBaseValue = FindMethodBySignature(env, attrInstCls, "V", 1, "D");
+        env->DeleteLocalRef(attrInstCls);
+        if (!g_dynSetBaseValue) Log("EnsureReachJni: FAILED to find setBaseValue on class_1324");
+    }
+
+    jclass regEntryCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_6880");
+    if (regEntryCls) {
+        g_dynRegistryEntryToString = FindMethodBySignature(env, regEntryCls, "java.lang.String", 0);
+        g_dynRegistryEntryMatchesIdentifier = FindMethodBySignature(env, regEntryCls, "Z", 1, "net.minecraft.class_2960");
+        env->DeleteLocalRef(regEntryCls);
+        if (!g_dynRegistryEntryToString) Log("EnsureReachJni: FAILED to find registry entry string method on class_6880");
+        if (!g_dynRegistryEntryMatchesIdentifier) Log("EnsureReachJni: FAILED to find identifier matcher on class_6880");
+    }
+    
+    if (g_dynGetAttributes && (g_dynGetCustomInstance || g_dynGetAttributeInstance) && g_dynSetBaseValue) {
+        g_reachMethodsResolved = true;
+        Log("EnsureReachJni: SUCCESS - All Reach methods resolved dynamically.");
+    } else {
+        Log("EnsureReachJni: FAILURE - Missing dynamic methods.");
+    }
+}
+
+static void UpdateReach(JNIEnv* env, const Config& cfg) {
+    if (!g_stateJniReady) return;
+    
+    EnsureReachJni(env);
+    if (!g_reachMethodsResolved) return;
+    
+    if (!g_mcInstance || !g_playerField_121) return;
+    
+    jobject selfObj = env->GetObjectField(g_mcInstance, g_playerField_121);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); selfObj = nullptr; }
+
+    if (!selfObj) {
+        if (g_cachedReachAttrInst) {
+            env->DeleteGlobalRef(g_cachedReachAttrInst);
+            g_cachedReachAttrInst = nullptr;
+        }
+        if (g_cachedLocalPlayer) {
+            env->DeleteGlobalRef(g_cachedLocalPlayer);
+            g_cachedLocalPlayer = nullptr;
+        }
+        return;
+    }
+
+    if (!g_cachedLocalPlayer || !env->IsSameObject(selfObj, g_cachedLocalPlayer)) {
+        if (g_cachedLocalPlayer) env->DeleteGlobalRef(g_cachedLocalPlayer);
+        if (g_cachedReachAttrInst) env->DeleteGlobalRef(g_cachedReachAttrInst);
+        g_cachedLocalPlayer = env->NewGlobalRef(selfObj);
+        g_cachedReachAttrInst = nullptr;
+
+        jobject attrCont = env->CallObjectMethod(selfObj, g_dynGetAttributes);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); attrCont = nullptr; }
+        if (attrCont) {
+            jobject directInst = TryResolveReachAttributeFromRegistry(env, attrCont);
+            if (directInst) {
+                g_cachedReachAttrInst = env->NewGlobalRef(directInst);
+                env->DeleteLocalRef(directInst);
+            }
+
+            if (!g_cachedReachAttrInst) {
+                static bool loggedMissingReachAttr = false;
+                if (!loggedMissingReachAttr) {
+                    loggedMissingReachAttr = true;
+                    Log("UpdateReach: Failed to resolve entity interaction range attribute.");
+                }
+            }
+            env->DeleteLocalRef(attrCont);
+        }
+    }
+
+    env->DeleteLocalRef(selfObj);
+
+    if (g_cachedReachAttrInst) {
+        double currentRange = 3.0; // Default Vanilla range
+        if (cfg.reachEnabled) {
+            int rval = rand() % 100;
+            if (rval < cfg.reachChance) {
+                float rangeSpan = cfg.reachMax - cfg.reachMin;
+                if (rangeSpan < 0) rangeSpan = 0;
+                float rfrac = (float)rand() / (float)RAND_MAX;
+                currentRange = (double)(cfg.reachMin + (rfrac * rangeSpan));
+            }
+        }
+        env->CallVoidMethod(g_cachedReachAttrInst, g_dynSetBaseValue, currentRange);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+}
 
 static void UpdatePlayerListOverlay(JNIEnv* env) {
     DWORD now = GetTickCount();
@@ -3640,6 +4233,11 @@ static void RenderClickGUI() {
         if (selCategory != 1) { selCategory = 1; selModule = 0; }
     }
     ImGui::PopStyleColor();
+    catStyle(selCategory == 2);
+    if (ImGui::Selectable("  Risky", selCategory == 2, 0, ImVec2(SIDE_W-4, 28))) {
+        if (selCategory != 2) { selCategory = 2; selModule = 0; }
+    }
+    ImGui::PopStyleColor();
     ImGui::EndChild();
 
     // --- Modules ---
@@ -3671,12 +4269,15 @@ static void RenderClickGUI() {
         // Combat
         ModuleRow("ac",   "AutoClicker",   cfg.armed,      0, "toggleArmed");
         ModuleRow("aa",   "Aim Assist",    cfg.aimAssist,  1, "toggleAimAssist");
-    } else {
+    } else if (selCategory == 1) {
         // Render
         ModuleRow("ce",  "Chest ESP",      cfg.chestEsp,   0, "toggleChestEsp");
         ModuleRow("nt",  "Nametags",       cfg.nametags,   1, "toggleNametags");
         ModuleRow("cp",  "Closest Player", cfg.closestPlayer, 2, "toggleClosestPlayerInfo");
         ModuleRow("gtb", "GTB Helper",     cfg.gtbHelper,  3, "toggleGtbHelper");
+    } else {
+        // Risky
+        ModuleRow("rh",  "Reach",          cfg.reachEnabled, 0, "toggleReach");
     }
     ImGui::EndChild();
 
@@ -3752,6 +4353,24 @@ static void RenderClickGUI() {
         ImGui::TextDisabled("No extra settings.");
     } else if (selCategory == 1 && selModule == 3) {
         ImGui::TextDisabled("In-game hint panel only.");
+    } else if (selCategory == 2 && selModule == 0) {
+        bool reach = cfg.reachEnabled;
+        if (ImGui::Checkbox("Enable Reach", &reach)) SendCmd("toggleReach");
+
+        float rMin = cfg.reachMin;
+        if (ImGui::SliderFloat("Min Range", &rMin, 3.0f, 6.0f, "%.1f"))
+            SendCmdFloat("setReachMin", rMin);
+
+        float rMax = cfg.reachMax;
+        if (ImGui::SliderFloat("Max Range", &rMax, 3.0f, 6.0f, "%.1f"))
+            SendCmdFloat("setReachMax", rMax);
+
+        int rChance = cfg.reachChance;
+        if (ImGui::SliderInt("Chance %", &rChance, 0, 100))
+            { char buf[128]; snprintf(buf, sizeof(buf), "{\"type\":\"cmd\",\"action\":\"setReachChance\",\"value\":%d}\n", rChance); LockGuard lk(g_cmdMutex); g_pendingCmds.push_back(buf); }
+            
+        ImGui::Spacing();
+        ImGui::TextDisabled("Attribute modification for 1.21.");
     }
 
     ImGui::EndChild();
@@ -3900,6 +4519,12 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
             bool inWorldNow = IsInWorldNow(env);
             { LockGuard lk(g_jniStateMtx); g_jniInWorld = inWorldNow; }
             if (inWorldNow) {
+                static bool s_reachWasEnabled = false;
+                if (cfg.reachEnabled || s_reachWasEnabled) {
+                    UpdateReach(env, cfg);
+                    s_reachWasEnabled = cfg.reachEnabled;
+                }
+
                 if (cfg.closestPlayer)
                     UpdateClosestPlayerOverlay(env);
                 if (cfg.nametags || cfg.closestPlayer || cfg.aimAssist)
@@ -4591,74 +5216,77 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 }
             }
 
-            // Module list (top-right) - original-like (right aligned colored bars)
-            struct ModLine { const char* text; ImU32 accent; float width; };
-            ModLine mods[16];
-            int modCount = 0;
+            if (cfg.showModuleList) {
+                // Module list (top-right) - original-like (right aligned colored bars)
+                struct ModLine { const char* text; ImU32 accent; float width; };
+                ModLine mods[16];
+                int modCount = 0;
 
-            auto pushMod = [&](const char* text, ImU32 accent) {
-                if (!text || !*text) return;
-                ModLine m{ text, accent, ImGui::CalcTextSize(text).x };
-                mods[modCount++] = m;
-            };
+                auto pushMod = [&](const char* text, ImU32 accent) {
+                    if (!text || !*text) return;
+                    ModLine m{ text, accent, ImGui::CalcTextSize(text).x };
+                    mods[modCount++] = m;
+                };
 
-            char acBuf[64];
-            if (cfg.armed) {
-                int lo = (int)cfg.minCPS;
-                int hi = (int)cfg.maxCPS;
-                if (hi < lo) std::swap(hi, lo);
-                snprintf(acBuf, sizeof(acBuf), "Autoclicker %d-%d", lo, hi);
-                pushMod(acBuf, IM_COL32(60, 220, 120, 255));
-            }
-            if (cfg.clickInChests) pushMod("Click in Chests", IM_COL32(50, 200, 220, 255));
-            if (cfg.closestPlayer) pushMod("Closest Player", IM_COL32(60, 170, 255, 255));
-            if (cfg.rightClick)    pushMod("Rightclick", IM_COL32(255, 170, 60, 255));
-            if (cfg.aimAssist)    pushMod("Aim Assist", IM_COL32(167, 125, 255, 255));
-            if (cfg.chestEsp)      pushMod("Chest ESP", IM_COL32(120, 120, 255, 255));
-            if (cfg.nametags)      pushMod("Nametags", IM_COL32(185, 85, 255, 255));
-            if (cfg.gtbHelper)     pushMod("GTB Helper", IM_COL32(255, 210, 90, 255));
-            if (cfg.jitter)        pushMod("Jitter", IM_COL32(255, 80, 120, 255));
-            if (cfg.breakBlocks)   pushMod("Break Blocks", IM_COL32(220, 220, 220, 255));
+                char acBuf[64];
+                if (cfg.armed) {
+                    int lo = (int)cfg.minCPS;
+                    int hi = (int)cfg.maxCPS;
+                    if (hi < lo) std::swap(hi, lo);
+                    snprintf(acBuf, sizeof(acBuf), "Autoclicker %d-%d", lo, hi);
+                    pushMod(acBuf, IM_COL32(60, 220, 120, 255));
+                }
+                if (cfg.clickInChests) pushMod("Click in Chests", IM_COL32(50, 200, 220, 255));
+                if (cfg.closestPlayer) pushMod("Closest Player", IM_COL32(60, 170, 255, 255));
+                if (cfg.rightClick)    pushMod("Rightclick", IM_COL32(255, 170, 60, 255));
+                if (cfg.aimAssist)     pushMod("Aim Assist", IM_COL32(167, 125, 255, 255));
+                if (cfg.chestEsp)      pushMod("Chest ESP", IM_COL32(120, 120, 255, 255));
+                if (cfg.nametags)      pushMod("Nametags", IM_COL32(185, 85, 255, 255));
+                if (cfg.gtbHelper)     pushMod("GTB Helper", IM_COL32(255, 210, 90, 255));
+                if (cfg.jitter)        pushMod("Jitter", IM_COL32(255, 80, 120, 255));
+                if (cfg.breakBlocks)   pushMod("Break Blocks", IM_COL32(220, 220, 220, 255));
+                if (cfg.reachEnabled)  pushMod("Reach", IM_COL32(255, 95, 195, 255));
 
-            // Sort by width descending (staggered original look)
-            for (int a = 0; a < modCount; a++) {
-                for (int b = a + 1; b < modCount; b++) {
-                    if (mods[b].width > mods[a].width) {
-                        ModLine tmp = mods[a]; mods[a] = mods[b]; mods[b] = tmp;
+                // Sort by width descending (staggered original look)
+                for (int a = 0; a < modCount; a++) {
+                    for (int b = a + 1; b < modCount; b++) {
+                        if (mods[b].width > mods[a].width) {
+                            ModLine tmp = mods[a]; mods[a] = mods[b]; mods[b] = tmp;
+                        }
                     }
                 }
-            }
 
-            const float marginX = 10.0f;
-            const float marginY = 10.0f;
-            const float padX = 8.0f;
-            const float padY = 3.0f;
-            const float barW = 3.0f;
-            const float gapY = 2.0f;
-            const float fontH = ImGui::GetFontSize();
-            float y = marginY;
-            for (int i = 0; i < modCount; i++) {
-                const ModLine& m = mods[i];
-                ImVec2 textSz = ImGui::CalcTextSize(m.text);
-                float boxW = barW + padX + textSz.x + padX;
-                float boxH = padY + fontH + padY;
-                float x0 = io.DisplaySize.x - marginX - boxW;
-                float x1 = io.DisplaySize.x - marginX;
-                float y0 = y;
-                float y1 = y + boxH;
+                const float marginX = 10.0f;
+                const float marginY = 10.0f;
+                const float padX = 8.0f;
+                const float padY = 3.0f;
+                const float barW = 3.0f;
+                const float gapY = 2.0f;
+                const float fontH = ImGui::GetFontSize();
+                float y = marginY;
+                for (int i = 0; i < modCount; i++) {
+                    const ModLine& m = mods[i];
+                    ImVec2 textSz = ImGui::CalcTextSize(m.text);
+                    float boxW = barW + padX + textSz.x + padX;
+                    float boxH = padY + fontH + padY;
+                    float x0 = io.DisplaySize.x - marginX - boxW;
+                    float x1 = io.DisplaySize.x - marginX;
+                    float y0 = y;
+                    float y1 = y + boxH;
 
-                // Background
-                fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 140));
-                // Accent strip
-                fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + barW, y1), m.accent);
-                // Subtle outline
-                fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 255, 255, 40));
-                // Text shadow + text
-                ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
-                fg->AddText(ImVec2(tx.x + 1, tx.y + 1), IM_COL32(0, 0, 0, 180), m.text);
-                fg->AddText(tx, IM_COL32(255, 255, 255, 235), m.text);
+                    // Background
+                    fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 140));
+                    // Accent strip
+                    fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + barW, y1), m.accent);
+                    // Subtle outline
+                    fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 255, 255, 40));
+                    // Text shadow + text
+                    ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
+                    fg->AddText(ImVec2(tx.x + 1, tx.y + 1), IM_COL32(0, 0, 0, 180), m.text);
+                    fg->AddText(tx, IM_COL32(255, 255, 255, 235), m.text);
 
-                y += boxH + gapY;
+                    y += boxH + gapY;
+                }
             }
         }
     }

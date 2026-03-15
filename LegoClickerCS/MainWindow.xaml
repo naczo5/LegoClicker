@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Lego Clicker Loader"
-        Width="300" Height="240"
+        Width="320" Height="240"
         WindowStyle="SingleBorderWindow"
         ResizeMode="NoResize"
         Background="{DynamicResource BgBrush}"
@@ -14,8 +14,12 @@
 
         <Style x:Key="ControlCenterTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="{DynamicResource DimTextBrush}"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Padding" Value="18,16"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -23,7 +27,9 @@
                         <Border x:Name="tabBorder"
                                 Background="{DynamicResource SliderBgBrush}"
                                 CornerRadius="8"
-                                Padding="{TemplateBinding Padding}">
+                                Padding="{TemplateBinding Padding}"
+                                Margin="0,0,0,10"
+                                MinHeight="68">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
                                               ContentSource="Header"/>
@@ -49,7 +55,7 @@
                     <ControlTemplate TargetType="TabControl">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="180"/>
+                                <ColumnDefinition Width="210"/>
                                 <ColumnDefinition Width="12"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
@@ -58,9 +64,10 @@
                                     Background="{DynamicResource PanelBrush}"
                                     CornerRadius="12"
                                     Padding="8">
-                                <TabPanel IsItemsHost="True"
-                                          KeyboardNavigation.TabIndex="1"
-                                          Background="Transparent"/>
+                                <UniformGrid IsItemsHost="True"
+                                             Columns="1"
+                                             KeyboardNavigation.TabIndex="1"
+                                             VerticalAlignment="Stretch"/>
                             </Border>
 
                             <Border Grid.Column="2"
@@ -242,6 +249,13 @@
                                 <TextBlock Text="Includes 4-way direction arrow (^, v, &lt;, &gt;)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
+
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <CheckBox Content="Show module list (top-right)" IsChecked="{Binding ShowModuleList, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock Text="Shows/hides the active modules overlay list in-game." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -271,7 +285,45 @@
                                     <Button x:Name="KeybindNametagsButton" Tag="nametags" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindChestEspButton" Tag="chestesp" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindClosestPlayerButton" Tag="closestplayer" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindReachButton" Tag="reach" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                 </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Risky">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,0,0,0">
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Reach (1.21)" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <CheckBox Content="Enable Reach" IsChecked="{Binding ReachEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding ReachEnabled}">
+                                    <TextBlock Text="Min Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachMin, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachMin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding ReachEnabled}">
+                                    <TextBlock Text="Max Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachMax, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachMax, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding ReachEnabled}">
+                                    <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

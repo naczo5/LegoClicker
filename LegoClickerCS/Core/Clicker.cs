@@ -520,6 +520,78 @@ public class Clicker : INotifyPropertyChanged
         }
     }
 
+    private bool _showModuleList = true;
+    public bool ShowModuleList
+    {
+        get => _showModuleList;
+        set
+        {
+            _showModuleList = value;
+            OnPropertyChanged(nameof(ShowModuleList));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private bool _reachEnabled = false;
+    public bool ReachEnabled
+    {
+        get => _reachEnabled;
+        set
+        {
+            _reachEnabled = value;
+            OnPropertyChanged(nameof(ReachEnabled));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private float _reachMin = 3.0f;
+    public float ReachMin
+    {
+        get => _reachMin;
+        set
+        {
+            float clamped = Math.Clamp(value, 3.0f, 6.0f);
+            if (Math.Abs(_reachMin - clamped) > float.Epsilon)
+            {
+                _reachMin = clamped;
+                OnPropertyChanged(nameof(ReachMin));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private float _reachMax = 6.0f;
+    public float ReachMax
+    {
+        get => _reachMax;
+        set
+        {
+            float clamped = Math.Clamp(value, 3.0f, 6.0f);
+            if (Math.Abs(_reachMax - clamped) > float.Epsilon)
+            {
+                _reachMax = clamped;
+                OnPropertyChanged(nameof(ReachMax));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private int _reachChance = 100;
+    public int ReachChance
+    {
+        get => _reachChance;
+        set
+        {
+            int clamped = Math.Clamp(value, 0, 100);
+            if (_reachChance != clamped)
+            {
+                _reachChance = clamped;
+                OnPropertyChanged(nameof(ReachChance));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
     private bool _closestPlayerInfoEnabled = false;
     public bool ClosestPlayerInfoEnabled
     {

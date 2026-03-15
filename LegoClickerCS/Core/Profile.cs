@@ -26,6 +26,7 @@ public class Profile
     public int AimAssistStrength { get; set; } = 40;
     public bool GtbHelperEnabled { get; set; } = false;
     public bool NametagsEnabled { get; set; } = false;
+    public bool ShowModuleList { get; set; } = true;
     public bool ClosestPlayerInfoEnabled { get; set; } = false;
     public bool NametagShowHealth { get; set; } = true;
     public bool NametagShowArmor { get; set; } = true;
@@ -34,6 +35,12 @@ public class Profile
 
     public bool ChestEspEnabled { get; set; } = false;
     public int ChestEspMaxCount { get; set; } = 5;
+
+    public bool ReachEnabled { get; set; } = false;
+    public float ReachMin { get; set; } = 3.0f;
+    public float ReachMax { get; set; } = 6.0f;
+    public int ReachChance { get; set; } = 100;
+
     public Dictionary<string, int> ModuleKeys { get; set; } = new()
     {
         ["autoclicker"]   = 0xC0,
@@ -46,6 +53,7 @@ public class Profile
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
+        ["reach"]         = 0,
     };
     public string Theme { get; set; } = "Dark";
 }
@@ -140,6 +148,7 @@ public static class ProfileManager
             AimAssistStrength = clicker.AimAssistStrength,
             GtbHelperEnabled = clicker.GtbHelperEnabled,
             NametagsEnabled = clicker.NametagsEnabled,
+            ShowModuleList = clicker.ShowModuleList,
             ClosestPlayerInfoEnabled = clicker.ClosestPlayerInfoEnabled,
             NametagShowHealth = clicker.NametagShowHealth,
             NametagShowArmor = clicker.NametagShowArmor,
@@ -147,6 +156,12 @@ public static class ProfileManager
             NametagMaxCount = clicker.NametagMaxCount,
             ChestEspEnabled = clicker.ChestEspEnabled,
             ChestEspMaxCount = clicker.ChestEspMaxCount,
+
+            ReachEnabled = clicker.ReachEnabled,
+            ReachMin = clicker.ReachMin,
+            ReachMax = clicker.ReachMax,
+            ReachChance = clicker.ReachChance,
+
             ModuleKeys = new Dictionary<string, int>(InputHooks.ModuleKeys),
             Theme = ThemeManager.CurrentTheme
         };
@@ -172,6 +187,7 @@ public static class ProfileManager
         clicker.AimAssistStrength = profile.AimAssistStrength;
         clicker.GtbHelperEnabled = profile.GtbHelperEnabled;
         clicker.NametagsEnabled = profile.NametagsEnabled;
+        clicker.ShowModuleList = profile.ShowModuleList;
         clicker.ClosestPlayerInfoEnabled = profile.ClosestPlayerInfoEnabled;
         clicker.NametagShowHealth = profile.NametagShowHealth;
         clicker.NametagShowArmor = profile.NametagShowArmor;
@@ -179,6 +195,12 @@ public static class ProfileManager
         clicker.NametagMaxCount = profile.NametagMaxCount;
         clicker.ChestEspEnabled = profile.ChestEspEnabled;
         clicker.ChestEspMaxCount = profile.ChestEspMaxCount;
+
+        clicker.ReachEnabled = profile.ReachEnabled;
+        clicker.ReachMin = profile.ReachMin;
+        clicker.ReachMax = profile.ReachMax;
+        clicker.ReachChance = profile.ReachChance;
+
         foreach (var kvp in profile.ModuleKeys)
             InputHooks.SetModuleKey(kvp.Key, kvp.Value);
         ThemeManager.ApplyTheme(profile.Theme);

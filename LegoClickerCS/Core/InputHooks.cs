@@ -76,6 +76,7 @@ public static class InputHooks
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
+        ["reach"]         = 0,
     };
 
     public static void SetModuleKey(string moduleId, int vk)
@@ -119,6 +120,7 @@ public static class InputHooks
             case "nametags":      c.NametagsEnabled             = !c.NametagsEnabled;             break;
             case "closestplayer": c.ClosestPlayerInfoEnabled    = !c.ClosestPlayerInfoEnabled;    break;
             case "chestesp":      c.ChestEspEnabled             = !c.ChestEspEnabled;             break;
+            case "reach":         c.ReachEnabled                = !c.ReachEnabled;                break;
         }
     }
     

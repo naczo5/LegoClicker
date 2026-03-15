@@ -33,7 +33,8 @@ public partial class MainWindow : Window
         ["gtbhelper"] = "GTB Helper",
         ["nametags"] = "Nametags",
         ["chestesp"] = "Chest ESP",
-        ["closestplayer"] = "Closest Player"
+        ["closestplayer"] = "Closest Player",
+        ["reach"] = "Reach"
     };
 
     private static void LogUi(string msg)
@@ -270,6 +271,7 @@ public partial class MainWindow : Window
         SetKeybindButtonContent(KeybindNametagsButton, "nametags");
         SetKeybindButtonContent(KeybindChestEspButton, "chestesp");
         SetKeybindButtonContent(KeybindClosestPlayerButton, "closestplayer");
+        SetKeybindButtonContent(KeybindReachButton, "reach");
     }
 
     private void SetKeybindButtonContent(Button btn, string moduleId)
