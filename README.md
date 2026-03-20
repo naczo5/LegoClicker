@@ -22,7 +22,6 @@ LegoClicker is a Windows utility client for Lunar Client.
 
 ## Screenshots
 
-![External Control Center (1.21.11)](screenshots/121_gui.png)
 ![GUI Showcase GIF](screenshots/gui.gif)
 
 ## Requirements
