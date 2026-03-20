@@ -22,8 +22,6 @@ LegoClicker is a Windows utility client for Lunar Client.
 
 ## Screenshots
 
-![Gameplay HUD](screenshots/gameplay.png)
-![Internal ClickGUI (deprecated 1.8.9 path)](screenshots/clickgui.png)
 ![External Control Center (1.21.11)](screenshots/121_gui.png)
 ![GUI Showcase GIF](screenshots/gui.gif)
 
@@ -107,3 +105,8 @@ legoclickerC/
 
 - Bridge-side logic is intended to be read-only for game state.
 - Do not add direct packet sending or in-game combat method calls.
+
+## 1.8.9
+
+![Gameplay HUD](screenshots/gameplay.png)
+![Internal ClickGUI (deprecated 1.8.9 path)](screenshots/clickgui.png)
