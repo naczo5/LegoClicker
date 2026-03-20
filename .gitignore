@@ -29,6 +29,12 @@ CRASH_LOG_LOCATIONS.md
 *.zip
 /AGENTS
 *.bat
+!/build_dll.bat
+!/build_exe.bat
+!/build_release.bat
+!/build_bridge.bat
+!/McInjector/build.bat
+!/McInjector/build_121.bat
 *.md
 !README.md
 /LegoClicker_Release
