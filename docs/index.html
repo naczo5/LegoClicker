@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="LegoClicker is a 1.21-focused Lunar utility client (with 1.8.9 compatibility) featuring autoclicker, aim assist, GTB helper, nametags, closest-player HUD, chest ESP, and dual GUI modes." />
+  <meta name="description" content="LegoClicker is a Lunar utility client focused on 1.21.11. It includes autoclicker, aim assist, triggerbot, reach, velocity, GTB helper, render modules, profiles, keybinds, and GUI customization." />
   <meta name="robots" content="index,follow" />
   <meta name="theme-color" content="#b28cff" />
 
@@ -12,14 +12,14 @@
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="LegoClicker" />
   <meta property="og:title" content="LegoClicker — Minecraft Utility Client" />
-  <meta property="og:description" content="1.21-focused Lunar utility client with Aim Assist + GTB Helper, plus 1.8.9 compatibility." />
+  <meta property="og:description" content="1.21.11-focused Lunar utility client. 1.8.9 remains as a deprecated legacy path." />
   <meta property="og:url" content="https://naczo5.github.io/LegoClicker/" />
   <meta property="og:image" content="https://naczo5.github.io/LegoClicker/screenshots/121_gui.png" />
   <meta property="og:image:alt" content="LegoClicker external control center on Lunar Client 1.21.11" />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="LegoClicker — Minecraft Utility Client" />
-  <meta name="twitter:description" content="1.21-focused Lunar utility client with Aim Assist, GTB Helper, and 1.8.9 compatibility." />
+  <meta name="twitter:description" content="1.21.11-focused Lunar utility client with combat, render, profiles, and GUI customization." />
   <meta name="twitter:image" content="https://naczo5.github.io/LegoClicker/screenshots/121_gui.png" />
   <title>LegoClicker — Minecraft Utility Client</title>
   <link rel="stylesheet" href="style.css" />
@@ -46,19 +46,19 @@
   <!-- HERO -->
   <section class="hero">
     <div class="hero-content">
-      <div class="badge">LUNAR CLIENT 1.21.11 FOCUSED &nbsp;|&nbsp; 1.8.9 COMPATIBLE</div>
+      <div class="badge">PRIMARY: LUNAR CLIENT 1.21.11 &nbsp;|&nbsp; 1.8.9 LEGACY (DEPRECATED)</div>
       <h1>LEGO<span class="accent">CLICKER</span></h1>
-      <p class="tagline">1.21-focused lunar utility client.<br>1.8.9 internal gui + 1.21.11 external control center.</p>
+      <p class="tagline">External control center for 1.21.11.<br>1.8.9 is kept only as a legacy path.</p>
       <div class="hero-btns">
         <a href="#download" class="btn-primary">GET CLIENT</a>
         <a href="#features" class="btn-ghost">VIEW FEATURES</a>
       </div>
       <div class="hero-stats">
-        <div class="stat"><span class="stat-num" id="cps-counter">16</span><span class="stat-label">MAX CPS</span></div>
+        <div class="stat"><span class="stat-num">1.21.11</span><span class="stat-label">PRIMARY TARGET</span></div>
         <div class="stat-sep"></div>
-        <div class="stat"><span class="stat-num">11,257</span><span class="stat-label">LINES OF CODE</span></div>
+        <div class="stat"><span class="stat-num">1.8.9</span><span class="stat-label">DEPRECATED</span></div>
         <div class="stat-sep"></div>
-        <div class="stat"><span class="stat-num">FREE</span><span class="stat-label">FOREVER</span></div>
+        <div class="stat"><span class="stat-num">OPEN</span><span class="stat-label">SOURCE</span></div>
       </div>
     </div>
     <div class="hero-art">
@@ -74,7 +74,7 @@
     <div class="section-header">
       <span class="section-tag">// MODULES</span>
       <h2>Features</h2>
-      <p>modernized modules for both legacy and latest lunar flows</p>
+      <p>Current modules and controls</p>
     </div>
 
     <div class="categories">
@@ -83,13 +83,23 @@
         <div class="cat-title"><span class="cat-icon">⚔</span> Combat</div>
         <div class="feature-card">
           <div class="feat-name">AutoClicker<span class="feat-bind">` (backtick)</span></div>
-          <div class="feat-desc">Left & right-click. Gaussian jitter CPS for human-like variance, adjustable range. Block-only mode for RMB, inventory &amp; chest safety, auto-pauses when GUI is open.</div>
+          <div class="feat-desc">Left and right click with configurable CPS, jitter, block-only mode, and GUI/chest safety checks.</div>
           <div class="feat-tags"><span>LMB</span><span>RMB</span><span>Block-Only</span><span>CPS Jitter</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">Aim Assist (1.21)</div>
-          <div class="feat-desc">Smooth assist that tracks the best target point with configurable FOV, range, and strength for close-range fights.</div>
+          <div class="feat-desc">Assist module with adjustable FOV, range, and strength.</div>
           <div class="feat-tags"><span>FOV</span><span>Range</span><span>Strength</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Triggerbot (1.21)</div>
+          <div class="feat-desc">Crosshair-based triggerbot with cooldown threshold and hit chance controls.</div>
+          <div class="feat-tags"><span>Crosshair</span><span>Cooldown</span><span>Chance</span></div>
+        </div>
+        <div class="feature-card">
+          <div class="feat-name">Reach + Velocity (1.21)</div>
+          <div class="feat-desc">Additional combat settings. Velocity is mainly intended for singleplayer use.</div>
+          <div class="feat-tags"><span>Reach</span><span>Velocity</span><span>Chance</span></div>
         </div>
       </div>
 
@@ -97,17 +107,17 @@
         <div class="cat-title"><span class="cat-icon">👁</span> Render</div>
         <div class="feature-card">
           <div class="feat-name">Nametags</div>
-          <div class="feat-desc">Renders player name tags with health/armor overlays and smoother movement updates to reduce visual jitter while tracking targets.</div>
+          <div class="feat-desc">Player tags with health, armor, held item, and configurable limits.</div>
           <div class="feat-tags"><span>Health Bar</span><span>Armor</span><span>Chroma</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">Closest Player HUD</div>
-          <div class="feat-desc">Compact panel above the hotbar showing nearest player info, including 4-way direction arrow, distance, health, armor and held item.</div>
+          <div class="feat-desc">Nearest-player panel with direction, distance, health, armor, and held item.</div>
           <div class="feat-tags"><span>Distance</span><span>4-Way Arrow</span><span>Held Item</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">Chest ESP</div>
-          <div class="feat-desc">Highlights nearest chests with capped render count, smoothing, and distance culling for cleaner visual tracking.</div>
+          <div class="feat-desc">Chest highlighting with count limits and distance culling.</div>
           <div class="feat-tags"><span>Through Walls</span><span>Nearest Priority</span><span>Capped Render</span></div>
         </div>
       </div>
@@ -116,22 +126,27 @@
         <div class="cat-title"><span class="cat-icon">⚙</span> GUI / Misc</div>
         <div class="feature-card">
           <div class="feat-name">1.8.9 Internal ClickGUI<span class="feat-bind">Insert</span></div>
-          <div class="feat-desc">Classic in-game internal panel for 1.8.9 with module toggles and settings directly on render overlay.</div>
-          <div class="feat-tags"><span>In-Game</span><span>Internal</span><span>Fast Toggle</span></div>
+          <div class="feat-desc">Legacy path only. Kept for compatibility and considered deprecated.</div>
+          <div class="feat-tags"><span>Legacy</span><span>Deprecated</span><span>1.8.9</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">1.21.11 External Control Center</div>
-          <div class="feat-desc">Dedicated external WPF control center for 1.21.11 with modern module layout, keybind controls, and live config sync.</div>
+          <div class="feat-desc">Main UI for active development. Includes combat, render, keybinds, and customization tabs.</div>
           <div class="feat-tags"><span>External UI</span><span>Module Switches</span><span>Keybind UI</span></div>
         </div>
         <div class="feature-card">
+          <div class="feat-name">GUI Customization</div>
+          <div class="feat-desc">Palette previews, module-list style previews, logo toggle, and full theme propagation across controls.</div>
+          <div class="feat-tags"><span>Palettes</span><span>Module Styles</span><span>Saved</span></div>
+        </div>
+        <div class="feature-card">
           <div class="feat-name">Profiles + Keybinds</div>
-          <div class="feat-desc">JSON profiles saved to <code>%AppData%\LegoClicker\profiles\</code>. Auto-saves on close, auto-loads on startup.</div>
+          <div class="feat-desc">Settings and keybinds are saved to <code>%AppData%\LegoClicker\profiles\</code>.</div>
           <div class="feat-tags"><span>JSON</span><span>Auto-save</span><span>Per-module keys</span></div>
         </div>
         <div class="feature-card">
           <div class="feat-name">GTB Helper (1.21)</div>
-          <div class="feat-desc">Hypixel Guess The Build helper that reads action-bar hints and shows likely word matches in-game.</div>
+          <div class="feat-desc">Reads GTB hints and shows candidate words in an overlay list.</div>
           <div class="feat-tags"><span>Hypixel</span><span>Hint Solver</span><span>In-Game Overlay</span></div>
         </div>
       </div>
@@ -144,7 +159,7 @@
     <div class="section-header">
       <span class="section-tag">// PREVIEW</span>
       <h2>Screenshots</h2>
-      <p>1.8.9 internal flow + 1.21.11 external control center</p>
+      <p>Current 1.21 UI plus legacy 1.8.9 preview</p>
     </div>
     <div class="shots-grid">
       <figure class="shot-card">
@@ -159,6 +174,10 @@
         <img src="screenshots/121_gui.png" alt="External control center for Lunar Client 1.21.11" loading="lazy" />
         <figcaption>1.21.11 external control center</figcaption>
       </figure>
+      <figure class="shot-card">
+        <img src="screenshots/gui.gif" alt="LegoClicker GUI showcase animation" loading="lazy" />
+        <figcaption>GUI showcase</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -166,32 +185,22 @@
   <section id="status" class="section alt-section">
     <div class="section-header">
       <span class="section-tag">// STATUS</span>
-      <h2>Bypass Status</h2>
+      <h2>Support Status</h2>
       <p>last checked: <span id="status-date"></span></p>
     </div>
     <div class="status-grid">
       <div class="status-card">
         <div class="status-name">Lunar Client 1.8.9</div>
-        <div class="status-dot dot-green"></div>
-        <div class="status-label">WORKING</div>
+        <div class="status-dot dot-yellow"></div>
+        <div class="status-label">LEGACY / DEPRECATED</div>
       </div>
       <div class="status-card">
         <div class="status-name">Lunar Client 1.21.11</div>
         <div class="status-dot dot-green"></div>
-        <div class="status-label">WORKING</div>
-      </div>
-      <div class="status-card">
-        <div class="status-name">Watchdog (Hypixel)</div>
-        <div class="status-dot dot-yellow"></div>
-        <div class="status-label">USE AT OWN RISK</div>
-      </div>
-      <div class="status-card">
-        <div class="status-name">AntiCheat (Generic)</div>
-        <div class="status-dot dot-yellow"></div>
-        <div class="status-label">VARIES</div>
+        <div class="status-label">ACTIVE</div>
       </div>
     </div>
-    <p class="status-note">* GUI mode split: <strong>1.8.9 = internal in-game ClickGUI</strong>, <strong>1.21.11 = external control center</strong>. AutoClicker still uses Windows <strong>SendInput</strong> and visuals are rendered via SwapBuffers hook.</p>
+    <p class="status-note">1.21.11 is the maintained path. 1.8.9 remains for compatibility and is not actively updated.</p>
   </section>
 
   <!-- HOW IT WORKS -->
@@ -199,25 +208,25 @@
     <div class="section-header">
       <span class="section-tag">// ARCHITECTURE</span>
       <h2>How it works</h2>
-      <p>a two-component injection chain</p>
+      <p>Loader and bridge overview</p>
     </div>
     <div class="arch-grid">
       <div class="arch-step">
         <div class="arch-num">01</div>
         <div class="arch-title">C# Loader</div>
-          <div class="arch-desc">A lightweight WPF launcher finds the <code>javaw.exe</code> process and auto-selects <code>bridge.dll</code> (1.8.9) or <code>bridge_121.dll</code> (1.21.11) via <code>CreateRemoteThread + LoadLibraryA</code>.</div>
+          <div class="arch-desc">The WPF loader finds <code>javaw.exe</code> and injects the native bridge DLL.</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-step">
         <div class="arch-num">02</div>
         <div class="arch-title">C++ Bridge DLL</div>
-        <div class="arch-desc">Attaches to the JVM via JVMTI &amp; JNI. Dynamically discovers Minecraft classes at runtime — no hardcoded obfuscated names, works across Lunar versions. Hooks <code>SwapBuffers</code> to render overlays every frame.</div>
+        <div class="arch-desc">The bridge attaches to JVM/JNI, reads state, and renders overlays through <code>SwapBuffers</code>.</div>
       </div>
       <div class="arch-arrow">→</div>
       <div class="arch-step">
         <div class="arch-num">03</div>
         <div class="arch-title">TCP Bridge</div>
-          <div class="arch-desc">Game state is streamed to the loader over TCP port 25590. Config + module keybind state are pushed back continuously. Zero packet modification — purely read-only game state.</div>
+          <div class="arch-desc">State/config sync runs over TCP port <code>25590</code> between loader and bridge.</div>
       </div>
     </div>
   </section>
@@ -234,7 +243,7 @@
         <ul class="req-list">
           <li><span class="dot-green-sm">●</span> Windows 10/11 x64</li>
           <li><span class="dot-green-sm">●</span> No .NET install needed for release EXE (self-contained)</li>
-          <li><span class="dot-green-sm">●</span> Lunar Client (Java 1.8.9 or 1.21.11)</li>
+          <li><span class="dot-green-sm">●</span> Lunar Client (1.21.11 primary, 1.8.9 legacy)</li>
           <li><span class="dot-yellow-sm">●</span> MinGW-w64 (build only)</li>
         </ul>
       </div>
@@ -248,9 +257,9 @@
         <ol class="steps-list">
           <li>Launch Lunar Client with JVM flags</li>
           <li>Run <code>LegoClicker.exe</code></li>
-          <li>Click <strong>Inject / Connect</strong></li>
-          <li>Use <strong>Insert</strong> for 1.8.9 internal ClickGUI</li>
+          <li>Click <strong>Inject</strong></li>
           <li>For 1.21.11, use the external control center window</li>
+          <li>1.8.9 internal ClickGUI is legacy/deprecated</li>
           <li>Press <strong>backtick (` )</strong> to toggle autoclicker</li>
         </ol>
       </div>
@@ -262,19 +271,19 @@
     <div class="section-header">
       <span class="section-tag">// DOWNLOAD</span>
       <h2>Get LegoClicker</h2>
-      <p>open source. always free. fully vibe coded.</p>
+      <p>Open source build for Windows x64.</p>
     </div>
     <div class="dl-box">
       <div class="dl-info">
         <div class="dl-row"><span>Version</span><span class="dl-val">latest (main)</span></div>
-        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.21.11 (focused) + 1.8.9</span></div>
+        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.21.11 (primary), 1.8.9 (deprecated)</span></div>
         <div class="dl-row"><span>Platform</span><span class="dl-val">Windows x64</span></div>
         <div class="dl-row"><span>License</span><span class="dl-val">Open Source</span></div>
       </div>
       <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary btn-lg" id="github-link">
         VIEW ON GITHUB
       </a>
-      <p class="dl-note">build from source — see README for instructions</p>
+      <p class="dl-note">Build from source using the commands in README.</p>
     </div>
   </section>
 
@@ -282,7 +291,7 @@
   <footer>
     <div class="footer-inner">
       <span class="logo">LEGO<span class="accent">CLICKER</span></span>
-      <p>fully vibe coded. zero guarantees. use at your own risk.</p>
+      <p>Use at your own risk.</p>
       <p class="footer-small">not affiliated with Mojang, Microsoft, or Lunar Client. for educational purposes only.</p>
     </div>
   </footer>

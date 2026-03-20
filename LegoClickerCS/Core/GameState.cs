@@ -31,8 +31,23 @@ public class GameState
     [JsonPropertyName("lookingAtBlock")]
     public bool LookingAtBlock { get; set; }
 
+    [JsonPropertyName("lookingAtEntity")]
+    public bool LookingAtEntity { get; set; }
+
+    [JsonPropertyName("lookingAtEntityLatched")]
+    public bool LookingAtEntityLatched { get; set; }
+
     [JsonPropertyName("breakingBlock")]
     public bool BreakingBlock { get; set; }
+
+    [JsonPropertyName("attackCooldown")]
+    public float AttackCooldown { get; set; } = 1.0f;
+
+    [JsonPropertyName("attackCooldownPerTick")]
+    public float AttackCooldownPerTick { get; set; } = 0.08f;
+
+    [JsonPropertyName("stateMs")]
+    public ulong StateMs { get; set; }
 
     [JsonPropertyName("posX")]
     public double PosX { get; set; }

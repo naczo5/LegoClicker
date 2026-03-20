@@ -10,6 +10,7 @@ namespace LegoClickerCS.Core;
 
 public class Clicker : INotifyPropertyChanged
 {
+    private const int TriggerbotStateFreshMs = 35;
     private static Clicker? _instance;
     public static Clicker Instance => _instance ??= new Clicker();
     
@@ -51,6 +52,7 @@ public class Clicker : INotifyPropertyChanged
     private bool _useLeftButton = true;
     private CancellationTokenSource? _clickCts;
     private CancellationTokenSource? _aimAssistCts;
+    private CancellationTokenSource? _triggerbotCts;
     
     // Settings
     private float _minCPS = 8.0f;
@@ -74,6 +76,16 @@ public class Clicker : INotifyPropertyChanged
     
     private Clicker() { }
     
+    
+    private string _guiTheme = "Default";
+    public string GuiTheme { get => _guiTheme; set { _guiTheme = value; OnPropertyChanged(nameof(GuiTheme)); } }
+
+    private string _moduleListStyle = "Default";
+    public string ModuleListStyle { get => _moduleListStyle; set { _moduleListStyle = value; OnPropertyChanged(nameof(ModuleListStyle)); } }
+
+    private bool _showLogo = true;
+    public bool ShowLogo { get => _showLogo; set { _showLogo = value; OnPropertyChanged(nameof(ShowLogo)); } }
+
     public bool IsArmed
     {
         get => _isArmed;
@@ -280,6 +292,7 @@ public class Clicker : INotifyPropertyChanged
         StopClicking();
         Disarm();
         StopAimAssistLoop();
+        StopTriggerbotLoop();
     }
 
     private void StartAimAssistLoop()
@@ -293,6 +306,19 @@ public class Clicker : INotifyPropertyChanged
     {
         _aimAssistCts?.Cancel();
         _aimAssistCts = null;
+    }
+
+    private void StartTriggerbotLoop()
+    {
+        if (_triggerbotCts != null) return;
+        _triggerbotCts = new CancellationTokenSource();
+        Task.Run(() => TriggerbotLoop(_triggerbotCts.Token));
+    }
+
+    private void StopTriggerbotLoop()
+    {
+        _triggerbotCts?.Cancel();
+        _triggerbotCts = null;
     }
     
     private bool _clickInChests = false;
@@ -592,6 +618,66 @@ public class Clicker : INotifyPropertyChanged
         }
     }
 
+    private bool _velocityEnabled = false;
+    public bool VelocityEnabled
+    {
+        get => _velocityEnabled;
+        set
+        {
+            _velocityEnabled = value;
+            OnPropertyChanged(nameof(VelocityEnabled));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private int _velocityHorizontal = 100;
+    public int VelocityHorizontal
+    {
+        get => _velocityHorizontal;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_velocityHorizontal != clamped)
+            {
+                _velocityHorizontal = clamped;
+                OnPropertyChanged(nameof(VelocityHorizontal));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private int _velocityVertical = 100;
+    public int VelocityVertical
+    {
+        get => _velocityVertical;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_velocityVertical != clamped)
+            {
+                _velocityVertical = clamped;
+                OnPropertyChanged(nameof(VelocityVertical));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private int _velocityChance = 100;
+    public int VelocityChance
+    {
+        get => _velocityChance;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_velocityChance != clamped)
+            {
+                _velocityChance = clamped;
+                OnPropertyChanged(nameof(VelocityChance));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
     private bool _closestPlayerInfoEnabled = false;
     public bool ClosestPlayerInfoEnabled
     {
@@ -600,6 +686,88 @@ public class Clicker : INotifyPropertyChanged
         {
             _closestPlayerInfoEnabled = value;
             OnPropertyChanged(nameof(ClosestPlayerInfoEnabled));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private bool _triggerbotEnabled = false;
+    public bool TriggerbotEnabled
+    {
+        get => _triggerbotEnabled;
+        set
+        {
+            _triggerbotEnabled = value;
+            OnPropertyChanged(nameof(TriggerbotEnabled));
+            if (_triggerbotEnabled) StartTriggerbotLoop();
+            else StopTriggerbotLoop();
+            StateChanged?.Invoke();
+        }
+    }
+
+    private bool _triggerbotOnlyCrosshair = true;
+    public bool TriggerbotOnlyCrosshair
+    {
+        get => _triggerbotOnlyCrosshair;
+        set
+        {
+            _triggerbotOnlyCrosshair = value;
+            OnPropertyChanged(nameof(TriggerbotOnlyCrosshair));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private bool _triggerbotOnlyIfCanAttack = true;
+    public bool TriggerbotOnlyIfCanAttack
+    {
+        get => _triggerbotOnlyIfCanAttack;
+        set
+        {
+            _triggerbotOnlyIfCanAttack = value;
+            OnPropertyChanged(nameof(TriggerbotOnlyIfCanAttack));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private int _triggerbotCooldownThreshold = 92;
+    public int TriggerbotCooldownThreshold
+    {
+        get => _triggerbotCooldownThreshold;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_triggerbotCooldownThreshold != clamped)
+            {
+                _triggerbotCooldownThreshold = clamped;
+                OnPropertyChanged(nameof(TriggerbotCooldownThreshold));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private int _triggerbotHitChance = 100;
+    public int TriggerbotHitChance
+    {
+        get => _triggerbotHitChance;
+        set
+        {
+            int clamped = Math.Clamp(value, 1, 100);
+            if (_triggerbotHitChance != clamped)
+            {
+                _triggerbotHitChance = clamped;
+                OnPropertyChanged(nameof(TriggerbotHitChance));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private bool _triggerbotRequireClick = true;
+    public bool TriggerbotRequireClick
+    {
+        get => _triggerbotRequireClick;
+        set
+        {
+            _triggerbotRequireClick = value;
+            OnPropertyChanged(nameof(TriggerbotRequireClick));
             StateChanged?.Invoke();
         }
     }
@@ -661,6 +829,232 @@ public class Clicker : INotifyPropertyChanged
         catch (TaskCanceledException) { }
     }
 
+    private async Task TriggerbotLoop(CancellationToken token)
+    {
+        bool hadTarget = false;
+        long targetReadyAt = 0;
+        long lastTriggerbotClickAt = 0;
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                bool supportedVersion = GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+                bool shouldRun =
+                    TriggerbotEnabled &&
+                    supportedVersion &&
+                    GameStateClient.Instance.IsConnected &&
+                    WindowDetection.IsMinecraftActive() &&
+                    !WindowDetection.IsCursorVisible();
+
+                if (!shouldRun)
+                {
+                    hadTarget = false;
+                    await Task.Delay(25, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                var state = GameStateClient.Instance.CurrentState;
+                long nowMs = Environment.TickCount64;
+                long stateAgeMs;
+                if (state.StateMs > 0)
+                {
+                    long bridgeMs = unchecked((long)state.StateMs);
+                    stateAgeMs = nowMs - bridgeMs;
+                }
+                else
+                {
+                    stateAgeMs = (long)(DateTime.Now - state.LastUpdate).TotalMilliseconds;
+                }
+                if (stateAgeMs < 0) stateAgeMs = 0;
+                bool staleState = stateAgeMs > TriggerbotStateFreshMs;
+                if (staleState)
+                {
+                    hadTarget = false;
+                    await Task.Delay(8, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (state.GuiOpen && WindowDetection.IsCursorVisible())
+                {
+                    hadTarget = false;
+                    await Task.Delay(20, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (BreakBlocksEnabled && (state.BreakingBlock || IsMiningIntent))
+                {
+                    hadTarget = false;
+                    await Task.Delay(12, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                bool leftHeld = InputHooks.IsPhysicalLeftButtonDown;
+                if (TriggerbotRequireClick && !leftHeld)
+                {
+                    hadTarget = false;
+                    await Task.Delay(8, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                bool crosshairOnEntity = state.LookingAtEntity || state.LookingAtEntityLatched || IsCrosshairEntityFallback(state);
+                bool canAttackTarget = CanAttackTargetNow(state);
+                bool hasTarget =
+                    (!TriggerbotOnlyCrosshair || crosshairOnEntity) &&
+                    (!TriggerbotOnlyIfCanAttack || canAttackTarget);
+
+                if (!hasTarget)
+                {
+                    hadTarget = false;
+                    await Task.Delay(8, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                if (!hadTarget)
+                {
+                    hadTarget = true;
+                    float cooldownThreshold = TriggerbotCooldownThreshold / 100.0f;
+                    float thresholdFactor = 1.10f - Math.Clamp(cooldownThreshold, 0.10f, 1.00f);
+                    float baseIntervalMs = 40.0f + (thresholdFactor * 110.0f);
+                    double reactionFactor = 0.7 + (Random.Shared.NextDouble() * 1.1);
+                    int reactionMs = (int)Math.Clamp(baseIntervalMs * reactionFactor, 45.0f, 220.0f);
+                    targetReadyAt = nowMs + reactionMs;
+                }
+
+                float serverCooldown = Math.Clamp(state.AttackCooldown, 0.0f, 1.0f);
+                float cooldownPerTick = NormalizeCooldownPerTick(state.AttackCooldownPerTick);
+                float localCooldown = lastTriggerbotClickAt == 0
+                    ? 1.0f
+                    : Math.Clamp(((nowMs - lastTriggerbotClickAt) / 50.0f) * cooldownPerTick, 0.0f, 1.0f);
+                float cooldownBase = Math.Min(serverCooldown, localCooldown);
+                float predictedCooldown = cooldownBase;
+                if (targetReadyAt > nowMs)
+                {
+                    double msAhead = targetReadyAt - nowMs;
+                    float localAhead = Math.Clamp(localCooldown + (float)(msAhead / 50.0) * cooldownPerTick, 0.0f, 1.0f);
+                    predictedCooldown = Math.Min(serverCooldown, localAhead);
+                }
+
+                float threshold = TriggerbotCooldownThreshold / 100.0f;
+                bool cooldownReady = serverCooldown >= threshold && predictedCooldown >= threshold;
+                long minIntervalMs = (long)Math.Ceiling((threshold / Math.Max(0.01f, cooldownPerTick)) * 50.0f);
+                bool intervalReady = lastTriggerbotClickAt == 0 || (nowMs - lastTriggerbotClickAt) >= minIntervalMs;
+                long fullCooldownMs = (long)Math.Ceiling(50.0f / Math.Max(0.01f, cooldownPerTick));
+                bool hardCapReady = lastTriggerbotClickAt == 0 || (nowMs - lastTriggerbotClickAt) >= fullCooldownMs;
+
+                if (cooldownReady && intervalReady && hardCapReady && nowMs >= targetReadyAt)
+                {
+                    bool didClick = false;
+                    if (Random.Shared.Next(1, 101) <= TriggerbotHitChance)
+                    {
+                        PerformClick(true);
+                        didClick = true;
+                    }
+
+                    if (didClick)
+                    {
+                        lastTriggerbotClickAt = nowMs;
+                        int postClickDelay = Random.Shared.Next(18, 46);
+                        if (Random.Shared.NextDouble() < 0.10)
+                            postClickDelay += Random.Shared.Next(20, 65);
+                        targetReadyAt = nowMs + postClickDelay;
+                    }
+                    else
+                    {
+                        targetReadyAt = nowMs + Random.Shared.Next(18, 34);
+                    }
+                }
+
+                await Task.Delay(4, token).ConfigureAwait(false);
+            }
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    private bool IsCrosshairEntityFallback(GameState state)
+    {
+        if (state.Entities.Count == 0) return false;
+        var rect = WindowDetection.GetMinecraftWindowRect();
+        if (!rect.HasValue) return false;
+
+        int width = rect.Value.Right - rect.Value.Left;
+        int height = rect.Value.Bottom - rect.Value.Top;
+        if (width <= 0 || height <= 0) return false;
+
+        double cx = width * 0.5;
+        double cy = height * 0.5;
+        const double radiusSq = 24.0 * 24.0;
+
+        foreach (var entity in state.Entities)
+        {
+            if (entity.Hp <= 0.1f) continue;
+            if (entity.Sx < 0 || entity.Sx > width || entity.Sy < 0 || entity.Sy > height) continue;
+            double dx = entity.Sx - cx;
+            double dy = entity.Sy - cy;
+            if ((dx * dx + dy * dy) <= radiusSq)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool CanAttackTargetNow(GameState state)
+    {
+        if (state.Entities.Count == 0) return false;
+
+        if (state.LookingAtEntity || state.LookingAtEntityLatched) return true;
+        if (!IsCrosshairEntityFallback(state)) return false;
+
+        var rect = WindowDetection.GetMinecraftWindowRect();
+        if (!rect.HasValue) return false;
+
+        int width = rect.Value.Right - rect.Value.Left;
+        int height = rect.Value.Bottom - rect.Value.Top;
+        if (width <= 0 || height <= 0) return false;
+
+        double cx = width * 0.5;
+        double cy = height * 0.5;
+        const double radiusSq = 30.0 * 30.0;
+
+        double bestDist = double.MaxValue;
+        bool foundInCrosshair = false;
+
+        foreach (var entity in state.Entities)
+        {
+            if (entity.Hp <= 0.1f) continue;
+            if (entity.Dist <= 0.01 || entity.Dist > 3.8) continue;
+            if (entity.Sx < 0 || entity.Sx > width || entity.Sy < 0 || entity.Sy > height) continue;
+
+            double dx = entity.Sx - cx;
+            double dy = entity.Sy - cy;
+            double distSq = dx * dx + dy * dy;
+            if (distSq > radiusSq) continue;
+
+            foundInCrosshair = true;
+            if (entity.Dist < bestDist)
+                bestDist = entity.Dist;
+        }
+
+        if (!foundInCrosshair) return false;
+        return bestDist <= 3.8;
+    }
+
+    private static float NormalizeCooldownPerTick(float raw)
+    {
+        if (!float.IsFinite(raw) || raw <= 0.0f) return 0.08f;
+        float normalized;
+        if (raw > 1.0f)
+        {
+            float asTicks = 1.0f / raw;
+            float asAttackSpeed = raw / 20.0f;
+            normalized = Math.Min(asTicks, asAttackSpeed);
+        }
+        else
+        {
+            normalized = raw;
+        }
+        return Math.Clamp(normalized, 0.025f, 0.25f);
+    }
 
     private async Task ClickLoop(CancellationToken token)
     {

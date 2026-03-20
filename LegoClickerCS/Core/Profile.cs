@@ -9,6 +9,9 @@ namespace LegoClickerCS.Core;
 public class Profile
 {
     public string Name { get; set; } = "Default";
+    public string GuiTheme { get; set; } = "Default";
+    public string ModuleListStyle { get; set; } = "Default";
+    public bool ShowLogo { get; set; } = true;
     public float MinCPS { get; set; } = 8.0f;
     public float MaxCPS { get; set; } = 12.0f;
     public bool LeftClickEnabled { get; set; } = true;
@@ -24,6 +27,12 @@ public class Profile
     public float AimAssistFov { get; set; } = 30.0f;
     public float AimAssistRange { get; set; } = 4.5f;
     public int AimAssistStrength { get; set; } = 40;
+    public bool TriggerbotEnabled { get; set; } = false;
+    public bool TriggerbotOnlyCrosshair { get; set; } = true;
+    public bool TriggerbotOnlyIfCanAttack { get; set; } = true;
+    public int TriggerbotCooldownThreshold { get; set; } = 92;
+    public int TriggerbotHitChance { get; set; } = 100;
+    public bool TriggerbotRequireClick { get; set; } = true;
     public bool GtbHelperEnabled { get; set; } = false;
     public bool NametagsEnabled { get; set; } = false;
     public bool ShowModuleList { get; set; } = true;
@@ -41,6 +50,11 @@ public class Profile
     public float ReachMax { get; set; } = 6.0f;
     public int ReachChance { get; set; } = 100;
 
+    public bool VelocityEnabled { get; set; } = false;
+    public int VelocityHorizontal { get; set; } = 100;
+    public int VelocityVertical { get; set; } = 100;
+    public int VelocityChance { get; set; } = 100;
+
     public Dictionary<string, int> ModuleKeys { get; set; } = new()
     {
         ["autoclicker"]   = 0xC0,
@@ -49,11 +63,13 @@ public class Profile
         ["clickinchests"] = 0,
         ["breakblocks"]   = 0,
         ["aimassist"]     = 0,
+        ["triggerbot"]    = 0,
         ["gtbhelper"]     = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
         ["reach"]         = 0,
+        ["velocity"]      = 0,
     };
     public string Theme { get; set; } = "Dark";
 }
@@ -134,6 +150,9 @@ public static class ProfileManager
             MinCPS = clicker.MinCPS,
             MaxCPS = clicker.MaxCPS,
             LeftClickEnabled = clicker.LeftClickEnabled,
+            GuiTheme = clicker.GuiTheme,
+            ModuleListStyle = clicker.ModuleListStyle,
+            ShowLogo = clicker.ShowLogo,
             
             RightClickEnabled = clicker.RightClickEnabled,
             RightMinCPS = clicker.RightMinCPS,
@@ -146,6 +165,12 @@ public static class ProfileManager
             AimAssistFov = clicker.AimAssistFov,
             AimAssistRange = clicker.AimAssistRange,
             AimAssistStrength = clicker.AimAssistStrength,
+            TriggerbotEnabled = clicker.TriggerbotEnabled,
+            TriggerbotOnlyCrosshair = clicker.TriggerbotOnlyCrosshair,
+            TriggerbotOnlyIfCanAttack = clicker.TriggerbotOnlyIfCanAttack,
+            TriggerbotCooldownThreshold = clicker.TriggerbotCooldownThreshold,
+            TriggerbotHitChance = clicker.TriggerbotHitChance,
+            TriggerbotRequireClick = clicker.TriggerbotRequireClick,
             GtbHelperEnabled = clicker.GtbHelperEnabled,
             NametagsEnabled = clicker.NametagsEnabled,
             ShowModuleList = clicker.ShowModuleList,
@@ -162,6 +187,11 @@ public static class ProfileManager
             ReachMax = clicker.ReachMax,
             ReachChance = clicker.ReachChance,
 
+            VelocityEnabled = clicker.VelocityEnabled,
+            VelocityHorizontal = clicker.VelocityHorizontal,
+            VelocityVertical = clicker.VelocityVertical,
+            VelocityChance = clicker.VelocityChance,
+
             ModuleKeys = new Dictionary<string, int>(InputHooks.ModuleKeys),
             Theme = ThemeManager.CurrentTheme
         };
@@ -173,6 +203,9 @@ public static class ProfileManager
         clicker.MinCPS = profile.MinCPS;
         clicker.MaxCPS = profile.MaxCPS;
         clicker.LeftClickEnabled = profile.LeftClickEnabled;
+        if (profile.GuiTheme != null) clicker.GuiTheme = profile.GuiTheme;
+        if (profile.ModuleListStyle != null) clicker.ModuleListStyle = profile.ModuleListStyle;
+        clicker.ShowLogo = profile.ShowLogo;
         
         clicker.RightClickEnabled = profile.RightClickEnabled;
         clicker.RightMinCPS = profile.RightMinCPS;
@@ -185,6 +218,12 @@ public static class ProfileManager
         clicker.AimAssistFov = profile.AimAssistFov;
         clicker.AimAssistRange = profile.AimAssistRange;
         clicker.AimAssistStrength = profile.AimAssistStrength;
+        clicker.TriggerbotEnabled = profile.TriggerbotEnabled;
+        clicker.TriggerbotOnlyCrosshair = profile.TriggerbotOnlyCrosshair;
+        clicker.TriggerbotOnlyIfCanAttack = profile.TriggerbotOnlyIfCanAttack;
+        clicker.TriggerbotCooldownThreshold = profile.TriggerbotCooldownThreshold;
+        clicker.TriggerbotHitChance = profile.TriggerbotHitChance;
+        clicker.TriggerbotRequireClick = profile.TriggerbotRequireClick;
         clicker.GtbHelperEnabled = profile.GtbHelperEnabled;
         clicker.NametagsEnabled = profile.NametagsEnabled;
         clicker.ShowModuleList = profile.ShowModuleList;
@@ -200,6 +239,11 @@ public static class ProfileManager
         clicker.ReachMin = profile.ReachMin;
         clicker.ReachMax = profile.ReachMax;
         clicker.ReachChance = profile.ReachChance;
+
+        clicker.VelocityEnabled = profile.VelocityEnabled;
+        clicker.VelocityHorizontal = profile.VelocityHorizontal;
+        clicker.VelocityVertical = profile.VelocityVertical;
+        clicker.VelocityChance = profile.VelocityChance;
 
         foreach (var kvp in profile.ModuleKeys)
             InputHooks.SetModuleKey(kvp.Key, kvp.Value);

@@ -108,6 +108,7 @@ struct Config {
     bool  jitter         = false;
     bool  clickInChests  = false;
     bool  aimAssist      = false;
+    bool  triggerbot     = false;
     bool  nametags       = false;
     bool  chestEsp       = false;
     bool  showModuleList = true;
@@ -117,6 +118,9 @@ struct Config {
     int   nametagMaxCount = 8;
     int   chestEspMaxCount = 5;
     bool  rightClick     = false;
+    int   moduleListStyle = 0;
+    bool  showLogo       = true;
+    std::string guiTheme = "Default";
     float rightMinCPS    = 10.0f;
     float rightMaxCPS    = 14.0f;
     bool  rightBlockOnly = false;
@@ -129,6 +133,10 @@ struct Config {
     float reachMin       = 3.0f;
     float reachMax       = 6.0f;
     int   reachChance    = 100;
+    bool  velocityEnabled = false;
+    int   velocityHorizontal = 100;
+    int   velocityVertical = 100;
+    int   velocityChance = 100;
 };
 static Config g_config;
 static Mutex  g_configMutex;
@@ -163,7 +171,10 @@ static void ParseConfig(const std::string& line) {
             return (e == std::string::npos) ? "" : line.substr(p+1, e-p-1);
         }
         size_t e = line.find_first_of(",}", p);
-        return (e == std::string::npos) ? line.substr(p) : line.substr(p, e-p);
+        std::string res = (e == std::string::npos) ? line.substr(p) : line.substr(p, e-p);
+        // trim leading spaces just in case
+        while(!res.empty() && res[0] == ' ') res.erase(0, 1);
+        return res;
     };
     auto getBool  = [&](const char* k) { return getStr(k) == "true"; };
     auto getFloat = [&](const char* k) -> float {
@@ -187,6 +198,7 @@ static void ParseConfig(const std::string& line) {
     g_config.jitter        = getBool("jitter");
     g_config.clickInChests = getBool("clickInChests");
     g_config.aimAssist     = getBool("aimAssist");
+    g_config.triggerbot    = getBool("triggerbot");
     g_config.nametags      = getBool("nametags");
     g_config.chestEsp      = getBool("chestEsp");
     std::string showModuleListRaw = getStr("showModuleList");
@@ -199,6 +211,11 @@ static void ParseConfig(const std::string& line) {
     g_config.rightClick    = getBool("right");
     g_config.rightMinCPS   = getFloat("rightMinCPS");
     g_config.rightMaxCPS   = getFloat("rightMaxCPS");
+    g_config.moduleListStyle = (std::max)(0, (std::min)(4, getInt("moduleListStyle", 0)));
+    std::string showLogoRaw = getStr("showLogo");
+    g_config.showLogo = showLogoRaw.empty() ? true : (showLogoRaw == "true");
+    std::string guiThemeRaw = getStr("guiTheme");
+    g_config.guiTheme = guiThemeRaw.empty() ? "Default" : guiThemeRaw;
     g_config.rightBlockOnly= getBool("rightBlock");
     g_config.breakBlocks   = getBool("breakBlocks");
     g_config.gtbHelper     = getBool("gtbHelper");
@@ -209,6 +226,200 @@ static void ParseConfig(const std::string& line) {
     g_config.reachMin      = getFloat("reachMin");
     g_config.reachMax      = getFloat("reachMax");
     g_config.reachChance   = getInt("reachChance", 100);
+    g_config.velocityEnabled = getBool("velocityEnabled");
+    g_config.velocityHorizontal = (std::max)(1, (std::min)(100, getInt("velocityHorizontal", 100)));
+    g_config.velocityVertical = (std::max)(1, (std::min)(100, getInt("velocityVertical", 100)));
+    g_config.velocityChance = (std::max)(1, (std::min)(100, getInt("velocityChance", 100)));
+}
+
+struct OverlayTheme {
+    ImU32 accentPrimary;
+    ImU32 accentSecondary;
+    ImU32 accentTertiary;
+    ImU32 logoColor;
+    ImU32 logoShadow;
+    ImU32 moduleBg;
+    ImU32 moduleBorder;
+    ImU32 moduleText;
+    ImU32 moduleTextShadow;
+    ImU32 moduleMinimalBg;
+    ImU32 moduleOutlinedBg;
+    ImU32 moduleGlassBorder;
+    ImU32 moduleBoldText;
+    ImU32 gtbBorder;
+    ImU32 gtbTitle;
+    ImU32 gtbRow;
+};
+
+static std::string ToLowerAscii(std::string value)
+{
+    for (char& ch : value) ch = (char)std::tolower((unsigned char)ch);
+    return value;
+}
+
+static OverlayTheme ResolveOverlayTheme(const std::string& guiTheme)
+{
+    std::string key = ToLowerAscii(guiTheme);
+
+    if (key == "dark blue") {
+        return {
+            IM_COL32(59, 130, 246, 255),
+            IM_COL32(37, 99, 235, 255),
+            IM_COL32(96, 165, 250, 255),
+            IM_COL32(125, 195, 255, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(12, 23, 42, 160),
+            IM_COL32(148, 163, 184, 70),
+            IM_COL32(241, 245, 249, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(12, 23, 42, 100),
+            IM_COL32(6, 18, 34, 190),
+            IM_COL32(125, 211, 252, 105),
+            IM_COL32(255, 255, 255, 245),
+            IM_COL32(125, 195, 255, 220),
+            IM_COL32(191, 219, 254, 245),
+            IM_COL32(224, 242, 254, 238)
+        };
+    }
+    if (key == "crimson") {
+        return {
+            IM_COL32(244, 63, 94, 255),
+            IM_COL32(225, 29, 72, 255),
+            IM_COL32(251, 113, 133, 255),
+            IM_COL32(255, 145, 165, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(42, 15, 21, 168),
+            IM_COL32(251, 113, 133, 80),
+            IM_COL32(255, 234, 238, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(42, 15, 21, 108),
+            IM_COL32(28, 9, 13, 198),
+            IM_COL32(251, 113, 133, 118),
+            IM_COL32(255, 245, 247, 245),
+            IM_COL32(255, 150, 165, 220),
+            IM_COL32(255, 220, 228, 245),
+            IM_COL32(255, 238, 242, 238)
+        };
+    }
+    if (key == "emerald") {
+        return {
+            IM_COL32(16, 185, 129, 255),
+            IM_COL32(5, 150, 105, 255),
+            IM_COL32(52, 211, 153, 255),
+            IM_COL32(86, 255, 199, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(8, 33, 30, 165),
+            IM_COL32(74, 222, 128, 70),
+            IM_COL32(220, 252, 231, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(8, 33, 30, 105),
+            IM_COL32(6, 24, 22, 196),
+            IM_COL32(74, 222, 128, 105),
+            IM_COL32(240, 253, 244, 245),
+            IM_COL32(134, 239, 172, 220),
+            IM_COL32(167, 243, 208, 245),
+            IM_COL32(236, 253, 245, 238)
+        };
+    }
+    if (key == "amber") {
+        return {
+            IM_COL32(245, 158, 11, 255),
+            IM_COL32(217, 119, 6, 255),
+            IM_COL32(251, 191, 36, 255),
+            IM_COL32(255, 200, 108, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(35, 23, 4, 170),
+            IM_COL32(251, 191, 36, 72),
+            IM_COL32(255, 247, 237, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(35, 23, 4, 115),
+            IM_COL32(23, 14, 3, 200),
+            IM_COL32(251, 191, 36, 112),
+            IM_COL32(255, 251, 235, 245),
+            IM_COL32(252, 211, 77, 220),
+            IM_COL32(253, 230, 138, 245),
+            IM_COL32(255, 251, 235, 238)
+        };
+    }
+    if (key == "slate") {
+        return {
+            IM_COL32(148, 163, 184, 255),
+            IM_COL32(100, 116, 139, 255),
+            IM_COL32(203, 213, 225, 255),
+            IM_COL32(190, 202, 220, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(16, 20, 24, 170),
+            IM_COL32(148, 163, 184, 72),
+            IM_COL32(241, 245, 249, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(16, 20, 24, 110),
+            IM_COL32(10, 13, 17, 200),
+            IM_COL32(203, 213, 225, 106),
+            IM_COL32(255, 255, 255, 245),
+            IM_COL32(186, 198, 216, 220),
+            IM_COL32(226, 232, 240, 245),
+            IM_COL32(226, 232, 240, 238)
+        };
+    }
+    if (key == "sunset") {
+        return {
+            IM_COL32(251, 113, 133, 255),
+            IM_COL32(219, 39, 119, 255),
+            IM_COL32(244, 114, 182, 255),
+            IM_COL32(255, 154, 173, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(33, 17, 37, 170),
+            IM_COL32(244, 114, 182, 76),
+            IM_COL32(253, 242, 248, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(33, 17, 37, 110),
+            IM_COL32(20, 10, 22, 200),
+            IM_COL32(244, 114, 182, 112),
+            IM_COL32(255, 245, 250, 245),
+            IM_COL32(249, 168, 212, 220),
+            IM_COL32(251, 207, 232, 245),
+            IM_COL32(253, 242, 248, 238)
+        };
+    }
+    if (key == "frost") {
+        return {
+            IM_COL32(56, 189, 248, 255),
+            IM_COL32(14, 165, 233, 255),
+            IM_COL32(125, 211, 252, 255),
+            IM_COL32(147, 224, 255, 255),
+            IM_COL32(0, 0, 0, 210),
+            IM_COL32(13, 22, 36, 166),
+            IM_COL32(125, 211, 252, 76),
+            IM_COL32(224, 242, 254, 238),
+            IM_COL32(0, 0, 0, 190),
+            IM_COL32(13, 22, 36, 108),
+            IM_COL32(7, 14, 26, 198),
+            IM_COL32(125, 211, 252, 110),
+            IM_COL32(240, 249, 255, 245),
+            IM_COL32(125, 211, 252, 220),
+            IM_COL32(186, 230, 253, 245),
+            IM_COL32(224, 242, 254, 238)
+        };
+    }
+
+    return {
+        IM_COL32(167, 125, 255, 255),
+        IM_COL32(124, 101, 176, 255),
+        IM_COL32(196, 181, 253, 255),
+        IM_COL32(155, 220, 255, 255),
+        IM_COL32(0, 0, 0, 210),
+        IM_COL32(0, 0, 0, 145),
+        IM_COL32(255, 255, 255, 44),
+        IM_COL32(255, 255, 255, 235),
+        IM_COL32(0, 0, 0, 180),
+        IM_COL32(0, 0, 0, 90),
+        IM_COL32(0, 0, 0, 185),
+        IM_COL32(255, 255, 255, 90),
+        IM_COL32(255, 255, 255, 245),
+        IM_COL32(255, 210, 90, 220),
+        IM_COL32(255, 226, 150, 245),
+        IM_COL32(240, 240, 240, 235)
+    };
 }
 
 // ===================== GLOBALS =====================
@@ -264,8 +475,14 @@ static std::string g_jniActionBar;
 static bool        g_jniGuiOpen     = false;
 static bool        g_jniInWorld     = false;
 static bool        g_jniLookingAtBlock = false;
+static bool        g_jniLookingAtEntity = false;
+static bool        g_jniLookingAtEntityLatched = false;
 static bool        g_jniBreakingBlock  = false;
 static bool        g_jniHoldingBlock   = false;
+static float       g_jniAttackCooldown = 1.0f;
+static float       g_jniAttackCooldownPerTick = 0.08f;
+static unsigned long long g_jniStateMs = 0;
+static unsigned long long g_lastEntitySeenMs = 0;
 static Mutex       g_jniStateMtx;
 static std::string g_lastLoggedScreen;
 static jfieldID    g_inGameHudField_121 = nullptr; // MinecraftClient.inGameHud
@@ -278,6 +495,15 @@ static jmethodID g_getAttributes_121 = nullptr;
 static jmethodID g_getCustomInstance_121 = nullptr;
 static jmethodID g_setBaseValue_121 = nullptr;
 static jobject g_reachRegistryEntry_121 = nullptr;
+
+static bool g_velocityMethodsResolved = false;
+static jmethodID g_getVelocity_121 = nullptr;
+static jmethodID g_setVelocityVec_121 = nullptr;
+static jmethodID g_setVelocityXYZ_121 = nullptr;
+static jfieldID g_hurtTimeField_121 = nullptr;
+static jmethodID g_vec3dCtor_121 = nullptr;
+static int g_lastHurtTime_121 = 0;
+static bool g_loggedVelocityResolveFail_121 = false;
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -759,6 +985,62 @@ static bool IsHitResultBlock(JNIEnv* env, jobject hitObj) {
     if (enumCls) env->DeleteLocalRef(enumCls);
     env->DeleteLocalRef(typeObj);
     return out;
+}
+
+static std::string GetHitResultTypeName(JNIEnv* env, jobject hitObj) {
+    if (!env || !hitObj) return "";
+
+    jmethodID mGetType = ResolveHitResultGetType(env);
+    if (!mGetType) return "";
+
+    jobject typeObj = env->CallObjectMethod(hitObj, mGetType);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); typeObj = nullptr; }
+    if (!typeObj) return "";
+
+    std::string out;
+    jclass enumCls = env->GetObjectClass(typeObj);
+    jmethodID mName = enumCls ? env->GetMethodID(enumCls, "name", "()Ljava/lang/String;") : nullptr;
+    if (env->ExceptionCheck()) { env->ExceptionClear(); mName = nullptr; }
+    if (enumCls && mName) {
+        jstring jn = (jstring)env->CallObjectMethod(typeObj, mName);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); jn = nullptr; }
+        if (jn) {
+            const char* cn = env->GetStringUTFChars(jn, nullptr);
+            if (cn) {
+                out = cn;
+                env->ReleaseStringUTFChars(jn, cn);
+            }
+            env->DeleteLocalRef(jn);
+        }
+    }
+
+    if (enumCls) env->DeleteLocalRef(enumCls);
+    env->DeleteLocalRef(typeObj);
+    return out;
+}
+
+static int GetHitResultTypeOrdinal(JNIEnv* env, jobject hitObj) {
+    if (!env || !hitObj) return -1;
+
+    jmethodID mGetType = ResolveHitResultGetType(env);
+    if (!mGetType) return -1;
+
+    jobject typeObj = env->CallObjectMethod(hitObj, mGetType);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); typeObj = nullptr; }
+    if (!typeObj) return -1;
+
+    int ordinal = -1;
+    jclass enumBase = env->FindClass("java/lang/Enum");
+    jmethodID mOrdinal = enumBase ? env->GetMethodID(enumBase, "ordinal", "()I") : nullptr;
+    if (env->ExceptionCheck()) { env->ExceptionClear(); mOrdinal = nullptr; }
+    if (mOrdinal) {
+        ordinal = env->CallIntMethod(typeObj, mOrdinal);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); ordinal = -1; }
+    }
+
+    if (enumBase) env->DeleteLocalRef(enumBase);
+    env->DeleteLocalRef(typeObj);
+    return ordinal;
 }
 
 static void EnsureCrosshairTargetField(JNIEnv* env, jclass mcCls) {
@@ -1605,6 +1887,152 @@ static void UpdateReach(JNIEnv* env, const Config& cfg) {
     }
 }
 
+static void EnsureVelocityJni(JNIEnv* env, jobject selfObj) {
+    if (!env || !selfObj) return;
+    if (g_velocityMethodsResolved) return;
+
+    jclass playerCls = env->GetObjectClass(selfObj);
+    if (!playerCls) return;
+
+    if (!g_getVelocity_121) {
+        g_getVelocity_121 = env->GetMethodID(playerCls, "getVelocity", "()Lnet/minecraft/class_243;");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_getVelocity_121 = nullptr; }
+        if (!g_getVelocity_121) {
+            g_getVelocity_121 = env->GetMethodID(playerCls, "method_18798", "()Lnet/minecraft/class_243;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_getVelocity_121 = nullptr; }
+        }
+    }
+
+    if (!g_setVelocityVec_121) {
+        g_setVelocityVec_121 = env->GetMethodID(playerCls, "setVelocity", "(Lnet/minecraft/class_243;)V");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_setVelocityVec_121 = nullptr; }
+        if (!g_setVelocityVec_121) {
+            g_setVelocityVec_121 = env->GetMethodID(playerCls, "method_18799", "(Lnet/minecraft/class_243;)V");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_setVelocityVec_121 = nullptr; }
+        }
+    }
+
+    if (!g_setVelocityXYZ_121) {
+        g_setVelocityXYZ_121 = env->GetMethodID(playerCls, "setVelocity", "(DDD)V");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_setVelocityXYZ_121 = nullptr; }
+        if (!g_setVelocityXYZ_121) {
+            g_setVelocityXYZ_121 = env->GetMethodID(playerCls, "method_18800", "(DDD)V");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_setVelocityXYZ_121 = nullptr; }
+        }
+    }
+
+    if (!g_hurtTimeField_121) {
+        jclass livingCls = nullptr;
+        if (g_gameClassLoader) livingCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_1309");
+        if (!livingCls) {
+            livingCls = env->FindClass("net/minecraft/class_1309");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); livingCls = nullptr; }
+        }
+        if (!livingCls) {
+            livingCls = playerCls;
+        }
+
+        g_hurtTimeField_121 = env->GetFieldID(livingCls, "field_6235", "I");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_hurtTimeField_121 = nullptr; }
+        if (!g_hurtTimeField_121) {
+            g_hurtTimeField_121 = env->GetFieldID(livingCls, "hurtTime", "I");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_hurtTimeField_121 = nullptr; }
+        }
+
+        if (livingCls != playerCls) {
+            env->DeleteLocalRef(livingCls);
+        }
+    }
+
+    if (!g_vec3dCtor_121 && g_vec3dClass_121) {
+        g_vec3dCtor_121 = env->GetMethodID(g_vec3dClass_121, "<init>", "(DDD)V");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); g_vec3dCtor_121 = nullptr; }
+    }
+
+    g_velocityMethodsResolved = (g_getVelocity_121 != nullptr) &&
+        (g_setVelocityXYZ_121 != nullptr || (g_setVelocityVec_121 != nullptr && g_vec3dCtor_121 != nullptr)) &&
+        (g_hurtTimeField_121 != nullptr) &&
+        (g_vec3dX_121 != nullptr && g_vec3dY_121 != nullptr && g_vec3dZ_121 != nullptr);
+
+    if (!g_velocityMethodsResolved && !g_loggedVelocityResolveFail_121) {
+        g_loggedVelocityResolveFail_121 = true;
+        Log(std::string("Velocity JNI unresolved: getVel=") + (g_getVelocity_121 ? "1" : "0") +
+            " setVelXYZ=" + (g_setVelocityXYZ_121 ? "1" : "0") +
+            " setVelVec=" + (g_setVelocityVec_121 ? "1" : "0") +
+            " hurtTime=" + (g_hurtTimeField_121 ? "1" : "0") +
+            " vecCtor=" + (g_vec3dCtor_121 ? "1" : "0"));
+    }
+
+    env->DeleteLocalRef(playerCls);
+}
+
+static void UpdateVelocity(JNIEnv* env, const Config& cfg) {
+    if (!env || !g_mcInstance || !g_playerField_121) return;
+
+    jobject selfObj = env->GetObjectField(g_mcInstance, g_playerField_121);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); selfObj = nullptr; }
+    if (!selfObj) return;
+
+    EnsureVelocityJni(env, selfObj);
+    if (!g_velocityMethodsResolved) {
+        env->DeleteLocalRef(selfObj);
+        return;
+    }
+
+    int hurtTime = env->GetIntField(selfObj, g_hurtTimeField_121);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(selfObj);
+        return;
+    }
+
+    bool newHit = (hurtTime > 0 && hurtTime > g_lastHurtTime_121);
+    if (cfg.velocityEnabled && newHit) {
+        int rv = rand() % 100;
+        bool applyThisHit = (rv < cfg.velocityChance);
+        if (applyThisHit) {
+            jobject velObj = env->CallObjectMethod(selfObj, g_getVelocity_121);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); velObj = nullptr; }
+            if (velObj) {
+                double vx = env->GetDoubleField(velObj, g_vec3dX_121);
+                double vy = env->GetDoubleField(velObj, g_vec3dY_121);
+                double vz = env->GetDoubleField(velObj, g_vec3dZ_121);
+                if (!env->ExceptionCheck()) {
+                    double horizMag = std::sqrt(vx * vx + vz * vz);
+                    bool looksLikeKnockback = (horizMag > 0.26 || std::fabs(vy) > 0.20);
+                    if (looksLikeKnockback && (cfg.velocityHorizontal != 100 || cfg.velocityVertical != 100)) {
+                        double hScale = (double)cfg.velocityHorizontal / 100.0;
+                        double vScale = (double)cfg.velocityVertical / 100.0;
+                        double outX = vx * hScale;
+                        double outY = vy * vScale;
+                        double outZ = vz * hScale;
+
+                        if (g_setVelocityXYZ_121) {
+                            env->CallVoidMethod(selfObj, g_setVelocityXYZ_121, outX, outY, outZ);
+                        } else if (g_setVelocityVec_121 && g_vec3dCtor_121 && g_vec3dClass_121) {
+                            jobject vec = env->NewObject(g_vec3dClass_121, g_vec3dCtor_121, outX, outY, outZ);
+                            if (!env->ExceptionCheck() && vec) {
+                                env->CallVoidMethod(selfObj, g_setVelocityVec_121, vec);
+                                if (env->ExceptionCheck()) env->ExceptionClear();
+                                env->DeleteLocalRef(vec);
+                            } else {
+                                env->ExceptionClear();
+                            }
+                        }
+                        if (env->ExceptionCheck()) env->ExceptionClear();
+                    }
+                } else {
+                    env->ExceptionClear();
+                }
+                env->DeleteLocalRef(velObj);
+            }
+        }
+    }
+
+    g_lastHurtTime_121 = hurtTime;
+    env->DeleteLocalRef(selfObj);
+}
+
 static void UpdatePlayerListOverlay(JNIEnv* env) {
     DWORD now = GetTickCount();
     if (now - g_lastPlayerListUpdateMs < 100) return;
@@ -1615,6 +2043,7 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     int maxPlayersToProcess = 1;
     if (cfg.nametags) maxPlayersToProcess = (std::max)(maxPlayersToProcess, (std::max)(1, (std::min)(20, cfg.nametagMaxCount)));
     if (cfg.aimAssist) maxPlayersToProcess = (std::max)(maxPlayersToProcess, 12);
+    if (cfg.triggerbot) maxPlayersToProcess = (std::max)(maxPlayersToProcess, 12);
 
     // Accumulate in localList; atomically publish to g_playerList at scope exit.
     std::vector<PlayerData121> localList;
@@ -3839,6 +4268,7 @@ static void UpdateJniState() {
     if (!g_stateJniReady || !g_jvm || !g_mcInstance || !g_screenField) return;
     JNIEnv* env = nullptr;
     if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) != JNI_OK || !env) return;
+    unsigned long long nowMs = (unsigned long long)GetTickCount64();
 
     jobject scr = env->GetObjectField(g_mcInstance, g_screenField);
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
@@ -3896,6 +4326,7 @@ static void UpdateJniState() {
 
     // ===== lookingAtBlock (crosshair hit = BLOCK) =====
     bool lookingAtBlock = false;
+    bool lookingAtEntity = false;
 
     // Find crosshairTarget / hitResult (field name varies across clients/mappings)
     jclass mcCls = env->GetObjectClass(g_mcInstance);
@@ -3915,7 +4346,15 @@ static void UpdateJniState() {
             jobject hitObj = env->GetObjectField(g_mcInstance, hitFld);
             if (env->ExceptionCheck()) { env->ExceptionClear(); hitObj = nullptr; }
             if (hitObj) {
-                lookingAtBlock = IsHitResultBlock(env, hitObj);
+                int hitOrd = GetHitResultTypeOrdinal(env, hitObj);
+                if (hitOrd >= 0) {
+                    lookingAtBlock = (hitOrd == 1);
+                    lookingAtEntity = (hitOrd == 2);
+                } else {
+                    std::string hitType = GetHitResultTypeName(env, hitObj);
+                    lookingAtBlock = (hitType == "BLOCK");
+                    lookingAtEntity = (hitType == "ENTITY");
+                }
                 env->DeleteLocalRef(hitObj);
             }
         }
@@ -4017,6 +4456,61 @@ static void UpdateJniState() {
             } else env->ExceptionClear();
         }
 
+        float attackCooldown = 1.0f;
+        float attackCooldownPerTick = 0.08f;
+        if (inWorld) {
+            jfieldID plFld2 = env->GetFieldID(mcCls, "field_1724", "Lnet/minecraft/class_746;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); plFld2 = nullptr; }
+            if (plFld2) {
+                jobject plObj2 = env->GetObjectField(g_mcInstance, plFld2);
+                if (plObj2 && !env->ExceptionCheck()) {
+                    jclass plCls2 = env->GetObjectClass(plObj2);
+                    if (plCls2) {
+                        static jmethodID s_getAttackCooldownProgress = nullptr;
+                        static jmethodID s_getAttackCooldownPerTick = nullptr;
+                        if (!s_getAttackCooldownProgress) {
+                            s_getAttackCooldownProgress = env->GetMethodID(plCls2, "getAttackCooldownProgress", "(F)F");
+                            if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownProgress = nullptr; }
+                            if (!s_getAttackCooldownProgress) {
+                                s_getAttackCooldownProgress = env->GetMethodID(plCls2, "method_7261", "(F)F");
+                                if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownProgress = nullptr; }
+                            }
+                        }
+
+                        if (!s_getAttackCooldownPerTick) {
+                            s_getAttackCooldownPerTick = env->GetMethodID(plCls2, "getAttackCooldownProgressPerTick", "()F");
+                            if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownPerTick = nullptr; }
+                            if (!s_getAttackCooldownPerTick) {
+                                s_getAttackCooldownPerTick = env->GetMethodID(plCls2, "method_7279", "()F");
+                                if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownPerTick = nullptr; }
+                            }
+                        }
+
+                        if (s_getAttackCooldownProgress) {
+                            attackCooldown = env->CallFloatMethod(plObj2, s_getAttackCooldownProgress, 0.0f);
+                            if (env->ExceptionCheck()) { env->ExceptionClear(); attackCooldown = 1.0f; }
+                        }
+
+                        if (s_getAttackCooldownPerTick) {
+                            attackCooldownPerTick = env->CallFloatMethod(plObj2, s_getAttackCooldownPerTick);
+                            if (env->ExceptionCheck()) { env->ExceptionClear(); attackCooldownPerTick = 0.08f; }
+                        }
+
+                        env->DeleteLocalRef(plCls2);
+                    }
+                    env->DeleteLocalRef(plObj2);
+                } else env->ExceptionClear();
+            }
+        }
+
+        if (!std::isfinite(attackCooldown)) attackCooldown = 1.0f;
+        if (attackCooldown < 0.0f) attackCooldown = 0.0f;
+        if (attackCooldown > 1.0f) attackCooldown = 1.0f;
+        if (!std::isfinite(attackCooldownPerTick)) attackCooldownPerTick = 0.08f;
+        if (attackCooldownPerTick <= 0.0f) attackCooldownPerTick = 0.08f;
+        // Keep values > 1.0f intact: some mappings return cooldown period in ticks
+        // (e.g., sword ~= 12.5), and C# normalizes by inverting these values.
+
         if (inWorld) {
             EnsureHudTextFields(env, mcCls, nullptr);
             if (g_inGameHudField_121) {
@@ -4043,13 +4537,25 @@ static void UpdateJniState() {
         env->DeleteLocalRef(mcCls);
 
         { LockGuard lk(g_jniStateMtx);
+            if (!inWorld || guiOpen) {
+                g_lastEntitySeenMs = 0;
+            } else if (lookingAtEntity) {
+                g_lastEntitySeenMs = nowMs;
+            }
+            bool lookingAtEntityLatched = g_lastEntitySeenMs != 0 && (nowMs - g_lastEntitySeenMs) <= 12ULL;
+
             g_jniScreenName = screenName;
             g_jniActionBar = actionBarText;
             g_jniGuiOpen = guiOpen;
             g_jniInWorld = inWorld;
             g_jniLookingAtBlock = lookingAtBlock;
+            g_jniLookingAtEntity = lookingAtEntity;
+            g_jniLookingAtEntityLatched = lookingAtEntityLatched;
             g_jniBreakingBlock = breakingBlock;
             g_jniHoldingBlock = holdingBlock;
+            g_jniAttackCooldown = attackCooldown;
+            g_jniAttackCooldownPerTick = attackCooldownPerTick;
+            g_jniStateMs = nowMs;
         }
         return;
     }
@@ -4060,8 +4566,14 @@ static void UpdateJniState() {
         g_jniGuiOpen = guiOpen;
         g_jniInWorld = inWorld;
         g_jniLookingAtBlock = lookingAtBlock;
+        g_jniLookingAtEntity = lookingAtEntity;
+        g_jniLookingAtEntityLatched = false;
         g_jniBreakingBlock = false;
         g_jniHoldingBlock = false;
+        g_jniAttackCooldown = 1.0f;
+        g_jniAttackCooldownPerTick = 0.08f;
+        g_jniStateMs = nowMs;
+        g_lastEntitySeenMs = 0;
     }
 }
 
@@ -4269,6 +4781,7 @@ static void RenderClickGUI() {
         // Combat
         ModuleRow("ac",   "AutoClicker",   cfg.armed,      0, "toggleArmed");
         ModuleRow("aa",   "Aim Assist",    cfg.aimAssist,  1, "toggleAimAssist");
+        ModuleRow("tb",   "Triggerbot",    cfg.triggerbot, 2, "toggleTriggerbot");
     } else if (selCategory == 1) {
         // Render
         ModuleRow("ce",  "Chest ESP",      cfg.chestEsp,   0, "toggleChestEsp");
@@ -4278,6 +4791,7 @@ static void RenderClickGUI() {
     } else {
         // Risky
         ModuleRow("rh",  "Reach",          cfg.reachEnabled, 0, "toggleReach");
+        ModuleRow("vl",  "Velocity",       cfg.velocityEnabled, 1, "toggleVelocity");
     }
     ImGui::EndChild();
 
@@ -4340,6 +4854,11 @@ static void RenderClickGUI() {
         if (ImGui::Checkbox("Enable Aim Assist", &aa)) SendCmd("toggleAimAssist");
         ImGui::TextDisabled("Adjust FOV/range/strength in Control Center.");
 
+    } else if (selCategory == 0 && selModule == 2) {
+        bool tb = cfg.triggerbot;
+        if (ImGui::Checkbox("Enable Triggerbot", &tb)) SendCmd("toggleTriggerbot");
+        ImGui::TextDisabled("Cooldown-based timing (1.9+ combat). Tune in Control Center.");
+
     } else if (selCategory == 1 && selModule == 0) {
         ImGui::TextDisabled("No extra settings.");
 
@@ -4371,6 +4890,24 @@ static void RenderClickGUI() {
             
         ImGui::Spacing();
         ImGui::TextDisabled("Attribute modification for 1.21.");
+    } else if (selCategory == 2 && selModule == 1) {
+        bool velocity = cfg.velocityEnabled;
+        if (ImGui::Checkbox("Enable Velocity", &velocity)) SendCmd("toggleVelocity");
+
+        int vHorizontal = cfg.velocityHorizontal;
+        if (ImGui::SliderInt("Horizontal %", &vHorizontal, 1, 100))
+            { char buf[128]; snprintf(buf, sizeof(buf), "{\"type\":\"cmd\",\"action\":\"setVelocityHorizontal\",\"value\":%d}\n", vHorizontal); LockGuard lk(g_cmdMutex); g_pendingCmds.push_back(buf); }
+
+        int vVertical = cfg.velocityVertical;
+        if (ImGui::SliderInt("Vertical %", &vVertical, 1, 100))
+            { char buf[128]; snprintf(buf, sizeof(buf), "{\"type\":\"cmd\",\"action\":\"setVelocityVertical\",\"value\":%d}\n", vVertical); LockGuard lk(g_cmdMutex); g_pendingCmds.push_back(buf); }
+
+        int vChance = cfg.velocityChance;
+        if (ImGui::SliderInt("Chance %", &vChance, 1, 100))
+            { char buf[128]; snprintf(buf, sizeof(buf), "{\"type\":\"cmd\",\"action\":\"setVelocityChance\",\"value\":%d}\n", vChance); LockGuard lk(g_cmdMutex); g_pendingCmds.push_back(buf); }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Scales incoming knockback vectors.");
     }
 
     ImGui::EndChild();
@@ -4506,6 +5043,19 @@ static void ReadCameraState(JNIEnv* env) {
     { LockGuard lk(g_bgCamMutex); g_bgCamState = cs; }
 }
 
+static DWORD WINAPI FastPollThreadProc(LPVOID) {
+    JNIEnv* env = nullptr;
+    if (!g_jvm || g_jvm->AttachCurrentThread((void**)&env, nullptr) != JNI_OK) return 1;
+    while (g_running) {
+        if (g_stateJniReady) {
+            UpdateJniState();
+        }
+        Sleep(5); // 200Hz poll
+    }
+    g_jvm->DetachCurrentThread();
+    return 0;
+}
+
 static DWORD WINAPI ChestScanThreadProc(LPVOID) {
     JNIEnv* env = nullptr;
     if (!g_jvm || g_jvm->AttachCurrentThread((void**)&env, nullptr) != JNI_OK) return 1;
@@ -4515,7 +5065,6 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
         if (g_stateJniReady) {
             // All CallObjectMethod work runs here — never on the render thread.
             ReadCameraState(env);   // camera pos/yaw/pitch/matrices → g_bgCamState
-            UpdateJniState(); // screen detection, holdingBlock, lookingAtBlock
             bool inWorldNow = IsInWorldNow(env);
             { LockGuard lk(g_jniStateMtx); g_jniInWorld = inWorldNow; }
             if (inWorldNow) {
@@ -4523,6 +5072,12 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
                 if (cfg.reachEnabled || s_reachWasEnabled) {
                     UpdateReach(env, cfg);
                     s_reachWasEnabled = cfg.reachEnabled;
+                }
+
+                static bool s_velocityWasEnabled = false;
+                if (cfg.velocityEnabled || s_velocityWasEnabled) {
+                    UpdateVelocity(env, cfg);
+                    s_velocityWasEnabled = cfg.velocityEnabled;
                 }
 
                 if (cfg.closestPlayer)
@@ -4748,6 +5303,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
         if (g_jvm && !s_chestThreadStarted) {
             s_chestThreadStarted = true;
             CreateThread(nullptr, 0, ChestScanThreadProc, nullptr, 0, nullptr);
+            CreateThread(nullptr, 0, FastPollThreadProc, nullptr, 0, nullptr);
         }
     }
 
@@ -4768,6 +5324,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
     {
         Config cfg;
         { LockGuard lk(g_configMutex); cfg = g_config; }
+        OverlayTheme overlayTheme = ResolveOverlayTheme(cfg.guiTheme);
         bool inWorld = false;
         { LockGuard lk(g_jniStateMtx); inWorld = g_jniInWorld; }
         if (!g_ShowMenu && inWorld) {
@@ -5201,17 +5758,17 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 const float x0 = (std::max)(10.0f, x1 - panelW);
                 const float y0 = (std::max)(10.0f, y1 - panelH);
 
-                fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 150), 5.0f);
-                fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 210, 90, 220), 5.0f, 0, 1.2f);
+                fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleBg, 5.0f);
+                fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.gtbBorder, 5.0f, 0, 1.2f);
 
                 char hintBuf[320];
                 snprintf(hintBuf, sizeof(hintBuf), "GTB: %s (%d)", hint.c_str(), (std::max)(0, cfg.gtbCount));
-                fg->AddText(ImVec2(x0 + 9.0f, y0 + 8.0f), IM_COL32(255, 226, 150, 245), hintBuf);
+                fg->AddText(ImVec2(x0 + 9.0f, y0 + 8.0f), overlayTheme.gtbTitle, hintBuf);
 
                 float y = y0 + 8.0f + lineH + 6.0f;
                 for (const auto& line : lines) {
                     std::string row = "- " + line;
-                    fg->AddText(ImVec2(x0 + 10.0f, y), IM_COL32(240, 240, 240, 235), row.c_str());
+                    fg->AddText(ImVec2(x0 + 10.0f, y), overlayTheme.gtbRow, row.c_str());
                     y += lineH;
                 }
             }
@@ -5234,18 +5791,20 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                     int hi = (int)cfg.maxCPS;
                     if (hi < lo) std::swap(hi, lo);
                     snprintf(acBuf, sizeof(acBuf), "Autoclicker %d-%d", lo, hi);
-                    pushMod(acBuf, IM_COL32(60, 220, 120, 255));
+                    pushMod(acBuf, overlayTheme.accentPrimary);
                 }
-                if (cfg.clickInChests) pushMod("Click in Chests", IM_COL32(50, 200, 220, 255));
-                if (cfg.closestPlayer) pushMod("Closest Player", IM_COL32(60, 170, 255, 255));
-                if (cfg.rightClick)    pushMod("Rightclick", IM_COL32(255, 170, 60, 255));
-                if (cfg.aimAssist)     pushMod("Aim Assist", IM_COL32(167, 125, 255, 255));
-                if (cfg.chestEsp)      pushMod("Chest ESP", IM_COL32(120, 120, 255, 255));
-                if (cfg.nametags)      pushMod("Nametags", IM_COL32(185, 85, 255, 255));
-                if (cfg.gtbHelper)     pushMod("GTB Helper", IM_COL32(255, 210, 90, 255));
-                if (cfg.jitter)        pushMod("Jitter", IM_COL32(255, 80, 120, 255));
-                if (cfg.breakBlocks)   pushMod("Break Blocks", IM_COL32(220, 220, 220, 255));
-                if (cfg.reachEnabled)  pushMod("Reach", IM_COL32(255, 95, 195, 255));
+                if (cfg.clickInChests) pushMod("Click in Chests", overlayTheme.accentTertiary);
+                if (cfg.closestPlayer) pushMod("Closest Player", overlayTheme.accentSecondary);
+                if (cfg.rightClick)    pushMod("Rightclick", overlayTheme.accentTertiary);
+                if (cfg.aimAssist)     pushMod("Aim Assist", overlayTheme.accentPrimary);
+                if (cfg.triggerbot)    pushMod("Triggerbot", overlayTheme.accentSecondary);
+                if (cfg.chestEsp)      pushMod("Chest ESP", overlayTheme.accentSecondary);
+                if (cfg.nametags)      pushMod("Nametags", overlayTheme.accentPrimary);
+                if (cfg.gtbHelper)     pushMod("GTB Helper", overlayTheme.accentTertiary);
+                if (cfg.jitter)        pushMod("Jitter", overlayTheme.accentSecondary);
+                if (cfg.breakBlocks)   pushMod("Break Blocks", overlayTheme.moduleText);
+                if (cfg.reachEnabled)  pushMod("Reach", overlayTheme.accentPrimary);
+                if (cfg.velocityEnabled) pushMod("Velocity", overlayTheme.accentTertiary);
 
                 // Sort by width descending (staggered original look)
                 for (int a = 0; a < modCount; a++) {
@@ -5257,13 +5816,25 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 }
 
                 const float marginX = 10.0f;
-                const float marginY = 10.0f;
+                float y = 10.0f;
+                
+                if (cfg.showLogo) {
+                    const char* logoText = "LegoClicker";
+                    ImVec2 logoSz = ImGui::CalcTextSize(logoText);
+                    float logoX = io.DisplaySize.x - marginX - logoSz.x;
+                    // Logo Shadow
+                    fg->AddText(ImVec2(logoX + 1, y + 1), overlayTheme.logoShadow, logoText);
+                    fg->AddText(ImVec2(logoX, y), overlayTheme.logoColor, logoText);
+                    y += logoSz.y + 8.0f;
+                }
+
                 const float padX = 8.0f;
                 const float padY = 3.0f;
                 const float barW = 3.0f;
                 const float gapY = 2.0f;
                 const float fontH = ImGui::GetFontSize();
-                float y = marginY;
+                const int style = (std::max)(0, (std::min)(4, cfg.moduleListStyle));
+                
                 for (int i = 0; i < modCount; i++) {
                     const ModLine& m = mods[i];
                     ImVec2 textSz = ImGui::CalcTextSize(m.text);
@@ -5274,16 +5845,39 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                     float y0 = y;
                     float y1 = y + boxH;
 
-                    // Background
-                    fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(0, 0, 0, 140));
-                    // Accent strip
-                    fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + barW, y1), m.accent);
-                    // Subtle outline
-                    fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(255, 255, 255, 40));
-                    // Text shadow + text
-                    ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
-                    fg->AddText(ImVec2(tx.x + 1, tx.y + 1), IM_COL32(0, 0, 0, 180), m.text);
-                    fg->AddText(tx, IM_COL32(255, 255, 255, 235), m.text);
+                    if (style == 0) {
+                        fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleBg);
+                        fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x0 + barW, y1), m.accent);
+                        fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleBorder);
+                        ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
+                        fg->AddText(ImVec2(tx.x + 1, tx.y + 1), overlayTheme.moduleTextShadow, m.text);
+                        fg->AddText(tx, overlayTheme.moduleText, m.text);
+                    } else if (style == 1) {
+                        fg->AddRectFilled(ImVec2(x1 - textSz.x - 4, y0), ImVec2(x1, y1), overlayTheme.moduleMinimalBg);
+                        fg->AddRectFilled(ImVec2(x1 - 2, y0), ImVec2(x1, y1), m.accent);
+                        ImVec2 tx = ImVec2(x1 - textSz.x - 2, y0 + padY);
+                        fg->AddText(ImVec2(tx.x + 1, tx.y + 1), overlayTheme.moduleTextShadow, m.text);
+                        fg->AddText(tx, m.accent, m.text);
+                    } else if (style == 2) {
+                        fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleOutlinedBg);
+                        fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), m.accent, 4.0f, 0, 1.5f);
+                        ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
+                        fg->AddText(ImVec2(tx.x + 1, tx.y + 1), overlayTheme.moduleTextShadow, m.text);
+                        fg->AddText(tx, m.accent, m.text);
+                    } else if (style == 3) {
+                        fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleMinimalBg, 4.0f);
+                        fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleGlassBorder, 4.0f, 0, 1.0f);
+                        fg->AddRectFilled(ImVec2(x0 + 1.0f, y0 + 1.0f), ImVec2(x0 + barW + 1.0f, y1 - 1.0f), m.accent);
+                        ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
+                        fg->AddText(ImVec2(tx.x + 1, tx.y + 1), overlayTheme.moduleTextShadow, m.text);
+                        fg->AddText(tx, overlayTheme.moduleText, m.text);
+                    } else {
+                        fg->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), m.accent, 4.0f);
+                        fg->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), overlayTheme.moduleBorder, 4.0f, 0, 1.0f);
+                        ImVec2 tx = ImVec2(x0 + barW + padX, y0 + padY);
+                        fg->AddText(ImVec2(tx.x + 1, tx.y + 1), overlayTheme.moduleTextShadow, m.text);
+                        fg->AddText(tx, overlayTheme.moduleBoldText, m.text);
+                    }
 
                     y += boxH + gapY;
                 }
@@ -5413,15 +6007,25 @@ glfw_done:;
                 std::string actionBar;
                 bool jniGui;
                 bool lookBlock;
+                bool lookEntity;
+                bool lookEntityLatched;
                 bool breakBlock;
                 bool holdBlock;
+                float attackCooldown;
+                float attackCooldownPerTick;
+                unsigned long long stateMs;
                 { LockGuard lk(g_jniStateMtx);
                     sn = g_jniScreenName;
                     actionBar = g_jniActionBar;
                     jniGui = g_jniGuiOpen;
                     lookBlock = g_jniLookingAtBlock;
+                    lookEntity = g_jniLookingAtEntity;
+                    lookEntityLatched = g_jniLookingAtEntityLatched;
                     breakBlock = g_jniBreakingBlock;
                     holdBlock = g_jniHoldingBlock;
+                    attackCooldown = g_jniAttackCooldown;
+                    attackCooldownPerTick = g_jniAttackCooldownPerTick;
+                    stateMs = g_jniStateMs;
                 }
 
                 // guiOpen = our menu OR JNI reports a Minecraft screen is open
@@ -5462,8 +6066,24 @@ glfw_done:;
                 state += holdBlock ? "true" : "false";
                 state += ",\"lookingAtBlock\":";
                 state += lookBlock ? "true" : "false";
+                state += ",\"lookingAtEntity\":";
+                state += lookEntity ? "true" : "false";
+                state += ",\"lookingAtEntityLatched\":";
+                state += lookEntityLatched ? "true" : "false";
                 state += ",\"breakingBlock\":";
                 state += breakBlock ? "true" : "false";
+                char stateMsBuf[32];
+                snprintf(stateMsBuf, sizeof(stateMsBuf), "%llu", stateMs);
+                state += ",\"stateMs\":";
+                state += stateMsBuf;
+                char attackCooldownBuf[32];
+                snprintf(attackCooldownBuf, sizeof(attackCooldownBuf), "%.3f", attackCooldown);
+                state += ",\"attackCooldown\":";
+                state += attackCooldownBuf;
+                char attackCooldownPerTickBuf[32];
+                snprintf(attackCooldownPerTickBuf, sizeof(attackCooldownPerTickBuf), "%.3f", attackCooldownPerTick);
+                state += ",\"attackCooldownPerTick\":";
+                state += attackCooldownPerTickBuf;
                 state += ",\"entities\":[";
 
                 bool first = true;
@@ -5563,7 +6183,7 @@ glfw_done:;
                 } else if (r == 0) break;
             }
 
-            Sleep(50);
+            Sleep(5);
         }
         closesocket(cli);
         Log("C# Loader disconnected.");

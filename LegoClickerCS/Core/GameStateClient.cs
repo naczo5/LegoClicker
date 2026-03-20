@@ -536,6 +536,22 @@ public class GameStateClient : INotifyPropertyChanged
     /// </summary>
     public float PlayerHealth => IsConnected ? CurrentState.Health : -1;
 
+    private static int ModuleListStyleToIndex(string? styleName)
+    {
+        if (string.IsNullOrWhiteSpace(styleName))
+            return 0;
+
+        return styleName.Trim().ToLowerInvariant() switch
+        {
+            "default" => 0,
+            "minimal" => 1,
+            "outlined" => 2,
+            "glass" => 3,
+            "bold" => 4,
+            _ => 0
+        };
+    }
+
     // === Config Sending (C# -> Bridge for HUD display) ===
 
     private async Task ConfigSenderLoop(CancellationToken token)
@@ -564,12 +580,16 @@ public class GameStateClient : INotifyPropertyChanged
                     aimAssistFov = clicker.AimAssistFov,
                     aimAssistRange = clicker.AimAssistRange,
                     aimAssistStrength = clicker.AimAssistStrength,
+                    triggerbot = clicker.TriggerbotEnabled,
                     gtbHelper = clicker.GtbHelperEnabled,
                     gtbHint = clicker.GtbCurrentHint,
                     gtbCount = clicker.GtbMatchCount,
                     gtbPreview = clicker.GtbMatchesPreview,
                     nametags = clicker.NametagsEnabled,
                     showModuleList = clicker.ShowModuleList,
+                    moduleListStyle = ModuleListStyleToIndex(clicker.ModuleListStyle),
+                    showLogo = clicker.ShowLogo,
+                    guiTheme = clicker.GuiTheme,
                     closestPlayerInfo = clicker.ClosestPlayerInfoEnabled,
                     nametagShowHealth = clicker.NametagShowHealth,
                     nametagShowArmor = clicker.NametagShowArmor,
@@ -581,6 +601,10 @@ public class GameStateClient : INotifyPropertyChanged
                     reachMin = clicker.ReachMin,
                     reachMax = clicker.ReachMax,
                     reachChance = clicker.ReachChance,
+                    velocityEnabled = clicker.VelocityEnabled,
+                    velocityHorizontal = clicker.VelocityHorizontal,
+                    velocityVertical = clicker.VelocityVertical,
+                    velocityChance = clicker.VelocityChance,
                     // Per-module keybinds
                     keybindAutoclicker   = InputHooks.GetModuleKey("autoclicker"),
                     keybindRightClick    = InputHooks.GetModuleKey("rightclick"),
@@ -588,6 +612,7 @@ public class GameStateClient : INotifyPropertyChanged
                     keybindClickInChests = InputHooks.GetModuleKey("clickinchests"),
                     keybindBreakBlocks   = InputHooks.GetModuleKey("breakblocks"),
                     keybindAimAssist     = InputHooks.GetModuleKey("aimassist"),
+                    keybindTriggerbot    = InputHooks.GetModuleKey("triggerbot"),
                     keybindGtbHelper     = InputHooks.GetModuleKey("gtbhelper"),
                     keybindNametags      = InputHooks.GetModuleKey("nametags"),
                     keybindClosestPlayer = InputHooks.GetModuleKey("closestplayer"),
@@ -651,6 +676,9 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "toggleAimAssist":
                     clicker.AimAssistEnabled = !clicker.AimAssistEnabled;
+                    break;
+                case "toggleTriggerbot":
+                    clicker.TriggerbotEnabled = !clicker.TriggerbotEnabled;
                     break;
                 case "toggleGtbHelper":
                     clicker.GtbHelperEnabled = !clicker.GtbHelperEnabled;
@@ -721,6 +749,18 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "setReachChance":
                     clicker.ReachChance = (int)(node?["value"]?.GetValue<float>() ?? 100f);
+                    break;
+                case "toggleVelocity":
+                    clicker.VelocityEnabled = !clicker.VelocityEnabled;
+                    break;
+                case "setVelocityHorizontal":
+                    clicker.VelocityHorizontal = (int)(node?["value"]?.GetValue<float>() ?? 100f);
+                    break;
+                case "setVelocityVertical":
+                    clicker.VelocityVertical = (int)(node?["value"]?.GetValue<float>() ?? 100f);
+                    break;
+                case "setVelocityChance":
+                    clicker.VelocityChance = (int)(node?["value"]?.GetValue<float>() ?? 100f);
                     break;
             }
 

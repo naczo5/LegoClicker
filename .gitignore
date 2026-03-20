@@ -31,6 +31,7 @@ CRASH_LOG_LOCATIONS.md
 *.bat
 *.md
 !README.md
+/LegoClicker_Release
 
 # ── OS ───────────────────────────────────────────────────────────
 Thumbs.db

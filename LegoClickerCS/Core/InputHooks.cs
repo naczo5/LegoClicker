@@ -72,11 +72,13 @@ public static class InputHooks
         ["clickinchests"] = 0,
         ["breakblocks"]   = 0,
         ["aimassist"]     = 0,
+        ["triggerbot"]    = 0,
         ["gtbhelper"]     = 0,
         ["nametags"]      = 0,
         ["closestplayer"] = 0,
         ["chestesp"]      = 0,
         ["reach"]         = 0,
+        ["velocity"]      = 0,
     };
 
     public static void SetModuleKey(string moduleId, int vk)
@@ -94,6 +96,8 @@ public static class InputHooks
 
     public static event Action? OnToggleRequested;
     public static event Action? OnStateChanged;
+
+    public static bool IsPhysicalLeftButtonDown { get; private set; } = false;
 
     public static void StartKeyCapture()
     {
@@ -116,11 +120,13 @@ public static class InputHooks
             case "clickinchests": c.ClickInChests = !c.ClickInChests; break;
             case "breakblocks":   c.BreakBlocksEnabled = !c.BreakBlocksEnabled; break;
             case "aimassist":     c.AimAssistEnabled = !c.AimAssistEnabled; break;
+            case "triggerbot":    c.TriggerbotEnabled = !c.TriggerbotEnabled; break;
             case "gtbhelper":     c.GtbHelperEnabled = !c.GtbHelperEnabled; break;
             case "nametags":      c.NametagsEnabled             = !c.NametagsEnabled;             break;
             case "closestplayer": c.ClosestPlayerInfoEnabled    = !c.ClosestPlayerInfoEnabled;    break;
             case "chestesp":      c.ChestEspEnabled             = !c.ChestEspEnabled;             break;
             case "reach":         c.ReachEnabled                = !c.ReachEnabled;                break;
+            case "velocity":      c.VelocityEnabled             = !c.VelocityEnabled;             break;
         }
     }
     
@@ -191,7 +197,7 @@ public static class InputHooks
     
     private static IntPtr MouseProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && Clicker.Instance.IsArmed)
+        if (nCode >= 0)
         {
             var ms = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
             
@@ -202,6 +208,12 @@ public static class InputHooks
             }
             
             int msg = wParam.ToInt32();
+
+            if (msg == WM_LBUTTONDOWN) IsPhysicalLeftButtonDown = true;
+            else if (msg == WM_LBUTTONUP) IsPhysicalLeftButtonDown = false;
+
+            if (!Clicker.Instance.IsArmed)
+                return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
             
             if (msg == WM_LBUTTONDOWN)
             {

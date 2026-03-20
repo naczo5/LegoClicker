@@ -12,6 +12,37 @@
         <SolidColorBrush x:Key="ControlCenterTabSelectedBrush" Color="#7C65B0"/>
         <SolidColorBrush x:Key="ControlCenterTabHoverBrush" Color="#4E3D72"/>
 
+        <Style x:Key="PreviewCardButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource SliderBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SliderFgBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="card"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="card" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="ControlCenterTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="{DynamicResource DimTextBrush}"/>
             <Setter Property="Padding" Value="18,16"/>
@@ -36,11 +67,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="tabBorder" Property="Background" Value="{StaticResource ControlCenterTabHoverBrush}"/>
+                                <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabHoverBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="tabBorder" Property="Background" Value="{StaticResource ControlCenterTabSelectedBrush}"/>
+                                <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabSelectedBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -95,7 +126,7 @@
                        Foreground="{DynamicResource DimTextBrush}"
                        FontSize="11" HorizontalAlignment="Center" Margin="0,0,0,10"/>
 
-            <Button x:Name="InjectButton" Content="Inject / Connect" Height="35"
+            <Button x:Name="InjectButton" Content="Inject" Height="35"
                     Style="{StaticResource DarkButton}" Click="InjectButton_Click"
                     FontSize="14" Margin="0,0,0,10" Cursor="Hand">
                 <Button.Effect>
@@ -205,6 +236,46 @@
                                         Style="{StaticResource DarkSlider}" IsEnabled="{Binding AimAssistEnabled}"/>
                             </StackPanel>
                         </Border>
+
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+                            <StackPanel>
+                                <CheckBox Content="Triggerbot (1.21)" IsChecked="{Binding TriggerbotEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding TriggerbotEnabled}">
+                                    <TextBlock Text="Cooldown Threshold (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding TriggerbotCooldownThreshold}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding TriggerbotCooldownThreshold, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only attack when crosshair is on entity"
+                                          IsChecked="{Binding TriggerbotOnlyCrosshair, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,10,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only attack if target is in real hit range"
+                                          IsChecked="{Binding TriggerbotOnlyIfCanAttack, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,6,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding TriggerbotEnabled}">
+                                    <TextBlock Text="Hit Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding TriggerbotHitChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding TriggerbotHitChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only while holding left click"
+                                          IsChecked="{Binding TriggerbotRequireClick, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,10,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -281,11 +352,13 @@
                                     <Button x:Name="KeybindClickInChestsButton" Tag="clickinchests" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindBreakBlocksButton" Tag="breakblocks" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindAimAssistButton" Tag="aimassist" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindTriggerbotButton" Tag="triggerbot" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindGtbHelperButton" Tag="gtbhelper" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindNametagsButton" Tag="nametags" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindChestEspButton" Tag="chestesp" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindClosestPlayerButton" Tag="closestplayer" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindReachButton" Tag="reach" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindVelocityButton" Tag="velocity" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
@@ -324,6 +397,220 @@
                                 <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
                                         Value="{Binding ReachChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                         Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="Velocity (1.21)" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock Text="idk if you should use it outside of singleplayer"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,0,0,8"/>
+                                <CheckBox Content="Enable Velocity" IsChecked="{Binding VelocityEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                    <TextBlock Text="Horizontal (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityHorizontal}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityHorizontal, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                    <TextBlock Text="Vertical (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityVertical}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityVertical, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                    <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        
+            <TabItem Header="Customization">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,0,0,0">
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="GUI Customization" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                
+                                <TextBlock Text="External GUI Palette" Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,0,0,4" />
+                                <TextBlock Text="Click a palette preview to apply it instantly." Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8" />
+                                <WrapPanel Margin="0,0,0,6">
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Default" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Default" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#17131F" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#241C33" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#312744" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#A77DFF"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Dark Blue" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Dark Blue" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#0F172A" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#1E293B" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#334155" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#3B82F6"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Crimson" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Crimson" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#2A0F15" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#3B1E24" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#5B2433" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#F43F5E"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Emerald" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Emerald" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#08211E" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#12352F" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#1D4D44" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#10B981"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Amber" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Amber" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#231704" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#3A260A" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#533914" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#F59E0B"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Slate" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Slate" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#101418" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#1B232D" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#2B3440" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#94A3B8"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Sunset" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Sunset" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#211125" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#3A1F3F" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#5D2A48" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#FB7185"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Frost" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Frost" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#0D1624" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#16263A" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#243D5A" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#38BDF8"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                                <TextBlock Foreground="{DynamicResource DimTextBrush}" FontSize="11">
+                                    <Run Text="Current palette: "/>
+                                    <Run Text="{Binding GuiTheme}" Foreground="{DynamicResource AccentBrush}"/>
+                                </TextBlock>
+
+                                <TextBlock Text="Module List Style" Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,10,0,4" />
+                                <WrapPanel Margin="0,0,0,6">
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Default" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Default" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#30000000" CornerRadius="3" BorderBrush="#30FFFFFF" BorderThickness="1">
+                                                <Grid>
+                                                    <Border Width="4" HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Minimal" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Minimal" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#20000000" CornerRadius="3">
+                                                <Grid>
+                                                    <Border Width="3" HorizontalAlignment="Right" Background="{DynamicResource AccentBrush}"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="{DynamicResource AccentBrush}" FontSize="10" HorizontalAlignment="Right" Margin="0,2,6,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Outlined" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Outlined" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#2A000000" CornerRadius="3" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1.3">
+                                                <TextBlock Text="Autoclicker" Foreground="{DynamicResource AccentBrush}" FontSize="10" Margin="10,2,0,0"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Glass" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Glass" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#16000000" CornerRadius="3" BorderBrush="#55FFFFFF" BorderThickness="1">
+                                                <Grid>
+                                                    <Border Width="4" HorizontalAlignment="Left" Background="#90FFFFFF"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Bold" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Bold" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="{DynamicResource AccentBrush}" CornerRadius="3">
+                                                <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                                <TextBlock Foreground="{DynamicResource DimTextBrush}" FontSize="11">
+                                    <Run Text="Current module list style: "/>
+                                    <Run Text="{Binding ModuleListStyle}" Foreground="{DynamicResource AccentBrush}"/>
+                                </TextBlock>
+
+                                <CheckBox Content="Show 'LegoClicker' Logo" IsChecked="{Binding ShowLogo, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}" Margin="0,10,0,0"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

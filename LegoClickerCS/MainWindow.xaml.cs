@@ -12,6 +12,19 @@ namespace LegoClickerCS;
 
 public partial class MainWindow : Window
 {
+    private sealed class GuiPalette
+    {
+        public required Color Background { get; init; }
+        public required Color Panel { get; init; }
+        public required Color SliderBackground { get; init; }
+        public required Color SliderForeground { get; init; }
+        public required Color Accent { get; init; }
+        public required Color Text { get; init; }
+        public required Color DimText { get; init; }
+        public required Color TabSelected { get; init; }
+        public required Color TabHover { get; init; }
+    }
+
     private const int DwmaUseImmersiveDarkMode = 20;
     private const int DwmaBorderColor = 34;
     private const int DwmaCaptionColor = 35;
@@ -30,11 +43,113 @@ public partial class MainWindow : Window
         ["clickinchests"] = "Click in Chests",
         ["breakblocks"] = "Break Blocks",
         ["aimassist"] = "Aim Assist",
+        ["triggerbot"] = "Triggerbot",
         ["gtbhelper"] = "GTB Helper",
         ["nametags"] = "Nametags",
         ["chestesp"] = "Chest ESP",
         ["closestplayer"] = "Closest Player",
-        ["reach"] = "Reach"
+        ["reach"] = "Reach",
+        ["velocity"] = "Velocity"
+    };
+
+    private static readonly Dictionary<string, GuiPalette> GuiPalettes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Default"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#17131F"),
+            Panel = (Color)ColorConverter.ConvertFromString("#241C33"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#312744"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#7C65B0"),
+            Accent = (Color)ColorConverter.ConvertFromString("#A77DFF"),
+            Text = (Color)ColorConverter.ConvertFromString("#DCDCDC"),
+            DimText = (Color)ColorConverter.ConvertFromString("#969696"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#7C65B0"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#4E3D72")
+        },
+        ["Dark Blue"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#0F172A"),
+            Panel = (Color)ColorConverter.ConvertFromString("#1E293B"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#334155"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#2563EB"),
+            Accent = (Color)ColorConverter.ConvertFromString("#3B82F6"),
+            Text = (Color)ColorConverter.ConvertFromString("#E2E8F0"),
+            DimText = (Color)ColorConverter.ConvertFromString("#94A3B8"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#1D4ED8"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#1E40AF")
+        },
+        ["Crimson"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#2A0F15"),
+            Panel = (Color)ColorConverter.ConvertFromString("#3B1E24"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#5B2433"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#BE123C"),
+            Accent = (Color)ColorConverter.ConvertFromString("#F43F5E"),
+            Text = (Color)ColorConverter.ConvertFromString("#FFE4E8"),
+            DimText = (Color)ColorConverter.ConvertFromString("#FEB2BE"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#BE123C"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#9F1239")
+        },
+        ["Emerald"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#08211E"),
+            Panel = (Color)ColorConverter.ConvertFromString("#12352F"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#1D4D44"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#059669"),
+            Accent = (Color)ColorConverter.ConvertFromString("#10B981"),
+            Text = (Color)ColorConverter.ConvertFromString("#D1FAE5"),
+            DimText = (Color)ColorConverter.ConvertFromString("#86EFAC"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#047857"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#065F46")
+        },
+        ["Amber"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#231704"),
+            Panel = (Color)ColorConverter.ConvertFromString("#3A260A"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#533914"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#D97706"),
+            Accent = (Color)ColorConverter.ConvertFromString("#F59E0B"),
+            Text = (Color)ColorConverter.ConvertFromString("#FFEDD5"),
+            DimText = (Color)ColorConverter.ConvertFromString("#FCD34D"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#B45309"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#92400E")
+        },
+        ["Slate"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#101418"),
+            Panel = (Color)ColorConverter.ConvertFromString("#1B232D"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#2B3440"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#64748B"),
+            Accent = (Color)ColorConverter.ConvertFromString("#94A3B8"),
+            Text = (Color)ColorConverter.ConvertFromString("#E2E8F0"),
+            DimText = (Color)ColorConverter.ConvertFromString("#94A3B8"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#475569"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#334155")
+        },
+        ["Sunset"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#211125"),
+            Panel = (Color)ColorConverter.ConvertFromString("#3A1F3F"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#5D2A48"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#DB2777"),
+            Accent = (Color)ColorConverter.ConvertFromString("#FB7185"),
+            Text = (Color)ColorConverter.ConvertFromString("#FCE7F3"),
+            DimText = (Color)ColorConverter.ConvertFromString("#F9A8D4"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#BE185D"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#9D174D")
+        },
+        ["Frost"] = new GuiPalette
+        {
+            Background = (Color)ColorConverter.ConvertFromString("#0D1624"),
+            Panel = (Color)ColorConverter.ConvertFromString("#16263A"),
+            SliderBackground = (Color)ColorConverter.ConvertFromString("#243D5A"),
+            SliderForeground = (Color)ColorConverter.ConvertFromString("#0EA5E9"),
+            Accent = (Color)ColorConverter.ConvertFromString("#38BDF8"),
+            Text = (Color)ColorConverter.ConvertFromString("#E0F2FE"),
+            DimText = (Color)ColorConverter.ConvertFromString("#7DD3FC"),
+            TabSelected = (Color)ColorConverter.ConvertFromString("#0284C7"),
+            TabHover = (Color)ColorConverter.ConvertFromString("#0369A1")
+        }
     };
 
     private static void LogUi(string msg)
@@ -65,6 +180,12 @@ public partial class MainWindow : Window
         if (profile != null)
         {
             ProfileManager.ApplyToClicker(profile);
+        }
+
+        if (DataContext is Clicker clicker)
+        {
+            ApplyGuiTheme(clicker.GuiTheme);
+            clicker.ModuleListStyle = NormalizeModuleListStyle(clicker.ModuleListStyle);
         }
 
         // Initial UI state
@@ -158,6 +279,120 @@ public partial class MainWindow : Window
             DragMove();
     }
     
+    
+    private void GuiTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is Clicker clicker)
+        {
+            ApplyGuiTheme(clicker.GuiTheme);
+        }
+    }
+
+    private void GuiPaletteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not Clicker clicker || sender is not Button { Tag: string themeName })
+            return;
+
+        clicker.GuiTheme = themeName;
+        ApplyGuiTheme(themeName);
+    }
+
+    private void ModuleStyleButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not Clicker clicker || sender is not Button { Tag: string styleName })
+            return;
+
+        clicker.ModuleListStyle = NormalizeModuleListStyle(styleName);
+    }
+
+    private static string NormalizeModuleListStyle(string? styleName)
+    {
+        if (string.IsNullOrWhiteSpace(styleName))
+            return "Default";
+
+        return styleName.Trim().ToLowerInvariant() switch
+        {
+            "default" => "Default",
+            "minimal" => "Minimal",
+            "outlined" => "Outlined",
+            "glass" => "Glass",
+            "bold" => "Bold",
+            _ => "Default"
+        };
+    }
+
+    private static string NormalizeThemeName(string? themeName)
+    {
+        if (string.IsNullOrWhiteSpace(themeName))
+            return "Default";
+
+        foreach (var name in GuiPalettes.Keys)
+        {
+            if (name.Equals(themeName.Trim(), StringComparison.OrdinalIgnoreCase))
+                return name;
+        }
+
+        return "Default";
+    }
+
+    private void ApplyGuiTheme(string? themeName)
+    {
+        string normalized = NormalizeThemeName(themeName);
+        if (!GuiPalettes.TryGetValue(normalized, out GuiPalette? palette))
+            palette = GuiPalettes["Default"];
+
+        SetColorResource("BgColor", palette.Background);
+        SetColorResource("PanelColor", palette.Panel);
+        SetColorResource("SliderBgColor", palette.SliderBackground);
+        SetColorResource("SliderFgColor", palette.SliderForeground);
+        SetColorResource("AccentColor", palette.Accent);
+        SetColorResource("TextColor", palette.Text);
+        SetColorResource("DimTextColor", palette.DimText);
+
+        SetBrushColor("BgBrush", palette.Background);
+        SetBrushColor("PanelBrush", palette.Panel);
+        SetBrushColor("SliderBgBrush", palette.SliderBackground);
+        SetBrushColor("SliderFgBrush", palette.SliderForeground);
+        SetBrushColor("AccentBrush", palette.Accent);
+        SetBrushColor("TextBrush", palette.Text);
+        SetBrushColor("DimTextBrush", palette.DimText);
+        SetBrushColor("ControlCenterTabSelectedBrush", palette.TabSelected, this.Resources);
+        SetBrushColor("ControlCenterTabHoverBrush", palette.TabHover, this.Resources);
+
+        if (DataContext is Clicker clicker)
+            clicker.GuiTheme = normalized;
+
+        ApplyNativeTitleBarTheme();
+        UpdateGameStateUI();
+    }
+
+    private static void SetColorResource(string key, Color value)
+    {
+        var app = Application.Current;
+        if (app == null) return;
+        app.Resources[key] = value;
+    }
+
+    private static void SetBrushColor(string key, Color value, ResourceDictionary? dictionary = null)
+    {
+        var target = dictionary ?? Application.Current?.Resources;
+        if (target == null) return;
+
+        if (target[key] is SolidColorBrush brush)
+        {
+            if (!brush.IsFrozen)
+            {
+                brush.Color = value;
+                return;
+            }
+
+            target[key] = new SolidColorBrush(value);
+            return;
+        }
+
+        target[key] = new SolidColorBrush(value);
+    }
+
     private void CloseButton_Click(object sender, RoutedEventArgs e)
     {
         // Save Config
@@ -182,7 +417,7 @@ public partial class MainWindow : Window
         if (success && Is121Version(GameStateClient.Instance.InjectedVersion))
             EnterControlMode();
         
-        InjectButton.Content = success ? "Connected" : "Inject / Connect";
+        InjectButton.Content = success ? "Connected" : "Inject";
         InjectButton.IsEnabled = !success;
         
         // Force UI update immediately
@@ -218,7 +453,7 @@ public partial class MainWindow : Window
                 if (!InjectButton.IsEnabled && !gs.IsInjected)
                 {
                     InjectButton.IsEnabled = true;
-                    InjectButton.Content = "Inject / Connect";
+                    InjectButton.Content = "Inject";
                 }
             }
         });
@@ -267,11 +502,13 @@ public partial class MainWindow : Window
         SetKeybindButtonContent(KeybindClickInChestsButton, "clickinchests");
         SetKeybindButtonContent(KeybindBreakBlocksButton, "breakblocks");
         SetKeybindButtonContent(KeybindAimAssistButton, "aimassist");
+        SetKeybindButtonContent(KeybindTriggerbotButton, "triggerbot");
         SetKeybindButtonContent(KeybindGtbHelperButton, "gtbhelper");
         SetKeybindButtonContent(KeybindNametagsButton, "nametags");
         SetKeybindButtonContent(KeybindChestEspButton, "chestesp");
         SetKeybindButtonContent(KeybindClosestPlayerButton, "closestplayer");
         SetKeybindButtonContent(KeybindReachButton, "reach");
+        SetKeybindButtonContent(KeybindVelocityButton, "velocity");
     }
 
     private void SetKeybindButtonContent(Button btn, string moduleId)
