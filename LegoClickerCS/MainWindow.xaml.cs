@@ -1,6 +1,8 @@
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -35,6 +37,7 @@ public partial class MainWindow : Window
 
     private bool _controlMode;
     private string? _pendingKeybindModuleId;
+    private int _uiUpdateQueued;
     private static readonly Dictionary<string, string> ModuleTitles = new()
     {
         ["autoclicker"] = "AutoClicker",
@@ -170,8 +173,8 @@ public partial class MainWindow : Window
         DataContext = Clicker.Instance;
         
         // Subscribe to connection state changes
-        GameStateClient.Instance.StateUpdated += UpdateGameStateUI;
-        GameStateClient.Instance.PropertyChanged += (s, e) => UpdateGameStateUI();
+        GameStateClient.Instance.StateUpdated += OnGameStateUpdated;
+        GameStateClient.Instance.PropertyChanged += OnGameStateClientPropertyChanged;
         InputHooks.OnStateChanged += InputHooks_OnStateChanged;
         InputHooks.OnKeyCaptured += InputHooks_OnKeyCaptured;
         
@@ -426,37 +429,71 @@ public partial class MainWindow : Window
 
     private void UpdateGameStateUI()
     {
-        Dispatcher.BeginInvoke(() =>
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        if (Interlocked.Exchange(ref _uiUpdateQueued, 1) != 0) return;
+
+        try
         {
-            var gs = GameStateClient.Instance;
-            
-            if (gs.IsConnected)
+            Dispatcher.BeginInvoke(() =>
             {
-                InjectionStatusText.Text = "Status: Connected & Injected";
-                InjectionStatusText.Foreground = (Brush)(TryFindResource("AccentBrush") ?? new SolidColorBrush(Color.FromRgb(167, 125, 255)));
-                InjectionProgressBar.Visibility = Visibility.Collapsed;
-                InjectionProgressBar.Value = 100;
-                InjectButton.Content = "Connected";
-                InjectButton.IsEnabled = false;
-
-                EnsureControlModeIfNeeded(gs);
-
-                // (Control-mode entry is handled by EnsureControlModeIfNeeded)
-            }
-            else
-            {
-                InjectionStatusText.Text = $"Status: {gs.StatusMessage}";
-                InjectionStatusText.Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200));
-                InjectionProgressBar.Visibility = gs.IsInjectionInProgress ? Visibility.Visible : Visibility.Collapsed;
-                InjectionProgressBar.Value = gs.IsInjectionInProgress ? gs.InjectionProgress : 0;
-                
-                if (!InjectButton.IsEnabled && !gs.IsInjected)
+                try
                 {
-                    InjectButton.IsEnabled = true;
-                    InjectButton.Content = "Inject";
+                    var gs = GameStateClient.Instance;
+
+                    if (gs.IsConnected)
+                    {
+                        InjectionStatusText.Text = "Status: Connected & Injected";
+                        InjectionStatusText.Foreground = (Brush)(TryFindResource("AccentBrush") ?? new SolidColorBrush(Color.FromRgb(167, 125, 255)));
+                        InjectionProgressBar.Visibility = Visibility.Collapsed;
+                        InjectionProgressBar.Value = 100;
+                        InjectButton.Content = "Connected";
+                        InjectButton.IsEnabled = false;
+
+                        EnsureControlModeIfNeeded(gs);
+                    }
+                    else
+                    {
+                        InjectionStatusText.Text = $"Status: {gs.StatusMessage}";
+                        InjectionStatusText.Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200));
+                        InjectionProgressBar.Visibility = gs.IsInjectionInProgress ? Visibility.Visible : Visibility.Collapsed;
+                        InjectionProgressBar.Value = gs.IsInjectionInProgress ? gs.InjectionProgress : 0;
+
+                        if (!InjectButton.IsEnabled && !gs.IsInjected)
+                        {
+                            InjectButton.IsEnabled = true;
+                            InjectButton.Content = "Inject";
+                        }
+                    }
                 }
-            }
-        });
+                finally
+                {
+                    Interlocked.Exchange(ref _uiUpdateQueued, 0);
+                }
+            });
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _uiUpdateQueued, 0);
+            throw;
+        }
+    }
+
+    private void OnGameStateUpdated()
+    {
+        UpdateGameStateUI();
+    }
+
+    private void OnGameStateClientPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GameStateClient.IsConnected) ||
+            e.PropertyName == nameof(GameStateClient.StatusMessage) ||
+            e.PropertyName == nameof(GameStateClient.IsInjectionInProgress) ||
+            e.PropertyName == nameof(GameStateClient.InjectionProgress) ||
+            e.PropertyName == nameof(GameStateClient.IsInjected) ||
+            e.PropertyName == nameof(GameStateClient.InjectedVersion))
+        {
+            UpdateGameStateUI();
+        }
     }
 
     protected override void OnClosed(EventArgs e)
@@ -467,6 +504,8 @@ public partial class MainWindow : Window
 
         InputHooks.OnStateChanged -= InputHooks_OnStateChanged;
         InputHooks.OnKeyCaptured -= InputHooks_OnKeyCaptured;
+        GameStateClient.Instance.StateUpdated -= OnGameStateUpdated;
+        GameStateClient.Instance.PropertyChanged -= OnGameStateClientPropertyChanged;
         base.OnClosed(e);
     }
 

@@ -374,29 +374,29 @@
                                 <TextBlock Text="Reach (1.21)" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
                                 <CheckBox Content="Enable Reach" IsChecked="{Binding ReachEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
 
-                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding ReachEnabled}">
+                                <DockPanel Margin="0,10,0,0">
                                     <TextBlock Text="Min Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding ReachMin, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
                                         Value="{Binding ReachMin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
 
-                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding ReachEnabled}">
+                                <DockPanel Margin="0,8,0,0">
                                     <TextBlock Text="Max Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding ReachMax, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
                                         Value="{Binding ReachMax, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
 
-                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding ReachEnabled}">
+                                <DockPanel Margin="0,8,0,0">
                                     <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding ReachChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
                                         Value="{Binding ReachChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ReachEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
                             </StackPanel>
                         </Border>
 
@@ -409,29 +409,29 @@
                                            Margin="0,0,0,8"/>
                                 <CheckBox Content="Enable Velocity" IsChecked="{Binding VelocityEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
 
-                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                <DockPanel Margin="0,10,0,0">
                                     <TextBlock Text="Horizontal (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding VelocityHorizontal}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
                                         Value="{Binding VelocityHorizontal, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
 
-                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                <DockPanel Margin="0,8,0,0">
                                     <TextBlock Text="Vertical (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding VelocityVertical}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
                                         Value="{Binding VelocityVertical, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
 
-                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding VelocityEnabled}">
+                                <DockPanel Margin="0,8,0,0">
                                     <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
                                     <TextBlock Text="{Binding VelocityChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
                                 </DockPanel>
                                 <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
                                         Value="{Binding VelocityChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding VelocityEnabled}"/>
+                                        Style="{StaticResource DarkSlider}"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

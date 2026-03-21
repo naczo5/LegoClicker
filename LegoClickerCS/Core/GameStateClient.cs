@@ -24,6 +24,8 @@ public class GameStateClient : INotifyPropertyChanged
 
     private TcpClient? _client;
     private CancellationTokenSource? _cts;
+    private Task? _configSenderTask;
+    private Task? _readTask;
     private readonly int _port = 25590;
 
     private GameState _currentState = new();
@@ -33,6 +35,7 @@ public class GameStateClient : INotifyPropertyChanged
     private string _injectedVersion = "1.8.9";
     private int _injectionProgress;
     private bool _isInjectionInProgress;
+    private long _lastUiActionBarDispatchTicks;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action? StateUpdated;
@@ -271,7 +274,17 @@ public class GameStateClient : INotifyPropertyChanged
 
     public async Task ConnectAsync(int maxAttempts = 20, Action<int, int>? onAttempt = null, bool reportFailure = true)
     {
-        _cts?.Cancel();
+        var previousCts = Interlocked.Exchange(ref _cts, null);
+        var previousConfigTask = _configSenderTask;
+        var previousReadTask = _readTask;
+        _configSenderTask = null;
+        _readTask = null;
+        if (previousCts != null)
+        {
+            previousCts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(previousCts, previousConfigTask, previousReadTask);
+        }
+
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
 
@@ -306,8 +319,8 @@ public class GameStateClient : INotifyPropertyChanged
         }
 
         // Start config sender task
-        _ = Task.Run(() => ConfigSenderLoop(token), token);
-        _ = Task.Run(() => ReadLoop(token), token);
+        _configSenderTask = Task.Run(() => ConfigSenderLoop(token), token);
+        _readTask = Task.Run(() => ReadLoop(token), token);
     }
 
     private async Task ReadLoop(CancellationToken token)
@@ -322,12 +335,6 @@ public class GameStateClient : INotifyPropertyChanged
             {
                 string? line = await reader.ReadLineAsync(token);
                 if (line == null) break;
-
-                // Debug log occasionally
-                if (line.Contains("\"entities\":[{\"name\""))
-                {
-                    Log("Received Entity Data: " + line);
-                }
 
                 try
                 {
@@ -346,10 +353,18 @@ public class GameStateClient : INotifyPropertyChanged
                         CurrentState = state;
                         bool is121 = InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
                         string actionBar = is121 ? state.ActionBar : "";
-                        System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                        if (is121)
                         {
-                            Clicker.Instance.UpdateGtbFromActionBar(actionBar);
-                        }));
+                            long nowTicks = Environment.TickCount64;
+                            long last = Interlocked.Read(ref _lastUiActionBarDispatchTicks);
+                            if ((nowTicks - last) >= 25 && Interlocked.CompareExchange(ref _lastUiActionBarDispatchTicks, nowTicks, last) == last)
+                            {
+                                System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    Clicker.Instance.UpdateGtbFromActionBar(actionBar);
+                                }));
+                            }
+                        }
                     }
                 }
                 catch (JsonException)
@@ -380,6 +395,17 @@ public class GameStateClient : INotifyPropertyChanged
     public async Task DetachAsync()
     {
         if (!_isInjected) return;
+
+        var cts = Interlocked.Exchange(ref _cts, null);
+        var configTask = _configSenderTask;
+        var readTask = _readTask;
+        _configSenderTask = null;
+        _readTask = null;
+        if (cts != null)
+        {
+            cts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(cts, configTask, readTask);
+        }
         
         await Task.Run(() =>
         {
@@ -408,7 +434,16 @@ public class GameStateClient : INotifyPropertyChanged
 
     public void Disconnect()
     {
-        _cts?.Cancel();
+        var cts = Interlocked.Exchange(ref _cts, null);
+        var configTask = _configSenderTask;
+        var readTask = _readTask;
+        _configSenderTask = null;
+        _readTask = null;
+        if (cts != null)
+        {
+            cts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(cts, configTask, readTask);
+        }
         _client?.Dispose();
         _client = null;
         IsConnected = false;
@@ -775,5 +810,28 @@ public class GameStateClient : INotifyPropertyChanged
     private void OnPropertyChanged(string name)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    private static async Task DisposeCtsWhenDoneAsync(CancellationTokenSource cts, Task? configTask, Task? readTask)
+    {
+        try
+        {
+            if (configTask != null)
+                await configTask.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (readTask != null)
+                await readTask.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+
+        cts.Dispose();
     }
 }

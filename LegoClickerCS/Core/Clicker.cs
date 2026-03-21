@@ -53,6 +53,9 @@ public class Clicker : INotifyPropertyChanged
     private CancellationTokenSource? _clickCts;
     private CancellationTokenSource? _aimAssistCts;
     private CancellationTokenSource? _triggerbotCts;
+    private Task? _clickTask;
+    private Task? _aimAssistTask;
+    private Task? _triggerbotTask;
     
     // Settings
     private float _minCPS = 8.0f;
@@ -70,11 +73,32 @@ public class Clicker : INotifyPropertyChanged
     private bool _isMiningIntent = false;
     
     private readonly Random _random = new();
+    private readonly object _sendInputLock = new();
+    private readonly INPUT[] _leftClickInputs;
+    private readonly INPUT[] _rightClickInputs;
+    private readonly INPUT[] _aimAssistMoveInput;
     
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action? StateChanged;
     
-    private Clicker() { }
+    private Clicker()
+    {
+        _leftClickInputs = new INPUT[2];
+        _leftClickInputs[0].Type = INPUT_MOUSE;
+        _leftClickInputs[0].Mi.DwFlags = MOUSEEVENTF_LEFTDOWN;
+        _leftClickInputs[1].Type = INPUT_MOUSE;
+        _leftClickInputs[1].Mi.DwFlags = MOUSEEVENTF_LEFTUP;
+
+        _rightClickInputs = new INPUT[2];
+        _rightClickInputs[0].Type = INPUT_MOUSE;
+        _rightClickInputs[0].Mi.DwFlags = MOUSEEVENTF_RIGHTDOWN;
+        _rightClickInputs[1].Type = INPUT_MOUSE;
+        _rightClickInputs[1].Mi.DwFlags = MOUSEEVENTF_RIGHTUP;
+
+        _aimAssistMoveInput = new INPUT[1];
+        _aimAssistMoveInput[0].Type = INPUT_MOUSE;
+        _aimAssistMoveInput[0].Mi.DwFlags = MOUSEEVENTF_MOVE;
+    }
     
     
     private string _guiTheme = "Default";
@@ -277,13 +301,22 @@ public class Clicker : INotifyPropertyChanged
         _useLeftButton = leftButton;
         IsClicking = true;
         
-        _clickCts = new CancellationTokenSource();
-        Task.Run(() => ClickLoop(_clickCts.Token));
+        var cts = new CancellationTokenSource();
+        _clickCts = cts;
+        _clickTask = Task.Run(() => ClickLoop(cts.Token));
     }
     
     public void StopClicking()
     {
-        _clickCts?.Cancel();
+        var cts = _clickCts;
+        var task = _clickTask;
+        _clickCts = null;
+        _clickTask = null;
+        if (cts != null)
+        {
+            cts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(cts, task);
+        }
         IsClicking = false;
     }
     
@@ -298,27 +331,59 @@ public class Clicker : INotifyPropertyChanged
     private void StartAimAssistLoop()
     {
         if (_aimAssistCts != null) return;
-        _aimAssistCts = new CancellationTokenSource();
-        Task.Run(() => AimAssistLoop(_aimAssistCts.Token));
+        var cts = new CancellationTokenSource();
+        _aimAssistCts = cts;
+        _aimAssistTask = Task.Run(() => AimAssistLoop(cts.Token));
     }
 
     private void StopAimAssistLoop()
     {
-        _aimAssistCts?.Cancel();
+        var cts = _aimAssistCts;
+        var task = _aimAssistTask;
         _aimAssistCts = null;
+        _aimAssistTask = null;
+        if (cts != null)
+        {
+            cts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(cts, task);
+        }
     }
 
     private void StartTriggerbotLoop()
     {
         if (_triggerbotCts != null) return;
-        _triggerbotCts = new CancellationTokenSource();
-        Task.Run(() => TriggerbotLoop(_triggerbotCts.Token));
+        var cts = new CancellationTokenSource();
+        _triggerbotCts = cts;
+        _triggerbotTask = Task.Run(() => TriggerbotLoop(cts.Token));
     }
 
     private void StopTriggerbotLoop()
     {
-        _triggerbotCts?.Cancel();
+        var cts = _triggerbotCts;
+        var task = _triggerbotTask;
         _triggerbotCts = null;
+        _triggerbotTask = null;
+        if (cts != null)
+        {
+            cts.Cancel();
+            _ = DisposeCtsWhenDoneAsync(cts, task);
+        }
+    }
+
+    private static async Task DisposeCtsWhenDoneAsync(CancellationTokenSource cts, Task? task)
+    {
+        if (task != null)
+        {
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
+        cts.Dispose();
     }
     
     private bool _clickInChests = false;
@@ -1229,15 +1294,11 @@ public class Clicker : INotifyPropertyChanged
     
     private void PerformClick(bool leftButton)
     {
-        INPUT[] inputs = new INPUT[2];
-        
-        inputs[0].Type = INPUT_MOUSE;
-        inputs[0].Mi.DwFlags = leftButton ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_RIGHTDOWN;
-        
-        inputs[1].Type = INPUT_MOUSE;
-        inputs[1].Mi.DwFlags = leftButton ? MOUSEEVENTF_LEFTUP : MOUSEEVENTF_RIGHTUP;
-        
-        SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+        INPUT[] inputs = leftButton ? _leftClickInputs : _rightClickInputs;
+        lock (_sendInputLock)
+        {
+            SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+        }
     }
 
     private void TryApplyAimAssist()
@@ -1293,13 +1354,12 @@ public class Clicker : INotifyPropertyChanged
 
         if (moveX == 0 && moveY == 0) return;
 
-        INPUT[] input = new INPUT[1];
-        input[0].Type = INPUT_MOUSE;
-        input[0].Mi.Dx = moveX;
-        input[0].Mi.Dy = moveY;
-        input[0].Mi.DwFlags = MOUSEEVENTF_MOVE;
-
-        SendInput(1, input, Marshal.SizeOf<INPUT>());
+        _aimAssistMoveInput[0].Mi.Dx = moveX;
+        _aimAssistMoveInput[0].Mi.Dy = moveY;
+        lock (_sendInputLock)
+        {
+            SendInput(1, _aimAssistMoveInput, Marshal.SizeOf<INPUT>());
+        }
     }
      
     private float GaussianRandom(float mean, float stddev)

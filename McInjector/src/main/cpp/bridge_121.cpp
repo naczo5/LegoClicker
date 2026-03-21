@@ -427,6 +427,11 @@ static bool g_running          = true;
 static bool g_imguiInitialized = false;
 static bool g_ShowMenu         = false;
 static bool g_realGuiOpen      = false;
+static int  g_imguiWarmupFrames = 0;
+static bool g_imguiPhase1Done = false;
+
+static SOCKET g_serverSocket = INVALID_SOCKET;
+static SOCKET g_clientSocket = INVALID_SOCKET;
 
 // Track the OpenGL context used for ImGui rendering. Minecraft/Lunar can recreate GL contexts
 // (resolution/fullscreen changes, GPU resets, etc.). If we keep using stale GL objects, the
@@ -862,6 +867,84 @@ static void EnsureGameProfileCaches(JNIEnv* env, jobject anyPlayerObj) {
     }
 }
 
+static std::string NormalizeNameSpaces(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    bool wasSpace = false;
+    for (size_t i = 0; i < in.size(); i++) {
+        unsigned char c = (unsigned char)in[i];
+        if (c < 32) continue;
+        bool isSpace = std::isspace(c) != 0;
+        if (isSpace) {
+            if (!wasSpace && !out.empty()) out.push_back(' ');
+        } else {
+            out.push_back((char)c);
+        }
+        wasSpace = isSpace;
+    }
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    return out;
+}
+
+static std::string StripMinecraftFormattingCodes(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); i++) {
+        unsigned char c = (unsigned char)in[i];
+        if (c == 0xC2 && i + 2 < in.size() && (unsigned char)in[i + 1] == 0xA7) {
+            i += 2;
+            continue;
+        }
+        if (c == 0xA7) {
+            if (i + 1 < in.size()) i++;
+            continue;
+        }
+        out.push_back((char)c);
+    }
+    return out;
+}
+
+static bool IsLikelyProfileName(const std::string& name) {
+    if (name.size() < 3 || name.size() > 16) return false;
+    for (char ch : name) {
+        unsigned char c = (unsigned char)ch;
+        if (std::isalnum(c) || c == '_') continue;
+        return false;
+    }
+    return true;
+}
+
+static bool LooksLikeFakePlayerLine(const std::string& rawName) {
+    std::string name = NormalizeNameSpaces(StripMinecraftFormattingCodes(rawName));
+    if (name.empty()) return true;
+
+    bool anyAlnum = false;
+    bool anyNonDecor = false;
+    int alnumCount = 0;
+    for (char ch : name) {
+        unsigned char c = (unsigned char)ch;
+        if (std::isalnum(c)) {
+            anyAlnum = true;
+            anyNonDecor = true;
+            alnumCount++;
+            continue;
+        }
+        if (ch == '_' || ch == ' ') {
+            anyNonDecor = true;
+            continue;
+        }
+        if (ch == '-' || ch == '=' || ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == '<' || ch == '>' || ch == '|' || ch == '*' || ch == '~' || ch == ':') {
+            continue;
+        }
+        anyNonDecor = true;
+    }
+
+    if (!anyNonDecor) return true;
+    if (!anyAlnum && name != "_") return true;
+    if (alnumCount < 2 && !IsLikelyProfileName(name)) return true;
+    return false;
+}
+
 static std::string GetStablePlayerName(JNIEnv* env, jobject playerObj) {
     if (!env || !playerObj) return "";
 
@@ -881,26 +964,36 @@ static std::string GetStablePlayerName(JNIEnv* env, jobject playerObj) {
         if (i > 0) s.erase(0, i);
     };
     trim(name);
+    std::string cleanDisplay = NormalizeNameSpaces(StripMinecraftFormattingCodes(name));
 
-    // If server/display overrides produce blank or "-", fall back to GameProfile.getName()
-    if (!name.empty() && name != "-") return name;
+    // If display name looks sane, use it directly.
+    if (!LooksLikeFakePlayerLine(cleanDisplay)) return cleanDisplay;
 
     EnsureGameProfileCaches(env, playerObj);
-    if (!g_getGameProfile_121 || !g_gameProfileGetName_121) return name;
+    if (!g_getGameProfile_121 || !g_gameProfileGetName_121) return "";
 
     jobject gp = env->CallObjectMethod(playerObj, g_getGameProfile_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); gp = nullptr; }
-    if (!gp) return name;
+    if (!gp) return "";
     jstring js = (jstring)env->CallObjectMethod(gp, g_gameProfileGetName_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); js = nullptr; }
+    std::string profileName;
     if (js) {
         const char* cs = env->GetStringUTFChars(js, nullptr);
-        if (cs) { name = cs; env->ReleaseStringUTFChars(js, cs); }
+        if (cs) {
+            profileName = cs;
+            env->ReleaseStringUTFChars(js, cs);
+        }
         env->DeleteLocalRef(js);
     }
     env->DeleteLocalRef(gp);
-    trim(name);
-    return name;
+    trim(profileName);
+    if (IsLikelyProfileName(profileName)) return profileName;
+
+    // Last fallback: if cleaned display had useful content but profile name lookup failed,
+    // keep the cleaned display rather than dropping everything.
+    if (!cleanDisplay.empty() && !LooksLikeFakePlayerLine(cleanDisplay)) return cleanDisplay;
+    return "";
 }
 
 // HitResult / crosshair target caches (for lookingAtBlock)
@@ -2053,7 +2146,7 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     } pub{localList};
 
     EnsureClosestPlayerCaches(env);
-    if (!g_mcInstance || !g_worldField_121 || !g_playerField_121 || !g_worldPlayersListField_121) return;
+    if (!g_mcInstance || !g_worldField_121 || !g_playerField_121) return;
 
     jobject worldObj = env->GetObjectField(g_mcInstance, g_worldField_121);
     jobject selfObj = env->GetObjectField(g_mcInstance, g_playerField_121);
@@ -2061,6 +2154,13 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     if (!worldObj || !selfObj) { if (worldObj) env->DeleteLocalRef(worldObj); if (selfObj) env->DeleteLocalRef(selfObj); return; }
 
     EnsureEntityMethods(env, selfObj);
+
+    DiscoverWorldPlayersListField(env, worldObj);
+    if (!g_worldPlayersListField_121) {
+        env->DeleteLocalRef(worldObj);
+        env->DeleteLocalRef(selfObj);
+        return;
+    }
 
     jobject listObj = env->GetObjectField(worldObj, g_worldPlayersListField_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); listObj = nullptr; }
@@ -2142,7 +2242,10 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     for (auto& lw : lwList) {
         if (processedCount < maxPlayersToProcess) {
             std::string name = GetStablePlayerName(env, lw.obj);
-            if (name.empty()) name = "Player";
+            if (name.empty() || LooksLikeFakePlayerLine(name)) {
+                env->DeleteLocalRef(lw.obj);
+                continue;
+            }
 
             double hp = 20.0;
             if (g_getHealth_121) {
@@ -3463,6 +3566,10 @@ typedef int   (*PFN_glfwGetInputMode)(void* window, int mode);
 static PFN_glfwGetCurrentContext glfwGetCurrentContext_fn = nullptr;
 static PFN_glfwSetInputMode      glfwSetInputMode_fn     = nullptr;
 static PFN_glfwGetInputMode      glfwGetInputMode_fn     = nullptr;
+static HMODULE g_hModule121 = nullptr;
+static HANDLE  g_mainThreadHandle = nullptr;
+static HANDLE  g_chestThreadHandle = nullptr;
+static HANDLE  g_fastPollThreadHandle = nullptr;
 
 #define GLFW_CURSOR            0x00033001
 #define GLFW_CURSOR_NORMAL     0x00034001
@@ -3501,6 +3608,142 @@ static std::string GetBridgeDir() {
     size_t pos = g_logPath.find_last_of("\\/");
     if (pos == std::string::npos) return ".";
     return g_logPath.substr(0, pos);
+}
+
+static void DeleteGlobalRefSafe(JNIEnv* env, jobject& obj) {
+    if (env && obj) {
+        env->DeleteGlobalRef(obj);
+        obj = nullptr;
+    }
+}
+
+static void DeleteGlobalRefSafe(JNIEnv* env, jclass& cls) {
+    if (env && cls) {
+        env->DeleteGlobalRef(cls);
+        cls = nullptr;
+    }
+}
+
+static void CleanupJniGlobals(JNIEnv* env) {
+    if (!env) return;
+
+    DeleteGlobalRefSafe(env, g_gameClassLoader);
+    DeleteGlobalRefSafe(env, g_mcInstance);
+    DeleteGlobalRefSafe(env, g_chatScreenClass);
+
+    DeleteGlobalRefSafe(env, g_renderSystemClass_121);
+    DeleteGlobalRefSafe(env, g_matrix4fClass_121);
+    DeleteGlobalRefSafe(env, g_cameraClass_121);
+    DeleteGlobalRefSafe(env, g_vec3dClass_121);
+
+    DeleteGlobalRefSafe(env, g_gameProfileClass_121);
+    DeleteGlobalRefSafe(env, g_hitResultClass_121);
+    DeleteGlobalRefSafe(env, g_blockHitResultClass_121);
+    DeleteGlobalRefSafe(env, g_chestBlockEntityClass_121);
+    DeleteGlobalRefSafe(env, g_blockEntityClass_121);
+    DeleteGlobalRefSafe(env, g_blockPosClass_121);
+    DeleteGlobalRefSafe(env, g_javaHashMapClass);
+    DeleteGlobalRefSafe(env, g_playerEntityClass_121);
+    DeleteGlobalRefSafe(env, g_itemStackClass_121);
+    DeleteGlobalRefSafe(env, g_identifierClass_121);
+    DeleteGlobalRefSafe(env, g_entityReachIdentifier_121);
+    DeleteGlobalRefSafe(env, g_blockReachIdentifier_121);
+
+    DeleteGlobalRefSafe(env, g_cachedLocalPlayer);
+    DeleteGlobalRefSafe(env, g_cachedReachAttrInst);
+}
+
+static void CleanupImGuiAndHooks() {
+    if (g_hwnd && o_WndProc) {
+        SetWindowLongPtr(g_hwnd, GWLP_WNDPROC, (LONG_PTR)o_WndProc);
+        o_WndProc = nullptr;
+    }
+
+    if (g_imguiPhase1Done) {
+        ImGui_ImplWin32_Shutdown();
+        g_imguiPhase1Done = false;
+    }
+    if (g_imguiGlBackendReady || g_imguiInitialized) {
+        ImGui_ImplOpenGL3_SetSkipGLDeletes(true);
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplOpenGL3_SetSkipGLDeletes(false);
+    }
+    if (ImGui::GetCurrentContext()) {
+        ImGui::DestroyContext();
+    }
+
+    g_imguiInitialized = false;
+    g_imguiGlBackendReady = false;
+    g_imguiPendingBackendReset = false;
+    g_imguiPendingGlrc = nullptr;
+    g_imguiGlrc = nullptr;
+    g_hwnd = nullptr;
+
+    g_ShowMenu = false;
+    g_realGuiOpen = false;
+    g_reqOpenMenu = 0;
+    g_reqCloseMenu = 0;
+    g_blockUntilMs = 0;
+    g_enableRawMouseAtMs = 0;
+
+    MH_DisableHook(MH_ALL_HOOKS);
+    o_wglSwapBuffers = nullptr;
+    MH_Uninitialize();
+}
+
+extern "C" __declspec(dllexport) void Detach() {
+    Log("Detach requested (1.21)");
+    g_running = false;
+
+    if (g_clientSocket != INVALID_SOCKET) {
+        closesocket(g_clientSocket);
+        g_clientSocket = INVALID_SOCKET;
+    }
+    if (g_serverSocket != INVALID_SOCKET) {
+        closesocket(g_serverSocket);
+        g_serverSocket = INVALID_SOCKET;
+    }
+
+    CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+        for (int i = 0; i < 30; i++) {
+            bool chestDone = !g_chestThreadHandle || WaitForSingleObject(g_chestThreadHandle, 50) == WAIT_OBJECT_0;
+            bool pollDone = !g_fastPollThreadHandle || WaitForSingleObject(g_fastPollThreadHandle, 50) == WAIT_OBJECT_0;
+            if (chestDone && pollDone) break;
+            Sleep(25);
+        }
+
+        if (g_chestThreadHandle) { CloseHandle(g_chestThreadHandle); g_chestThreadHandle = nullptr; }
+        if (g_fastPollThreadHandle) { CloseHandle(g_fastPollThreadHandle); g_fastPollThreadHandle = nullptr; }
+
+        JNIEnv* env = nullptr;
+        bool attached = false;
+        if (g_jvm) {
+            if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) != JNI_OK) {
+                if (g_jvm->AttachCurrentThread((void**)&env, nullptr) == JNI_OK) {
+                    attached = true;
+                } else {
+                    env = nullptr;
+                }
+            }
+        }
+
+        CleanupImGuiAndHooks();
+        CleanupJniGlobals(env);
+
+        if (attached && g_jvm) g_jvm->DetachCurrentThread();
+
+        if (g_mainThreadHandle) {
+            CloseHandle(g_mainThreadHandle);
+            g_mainThreadHandle = nullptr;
+        }
+
+        HMODULE self = g_hModule121;
+        if (!self) self = GetModuleHandleA("bridge_121.dll");
+        if (self) {
+            FreeLibraryAndExitThread(self, 0);
+        }
+        return 0;
+    }, nullptr, 0, nullptr);
 }
 
 // ===================== JNI HELPERS (ported from 1.8.9 bridge) =====================
@@ -3568,30 +3811,129 @@ static jfieldID FindFieldByType(JNIEnv* env, jclass targetClass, const std::stri
 }
 
 static jobject GetGameClassLoader(JNIEnv* env) {
+    if (!env) return nullptr;
+
     jclass cThread = env->FindClass("java/lang/Thread");
+    if (!cThread || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (cThread) env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
     jmethodID mGetAll = env->GetStaticMethodID(cThread, "getAllStackTraces", "()Ljava/util/Map;");
+    if (!mGetAll || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
     jobject map = env->CallStaticObjectMethod(cThread, mGetAll);
+    if (!map || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(cThread);
+        if (map) env->DeleteLocalRef(map);
+        return nullptr;
+    }
+
     jclass cMap = env->FindClass("java/util/Map");
-    jobject set = env->CallObjectMethod(map, env->GetMethodID(cMap, "keySet", "()Ljava/util/Set;"));
     jclass cSet = env->FindClass("java/util/Set");
-    jobjectArray threads = (jobjectArray)env->CallObjectMethod(set, env->GetMethodID(cSet, "toArray", "()[Ljava/lang/Object;"));
-    jsize count = env->GetArrayLength(threads);
+    if (!cMap || !cSet || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (cMap) env->DeleteLocalRef(cMap);
+        if (cSet) env->DeleteLocalRef(cSet);
+        env->DeleteLocalRef(map);
+        env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
+    jmethodID mKeySet = env->GetMethodID(cMap, "keySet", "()Ljava/util/Set;");
+    jmethodID mToArray = env->GetMethodID(cSet, "toArray", "()[Ljava/lang/Object;");
     jmethodID mName = env->GetMethodID(cThread, "getName", "()Ljava/lang/String;");
     jmethodID mGetCL = env->GetMethodID(cThread, "getContextClassLoader", "()Ljava/lang/ClassLoader;");
+    if (!mKeySet || !mToArray || !mName || !mGetCL || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        env->DeleteLocalRef(cSet);
+        env->DeleteLocalRef(cMap);
+        env->DeleteLocalRef(map);
+        env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
+    jobject set = env->CallObjectMethod(map, mKeySet);
+    if (!set || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (set) env->DeleteLocalRef(set);
+        env->DeleteLocalRef(cSet);
+        env->DeleteLocalRef(cMap);
+        env->DeleteLocalRef(map);
+        env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
+    jobjectArray threads = (jobjectArray)env->CallObjectMethod(set, mToArray);
+    if (!threads || env->ExceptionCheck()) {
+        env->ExceptionClear();
+        if (threads) env->DeleteLocalRef(threads);
+        env->DeleteLocalRef(set);
+        env->DeleteLocalRef(cSet);
+        env->DeleteLocalRef(cMap);
+        env->DeleteLocalRef(map);
+        env->DeleteLocalRef(cThread);
+        return nullptr;
+    }
+
+    jsize count = env->GetArrayLength(threads);
+
     // Look for "Render thread" (1.21) or "Client thread" (1.8.9)
     for (int i = 0; i < count; i++) {
         jobject t = env->GetObjectArrayElement(threads, i);
+        if (!t || env->ExceptionCheck()) {
+            env->ExceptionClear();
+            if (t) env->DeleteLocalRef(t);
+            continue;
+        }
+
         jstring jn = (jstring)env->CallObjectMethod(t, mName);
-        const char* cn = env->GetStringUTFChars(jn, nullptr);
-        bool found = (strstr(cn, "Render thread") != nullptr ||
-                      strstr(cn, "Client thread") != nullptr ||
-                      strstr(cn, "main") != nullptr);
-        env->ReleaseStringUTFChars(jn, cn);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            env->DeleteLocalRef(t);
+            continue;
+        }
+
+        const char* cn = jn ? env->GetStringUTFChars(jn, nullptr) : nullptr;
+        bool found = cn && (
+            strstr(cn, "Render thread") != nullptr ||
+            strstr(cn, "Client thread") != nullptr ||
+            strstr(cn, "main") != nullptr);
+
+        if (cn) env->ReleaseStringUTFChars(jn, cn);
+        if (jn) env->DeleteLocalRef(jn);
+
         if (found) {
             jobject cl = env->CallObjectMethod(t, mGetCL);
-            if (cl) return cl;
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                cl = nullptr;
+            }
+            env->DeleteLocalRef(t);
+            env->DeleteLocalRef(threads);
+            env->DeleteLocalRef(set);
+            env->DeleteLocalRef(cSet);
+            env->DeleteLocalRef(cMap);
+            env->DeleteLocalRef(map);
+            env->DeleteLocalRef(cThread);
+            return cl;
         }
+
+        env->DeleteLocalRef(t);
     }
+
+    env->DeleteLocalRef(threads);
+    env->DeleteLocalRef(set);
+    env->DeleteLocalRef(cSet);
+    env->DeleteLocalRef(cMap);
+    env->DeleteLocalRef(map);
+    env->DeleteLocalRef(cThread);
     return nullptr;
 }
 
@@ -5104,9 +5446,7 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
 
 // ===================== HOOKED SwapBuffers =====================
 // Frame counter: skip first few frames after GL backend init to let driver stabilize.
-static int g_imguiWarmupFrames = 0;
 // Two-phase init: phase 1 = ImGui context + Win32 (no GL), phase 2 = GL backend (deferred).
-static bool g_imguiPhase1Done = false;
 
 BOOL WINAPI hwglSwapBuffers(HDC hDc) {
     if (!hDc) return o_wglSwapBuffers(hDc);
@@ -5302,8 +5642,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
         static bool s_chestThreadStarted = false;
         if (g_jvm && !s_chestThreadStarted) {
             s_chestThreadStarted = true;
-            CreateThread(nullptr, 0, ChestScanThreadProc, nullptr, 0, nullptr);
-            CreateThread(nullptr, 0, FastPollThreadProc, nullptr, 0, nullptr);
+            g_chestThreadHandle = CreateThread(nullptr, 0, ChestScanThreadProc, nullptr, 0, nullptr);
+            g_fastPollThreadHandle = CreateThread(nullptr, 0, FastPollThreadProc, nullptr, 0, nullptr);
         }
     }
 
@@ -5350,17 +5690,43 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
                 // Build text rows
                 char nameRow[64];
-                const float PI = 3.14159265f;
-                float yaw = cpCamState.yaw * (PI / 180.0f);
-                float fwdX = -sinf(yaw), fwdZ = cosf(yaw);
-                float rightX = fwdZ, rightZ = -fwdX;
-                double toX = cp.ex - cpCamState.camX;
-                double toZ = cp.ez - cpCamState.camZ;
-                double relFwd = toX * fwdX + toZ * fwdZ;
-                double relRight = toX * rightX + toZ * rightZ;
                 char dirArrow = '^';
-                if (fabs(relRight) > fabs(relFwd)) dirArrow = (relRight >= 0.0) ? '>' : '<';
-                else dirArrow = (relFwd >= 0.0) ? '^' : 'v';
+
+                bool dirResolved = false;
+                if (cpCamState.camFound) {
+                    LegoVec3 camPos = { cpCamState.camX, cpCamState.camY, cpCamState.camZ };
+                    LegoVec3 targetPos = { cp.ex, cp.ey + 1.62, cp.ez };
+                    float sx = 0.0f, sy = 0.0f;
+                    bool projected = cpCamState.matsOk
+                        ? WorldToScreen(targetPos, camPos, cpCamState.view, cpCamState.proj,
+                                        (int)io.DisplaySize.x, (int)io.DisplaySize.y, &sx, &sy)
+                        : WorldToScreen_Angles(targetPos, camPos, cpCamState.yaw, cpCamState.pitch, 70.0f,
+                                               (int)io.DisplaySize.x, (int)io.DisplaySize.y, &sx, &sy);
+
+                    if (projected) {
+                        float dxScreen = sx - (io.DisplaySize.x * 0.5f);
+                        float dyScreen = sy - (io.DisplaySize.y * 0.5f);
+                        if (std::fabs(dxScreen) > std::fabs(dyScreen))
+                            dirArrow = (dxScreen >= 0.0f) ? '>' : '<';
+                        else
+                            dirArrow = (dyScreen >= 0.0f) ? 'v' : '^';
+                        dirResolved = true;
+                    }
+                }
+
+                if (!dirResolved) {
+                    const float radToDeg = 57.29577951308232f;
+                    double toX = cp.ex - cpCamState.camX;
+                    double toZ = cp.ez - cpCamState.camZ;
+                    float targetYaw = (float)(std::atan2(-toX, toZ) * radToDeg);
+                    float delta = targetYaw - cpCamState.yaw;
+                    while (delta > 180.0f) delta -= 360.0f;
+                    while (delta < -180.0f) delta += 360.0f;
+                    float ad = std::fabs(delta);
+                    if (ad <= 32.0f) dirArrow = '^';
+                    else if (ad >= 148.0f) dirArrow = 'v';
+                    else dirArrow = (delta < 0.0f) ? '<' : '>';
+                }
                 snprintf(nameRow, sizeof(nameRow), "%c %s  %.0fm", dirArrow, cp.name.c_str(), cp.dist);
 
                 // Stats row
@@ -5479,15 +5845,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
                     for (const auto& it : playerSnap) {
                         if (drawnTags >= nametagRenderCap) break;
-                        // Filter out hologram/NPC lines that are just dashes
-                        bool isFakeDash = true;
-                        for (char c : it.name) {
-                            if (c != '-' && c != '=' && c != ' ' && c != '_' && c != '[' && c != ']') {
-                                isFakeDash = false;
-                                break;
-                            }
-                        }
-                        if (isFakeDash && it.name.length() > 0) continue;
+                        if (LooksLikeFakePlayerLine(it.name)) continue;
 
                         // Centre of player's head
                         LegoVec3 headPos = { it.ex, it.ey + 2.05, it.ez };
@@ -5984,6 +6342,7 @@ glfw_done:;
     // TCP Server
     WSADATA wsa; WSAStartup(MAKEWORD(2,2), &wsa);
     SOCKET srv = socket(AF_INET, SOCK_STREAM, 0);
+    g_serverSocket = srv;
     int opt = 1; setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
     sockaddr_in addr = {}; addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY; addr.sin_port = htons(25590);
@@ -5996,6 +6355,7 @@ glfw_done:;
     while (g_running) {
         SOCKET cli = accept(srv, nullptr, nullptr);
         if (cli == INVALID_SOCKET) { Sleep(100); continue; }
+        g_clientSocket = cli;
         Log("C# Loader connected.");
         u_long nb = 1; ioctlsocket(cli, FIONBIO, &nb);
 
@@ -6186,12 +6546,13 @@ glfw_done:;
             Sleep(5);
         }
         closesocket(cli);
+        g_clientSocket = INVALID_SOCKET;
         Log("C# Loader disconnected.");
     }
 
     closesocket(srv);
+    g_serverSocket = INVALID_SOCKET;
     WSACleanup();
-    MH_Uninitialize();
     return 0;
 }
 
@@ -6200,6 +6561,7 @@ extern "C" __declspec(dllexport) void Dummy121() {}
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
+        g_hModule121 = hModule;
         DisableThreadLibraryCalls(hModule);
         
         char path[MAX_PATH];
@@ -6213,7 +6575,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         
         std::ofstream(g_logPath, std::ios_base::trunc)
             << "=== bridge_121.dll DLL_PROCESS_ATTACH ===\n";
-        CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
+        g_mainThreadHandle = CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        g_running = false;
     }
     return TRUE;
 }
