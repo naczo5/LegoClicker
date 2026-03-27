@@ -24,6 +24,12 @@ It documents build/test/lint commands, repository conventions, and safety rules.
 
 Run from repository root unless noted.
 
+Build shell preference:
+
+- prefer PowerShell invocation for build scripts and compound Windows build commands
+- avoid `cmd.exe /c ...` unless explicitly required for a specific script behavior
+- this avoids intermittent path/quoting issues observed in this repository tooling
+
 ### Native bridge builds
 
 - Build both bridges: `build_dll.bat`

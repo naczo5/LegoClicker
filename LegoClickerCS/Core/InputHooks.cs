@@ -111,6 +111,9 @@ public static class InputHooks
 
     private static void ToggleModule(string moduleId)
     {
+        if (!GameStateClient.Instance.SupportsModule(moduleId))
+            return;
+
         var c = Clicker.Instance;
         switch (moduleId)
         {

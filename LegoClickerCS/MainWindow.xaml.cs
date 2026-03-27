@@ -266,23 +266,61 @@ public partial class MainWindow : Window
 
     private void EnsureControlModeIfNeeded(GameStateClient gs)
     {
-        bool injected121 = Is121Version(gs.InjectedVersion);
-        if (gs.IsConnected && injected121)
+        if (gs.IsConnected)
         {
             Dispatcher.Invoke(EnterControlMode);
         }
     }
 
-    private static bool Is121Version(string? version)
-        => !string.IsNullOrWhiteSpace(version) && version.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+    private static bool IsModuleSupported(string moduleId)
+        => GameStateClient.Instance.SupportsModule(moduleId);
+
+    private void UpdateVersionAvailabilityUi()
+    {
+        bool aimAssistSupported = IsModuleSupported("aimassist");
+        bool triggerbotSupported = IsModuleSupported("triggerbot");
+        bool gtbSupported = IsModuleSupported("gtbhelper");
+        bool reachSupported = IsModuleSupported("reach");
+        bool velocitySupported = IsModuleSupported("velocity");
+
+        string available = "Available";
+        string unavailable = "Unavailable on current bridge";
+
+        AimAssistCard.IsEnabled = aimAssistSupported;
+        TriggerbotCard.IsEnabled = triggerbotSupported;
+        GtbHelperCard.IsEnabled = gtbSupported;
+        ReachCard.IsEnabled = reachSupported;
+        VelocityCard.IsEnabled = velocitySupported;
+
+        var clicker = Clicker.Instance;
+        if (!aimAssistSupported && clicker.AimAssistEnabled) clicker.AimAssistEnabled = false;
+        if (!triggerbotSupported && clicker.TriggerbotEnabled) clicker.TriggerbotEnabled = false;
+        if (!gtbSupported && clicker.GtbHelperEnabled) clicker.GtbHelperEnabled = false;
+        if (!reachSupported && clicker.ReachEnabled) clicker.ReachEnabled = false;
+        if (!velocitySupported && clicker.VelocityEnabled) clicker.VelocityEnabled = false;
+
+        AimAssistAvailabilityText.Text = aimAssistSupported ? available : unavailable;
+        TriggerbotAvailabilityText.Text = triggerbotSupported ? available : unavailable;
+        ReachAvailabilityText.Text = reachSupported ? available : unavailable;
+        VelocityAvailabilityText.Text = velocitySupported ? available : unavailable;
+        GtbHelperAvailabilityText.Text = gtbSupported
+            ? "Hypixel Guess The Build helper using action-bar hints."
+            : unavailable;
+
+        KeybindAimAssistButton.IsEnabled = aimAssistSupported;
+        KeybindTriggerbotButton.IsEnabled = triggerbotSupported;
+        KeybindGtbHelperButton.IsEnabled = gtbSupported;
+        KeybindReachButton.IsEnabled = reachSupported;
+        KeybindVelocityButton.IsEnabled = velocitySupported;
+    }
     
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount == 1)
             DragMove();
     }
-    
-    
+
+
     private void GuiTheme_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (DataContext is Clicker clicker)
@@ -417,7 +455,7 @@ public partial class MainWindow : Window
 
         LogUi($"InjectAsync returned: success={success} IsConnected={GameStateClient.Instance.IsConnected} InjectedVersion={GameStateClient.Instance.InjectedVersion}");
 
-        if (success && Is121Version(GameStateClient.Instance.InjectedVersion))
+        if (success)
             EnterControlMode();
         
         InjectButton.Content = success ? "Connected" : "Inject";
@@ -450,6 +488,7 @@ public partial class MainWindow : Window
                         InjectButton.IsEnabled = false;
 
                         EnsureControlModeIfNeeded(gs);
+                        UpdateVersionAvailabilityUi();
                     }
                     else
                     {
@@ -463,6 +502,11 @@ public partial class MainWindow : Window
                             InjectButton.IsEnabled = true;
                             InjectButton.Content = "Inject";
                         }
+                    }
+
+                    if (!gs.IsConnected)
+                    {
+                        UpdateVersionAvailabilityUi();
                     }
                 }
                 finally
@@ -490,7 +534,8 @@ public partial class MainWindow : Window
             e.PropertyName == nameof(GameStateClient.IsInjectionInProgress) ||
             e.PropertyName == nameof(GameStateClient.InjectionProgress) ||
             e.PropertyName == nameof(GameStateClient.IsInjected) ||
-            e.PropertyName == nameof(GameStateClient.InjectedVersion))
+            e.PropertyName == nameof(GameStateClient.InjectedVersion) ||
+            e.PropertyName == nameof(GameStateClient.Capabilities))
         {
             UpdateGameStateUI();
         }
@@ -512,6 +557,7 @@ public partial class MainWindow : Window
     private void KeybindButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not string moduleId) return;
+        if (!IsModuleSupported(moduleId)) return;
         _pendingKeybindModuleId = moduleId;
         InputHooks.StartKeyCapture();
         UpdateKeybindButtons();
@@ -553,6 +599,12 @@ public partial class MainWindow : Window
     private void SetKeybindButtonContent(Button btn, string moduleId)
     {
         string title = ModuleTitles.TryGetValue(moduleId, out string? n) ? n : moduleId;
+        if (!IsModuleSupported(moduleId))
+        {
+            btn.Content = $"{title}: Unavailable on current bridge";
+            return;
+        }
+
         if (_pendingKeybindModuleId == moduleId)
             btn.Content = $"{title}: [Press key...]";
         else

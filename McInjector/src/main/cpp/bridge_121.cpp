@@ -4,7 +4,7 @@
  *
  * Architecture:
  *  - Hooks wglSwapBuffers -> renders ImGui overlay every frame.
- *  - Hooks WndProc -> intercepts INSERT/ESC, blocks game input when GUI is open.
+ *  - Hooks WndProc -> blocks game input when GUI is open.
  *  - Hooks glfwSetInputMode -> detects when Minecraft naturally re-grabs cursor.
  *  - Maintains TCP server (port 25590) for bidirectional comms with C# Loader.
  *
@@ -230,6 +230,25 @@ static void ParseConfig(const std::string& line) {
     g_config.velocityHorizontal = (std::max)(1, (std::min)(100, getInt("velocityHorizontal", 100)));
     g_config.velocityVertical = (std::max)(1, (std::min)(100, getInt("velocityVertical", 100)));
     g_config.velocityChance = (std::max)(1, (std::min)(100, getInt("velocityChance", 100)));
+}
+
+static bool TrySendCapabilities(SOCKET sock) {
+    if (sock == INVALID_SOCKET) return false;
+
+    static const std::string kCapabilitiesJson =
+        "{\"type\":\"capabilities\","
+        "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"aimassist\",\"triggerbot\",\"gtbhelper\",\"nametags\",\"closestplayer\",\"chestesp\",\"reach\",\"velocity\"],"
+        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"triggerbot\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\"],"
+        "\"state\":[\"actionbar\",\"holdingblock\",\"lookingatblock\",\"lookingatentity\",\"lookingatentitylatched\",\"breakingblock\",\"attackcooldown\",\"attackcooldownpertick\",\"statems\"]}\n";
+
+    int sent = send(sock, kCapabilitiesJson.c_str(), (int)kCapabilitiesJson.size(), 0);
+    if (sent == SOCKET_ERROR) {
+        int err = WSAGetLastError();
+        if (err == WSAEWOULDBLOCK) return false;
+        Log("Capabilities send failed, err=" + std::to_string(err));
+        return false;
+    }
+    return true;
 }
 
 struct OverlayTheme {
@@ -4923,12 +4942,6 @@ static void UpdateJniState() {
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
 LRESULT CALLBACK hkWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    // 1.21: external GUI (WPF) toggle. Do not open an in-game clickgui.
-    if (uMsg == WM_KEYDOWN && wParam == VK_INSERT) {
-        SendCmd("toggleExternalGui");
-        return TRUE;
-    }
-
     // Absorb WM_INPUT while GUI is open OR while timer is active.
     // This prevents raw mouse deltas from moving the camera while controlling ImGui.
     if (uMsg == WM_INPUT && (g_ShowMenu || GetTickCount() < g_blockUntilMs)) {
@@ -6360,7 +6373,13 @@ glfw_done:;
         u_long nb = 1; ioctlsocket(cli, FIONBIO, &nb);
 
         std::string readBuf;
+        bool capabilitiesSent = false;
         while (g_running) {
+            if (!capabilitiesSent) {
+                capabilitiesSent = TrySendCapabilities(cli);
+                if (capabilitiesSent) Log("Sent bridge capabilities packet");
+            }
+
             // Send state
             {
                 std::string sn;

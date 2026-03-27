@@ -872,7 +872,7 @@ public class Clicker : INotifyPropertyChanged
         {
             while (!token.IsCancellationRequested)
             {
-                bool supportedVersion = GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+                bool supportedVersion = GameStateClient.Instance.SupportsModule("aimassist");
                 bool shouldRun =
                     AimAssistEnabled &&
                     supportedVersion &&
@@ -904,7 +904,7 @@ public class Clicker : INotifyPropertyChanged
         {
             while (!token.IsCancellationRequested)
             {
-                bool supportedVersion = GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+                bool supportedVersion = GameStateClient.Instance.SupportsModule("triggerbot");
                 bool shouldRun =
                     TriggerbotEnabled &&
                     supportedVersion &&
@@ -1219,9 +1219,9 @@ public class Clicker : INotifyPropertyChanged
                 {
                     var state = GameStateClient.Instance.CurrentState;
 
-                    if (GameStateClient.Instance.InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase))
+                    if (GameStateClient.Instance.SupportsStateField("breakingBlock"))
                     {
-                        // 1.21: only pause when we are actually breaking a block.
+                        // Modern state payload: pause when we are actually breaking a block.
                         if (!state.LookingAtBlock)
                             IsMiningIntent = false;
 
@@ -1233,7 +1233,7 @@ public class Clicker : INotifyPropertyChanged
                     }
                     else
                     {
-                        // 1.8.9: legacy behavior (intent-based).
+                        // Legacy fallback behavior (intent-based).
                         if (!state.LookingAtBlock)
                             IsMiningIntent = false;
 

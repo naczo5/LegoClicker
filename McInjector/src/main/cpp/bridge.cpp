@@ -53,11 +53,20 @@ struct Config {
     bool rightBlockOnly = false;
     bool breakBlocks = false;
     bool clickInChests = false;
+    bool aimAssist = false;
+    bool triggerbot = false;
+    bool gtbHelper = false;
     bool nametags = false;
     bool closestPlayerInfo = false;
     bool nametagShowHealth = true;
     bool nametagShowArmor = true;
     bool chestEsp = false;
+    bool reachEnabled = false;
+    bool velocityEnabled = false;
+    bool showModuleList = true;
+    int moduleListStyle = 0;
+    bool showLogo = true;
+    std::string guiTheme = "Default";
     float minCPS = 10, maxCPS = 14;
     float rightMinCPS = 10, rightMaxCPS = 14;
     bool armed = false; // "Self Destruct" / Enable toggle
@@ -120,6 +129,7 @@ static SwapBuffersFn g_origSwapBuffers = nullptr;
 // JNI cached refs
 static jclass g_mcClass = nullptr;
 static jobject g_mcInstance = nullptr;
+static jobject g_gameClassLoader = nullptr;
 static jfieldID g_thePlayerField = nullptr;
 static jfieldID g_currentScreenField = nullptr;
 static jmethodID g_getHealthMethod = nullptr;
@@ -209,9 +219,25 @@ static int g_tagFrameCounter = 0;
 static std::vector<std::string> g_pendingCommands;
 static Mutex g_cmdMutex;
 
+static std::string g_logPath = "bridge_debug.log";
+
 // ===================== LOGGING =====================
+void InitLogPath(HMODULE hModule) {
+    char dllPath[MAX_PATH] = {};
+    if (!GetModuleFileNameA(hModule, dllPath, MAX_PATH)) {
+        return;
+    }
+
+    std::string path = dllPath;
+    size_t sep = path.find_last_of("\\/");
+    if (sep == std::string::npos) {
+        return;
+    }
+    g_logPath = path.substr(0, sep + 1) + "bridge_debug.log";
+}
+
 void Log(const std::string& msg) {
-    std::ofstream f("bridge_debug.log", std::ios_base::app);
+    std::ofstream f(g_logPath.c_str(), std::ios_base::app);
     f << "[Bridge] " << msg << std::endl;
 }
 
@@ -254,6 +280,21 @@ jobject GetGameClassLoader(JNIEnv* env) {
     return nullptr;
 }
 
+jobject EnsureGameClassLoader(JNIEnv* env) {
+    if (!env) return nullptr;
+    if (g_gameClassLoader) return g_gameClassLoader;
+
+    jobject local = GetGameClassLoader(env);
+    if (!local) return nullptr;
+
+    g_gameClassLoader = env->NewGlobalRef(local);
+    env->DeleteLocalRef(local);
+    if (g_gameClassLoader) {
+        Log("Cached game classloader");
+    }
+    return g_gameClassLoader;
+}
+
 std::string GetClassNameFromClass(JNIEnv* env, jclass cls) {
     if (!env || !cls) return "";
     jclass cClass = env->FindClass("java/lang/Class");
@@ -293,7 +334,7 @@ bool DiscoverMappings(JNIEnv* env) {
     jvmti->GetLoadedClasses(&classCount, &classes);
     Log("Loaded classes: " + std::to_string(classCount));
 
-    jobject gcl = GetGameClassLoader(env);
+    jobject gcl = EnsureGameClassLoader(env);
     if (!gcl) { Log("ERROR: No game classloader"); return false; }
 
     jclass cClass = env->FindClass("java/lang/Class");
@@ -315,9 +356,6 @@ bool DiscoverMappings(JNIEnv* env) {
     
     jclass cMod = env->FindClass("java/lang/reflect/Modifier");
     jmethodID mIsStatic = env->GetStaticMethodID(cMod, "isStatic", "(I)Z");
-
-    jclass cClassLoader = env->FindClass("java/lang/ClassLoader");
-    jmethodID mLoadClass = env->GetMethodID(cClassLoader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
 
     // Try known names first
     jclass mcClass = nullptr;
@@ -1099,9 +1137,210 @@ bool DiscoverMappings(JNIEnv* env) {
     return g_mapped;
 }
 
+void TryResolveWorldMappings(JNIEnv* env) {
+    if (!env || !g_mcInstance || !g_theWorldField) return;
+    if (g_playerEntitiesField && g_loadedTileEntityListField) return;
+
+    jobject world = env->GetObjectField(g_mcInstance, g_theWorldField);
+    if (!world) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return;
+    }
+
+    jclass worldClass = env->GetObjectClass(world);
+    if (worldClass) {
+        if (!g_playerEntitiesField) {
+            g_playerEntitiesField = env->GetFieldID(worldClass, "playerEntities", "Ljava/util/List;");
+            if (!g_playerEntitiesField) {
+                env->ExceptionClear();
+                g_playerEntitiesField = env->GetFieldID(worldClass, "field_73010_i", "Ljava/util/List;");
+            }
+            if (!g_playerEntitiesField) {
+                env->ExceptionClear();
+            } else {
+                Log("Late-bound playerEntities field");
+            }
+        }
+
+        if (!g_loadedTileEntityListField) {
+            g_loadedTileEntityListField = env->GetFieldID(worldClass, "loadedTileEntityList", "Ljava/util/List;");
+            if (!g_loadedTileEntityListField) {
+                env->ExceptionClear();
+                g_loadedTileEntityListField = env->GetFieldID(worldClass, "field_147482_g", "Ljava/util/List;");
+            }
+            if (!g_loadedTileEntityListField) {
+                env->ExceptionClear();
+            } else {
+                Log("Late-bound loadedTileEntityList field");
+            }
+        }
+
+        env->DeleteLocalRef(worldClass);
+    }
+    env->DeleteLocalRef(world);
+}
+
+void TryResolveRenderMappings(JNIEnv* env) {
+    if (!env || !g_mcInstance) return;
+
+    jobject gcl = EnsureGameClassLoader(env);
+
+    if (!g_activeRenderInfoClass) {
+        jclass ariLocal = nullptr;
+        if (gcl) {
+            ariLocal = LoadClassWithLoader(env, gcl, "net.minecraft.client.renderer.ActiveRenderInfo");
+        }
+        if (!ariLocal) {
+            ariLocal = env->FindClass("net/minecraft/client/renderer/ActiveRenderInfo");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+        if (!ariLocal) {
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        } else {
+            g_activeRenderInfoClass = (jclass)env->NewGlobalRef(ariLocal);
+            env->DeleteLocalRef(ariLocal);
+            Log("Late-bound ActiveRenderInfo class");
+        }
+    }
+
+    if (g_activeRenderInfoClass) {
+        if (!g_modelViewField) {
+            g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "MODELVIEW", "Ljava/nio/FloatBuffer;");
+            if (!g_modelViewField) {
+                env->ExceptionClear();
+                g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178812_b", "Ljava/nio/FloatBuffer;");
+            }
+            if (!g_modelViewField) {
+                env->ExceptionClear();
+            } else {
+                Log("Late-bound MODELVIEW field");
+            }
+        }
+
+        if (!g_projectionField) {
+            g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "PROJECTION", "Ljava/nio/FloatBuffer;");
+            if (!g_projectionField) {
+                env->ExceptionClear();
+                g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178813_c", "Ljava/nio/FloatBuffer;");
+            }
+            if (!g_projectionField) {
+                env->ExceptionClear();
+            } else {
+                Log("Late-bound PROJECTION field");
+            }
+        }
+    }
+
+    if (!g_renderManagerField && g_mcClass) {
+        g_renderManagerField = env->GetFieldID(g_mcClass, "renderManager", "Lnet/minecraft/client/renderer/entity/RenderManager;");
+        if (!g_renderManagerField) {
+            env->ExceptionClear();
+            g_renderManagerField = env->GetFieldID(g_mcClass, "field_175616_W", "Lnet/minecraft/client/renderer/entity/RenderManager;");
+        }
+        if (!g_renderManagerField) {
+            env->ExceptionClear();
+        } else {
+            Log("Late-bound renderManager field");
+        }
+    }
+
+    if (g_renderManagerField && (!g_viewerPosXField || !g_viewerPosYField || !g_viewerPosZField)) {
+        jobject rmObj = env->GetObjectField(g_mcInstance, g_renderManagerField);
+        if (rmObj) {
+            jclass rmClass = env->GetObjectClass(rmObj);
+            if (rmClass) {
+                if (!g_viewerPosXField) {
+                    g_viewerPosXField = env->GetFieldID(rmClass, "viewerPosX", "D");
+                    if (!g_viewerPosXField) {
+                        env->ExceptionClear();
+                        g_viewerPosXField = env->GetFieldID(rmClass, "field_78725_b", "D");
+                    }
+                    if (!g_viewerPosXField) {
+                        env->ExceptionClear();
+                        g_viewerPosXField = env->GetFieldID(rmClass, "o", "D");
+                    }
+                    if (!g_viewerPosXField) env->ExceptionClear();
+                }
+
+                if (!g_viewerPosYField) {
+                    g_viewerPosYField = env->GetFieldID(rmClass, "viewerPosY", "D");
+                    if (!g_viewerPosYField) {
+                        env->ExceptionClear();
+                        g_viewerPosYField = env->GetFieldID(rmClass, "field_78726_c", "D");
+                    }
+                    if (!g_viewerPosYField) {
+                        env->ExceptionClear();
+                        g_viewerPosYField = env->GetFieldID(rmClass, "p", "D");
+                    }
+                    if (!g_viewerPosYField) env->ExceptionClear();
+                }
+
+                if (!g_viewerPosZField) {
+                    g_viewerPosZField = env->GetFieldID(rmClass, "viewerPosZ", "D");
+                    if (!g_viewerPosZField) {
+                        env->ExceptionClear();
+                        g_viewerPosZField = env->GetFieldID(rmClass, "field_78723_d", "D");
+                    }
+                    if (!g_viewerPosZField) {
+                        env->ExceptionClear();
+                        g_viewerPosZField = env->GetFieldID(rmClass, "q", "D");
+                    }
+                    if (!g_viewerPosZField) env->ExceptionClear();
+                }
+
+                if (g_viewerPosXField && g_viewerPosYField && g_viewerPosZField) {
+                    Log("Late-bound RenderManager viewerPos fields");
+                }
+
+                env->DeleteLocalRef(rmClass);
+            }
+            env->DeleteLocalRef(rmObj);
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+    }
+}
+
+void MaybeRefreshMappings(JNIEnv* env) {
+    if (!env || !g_jvm) return;
+
+    bool needRefresh = !g_mapped
+        || !g_mcInstance
+        || !g_theWorldField
+        || !g_playerEntitiesField
+        || !g_loadedTileEntityListField
+        || !g_activeRenderInfoClass
+        || !g_modelViewField
+        || !g_projectionField
+        || !g_renderManagerField
+        || !g_viewerPosXField
+        || !g_viewerPosYField
+        || !g_viewerPosZField;
+
+    if (!needRefresh) return;
+
+    static DWORD nextRetryAt = 0;
+    DWORD now = GetTickCount();
+    if (now < nextRetryAt) return;
+    nextRetryAt = now + 4000;
+
+    Log("Mappings incomplete, retrying discovery...");
+    bool ok = DiscoverMappings(env);
+    Log(ok ? "Mapping refresh complete" : "Mapping refresh failed");
+}
+
 GameState ReadGameState(JNIEnv* env) {
     GameState s = {}; s.mapped = g_mapped;
-    if (!g_mapped || !g_mcInstance) return s;
+    if (!g_mapped || !g_mcInstance) {
+        MaybeRefreshMappings(env);
+        s.mapped = g_mapped;
+        if (!g_mapped || !g_mcInstance) return s;
+    }
+
+    MaybeRefreshMappings(env);
+    TryResolveWorldMappings(env);
+    TryResolveRenderMappings(env);
+
     if (g_currentScreenField) {
         jobject scr = env->GetObjectField(g_mcInstance, g_currentScreenField);
         s.guiOpen = (scr != nullptr);
@@ -1405,6 +1644,175 @@ std::string StripMinecraftFormatting(const std::string& in) {
 std::string ToLowerAscii(std::string s) {
     for (char& ch : s) ch = (char)std::tolower((unsigned char)ch);
     return s;
+}
+
+struct Color4 {
+    float r, g, b, a;
+};
+
+static Color4 MakeColor4(int r, int g, int b, int a) {
+    Color4 c;
+    c.r = (float)r / 255.0f;
+    c.g = (float)g / 255.0f;
+    c.b = (float)b / 255.0f;
+    c.a = (float)a / 255.0f;
+    return c;
+}
+
+struct OverlayTheme {
+    Color4 accentPrimary;
+    Color4 accentSecondary;
+    Color4 accentTertiary;
+    Color4 logoColor;
+    Color4 logoShadow;
+    Color4 moduleBg;
+    Color4 moduleBorder;
+    Color4 moduleText;
+    Color4 moduleTextShadow;
+    Color4 moduleMinimalBg;
+    Color4 moduleOutlinedBg;
+    Color4 moduleGlassBorder;
+    Color4 moduleBoldText;
+};
+
+static OverlayTheme ResolveOverlayTheme(const std::string& guiTheme) {
+    std::string key = ToLowerAscii(guiTheme);
+
+    if (key == "dark blue") {
+        return {
+            MakeColor4(59, 130, 246, 255),
+            MakeColor4(37, 99, 235, 255),
+            MakeColor4(96, 165, 250, 255),
+            MakeColor4(125, 195, 255, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(12, 23, 42, 160),
+            MakeColor4(148, 163, 184, 70),
+            MakeColor4(241, 245, 249, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(12, 23, 42, 100),
+            MakeColor4(6, 18, 34, 190),
+            MakeColor4(125, 211, 252, 105),
+            MakeColor4(255, 255, 255, 245)
+        };
+    }
+    if (key == "crimson") {
+        return {
+            MakeColor4(244, 63, 94, 255),
+            MakeColor4(225, 29, 72, 255),
+            MakeColor4(251, 113, 133, 255),
+            MakeColor4(255, 145, 165, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(42, 15, 21, 168),
+            MakeColor4(251, 113, 133, 80),
+            MakeColor4(255, 234, 238, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(42, 15, 21, 108),
+            MakeColor4(28, 9, 13, 198),
+            MakeColor4(251, 113, 133, 118),
+            MakeColor4(255, 245, 247, 245)
+        };
+    }
+    if (key == "emerald") {
+        return {
+            MakeColor4(16, 185, 129, 255),
+            MakeColor4(5, 150, 105, 255),
+            MakeColor4(52, 211, 153, 255),
+            MakeColor4(86, 255, 199, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(8, 33, 30, 165),
+            MakeColor4(74, 222, 128, 70),
+            MakeColor4(220, 252, 231, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(8, 33, 30, 105),
+            MakeColor4(6, 24, 22, 196),
+            MakeColor4(74, 222, 128, 105),
+            MakeColor4(240, 253, 244, 245)
+        };
+    }
+    if (key == "amber") {
+        return {
+            MakeColor4(245, 158, 11, 255),
+            MakeColor4(217, 119, 6, 255),
+            MakeColor4(251, 191, 36, 255),
+            MakeColor4(255, 200, 108, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(35, 23, 4, 170),
+            MakeColor4(251, 191, 36, 72),
+            MakeColor4(255, 247, 237, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(35, 23, 4, 115),
+            MakeColor4(23, 14, 3, 200),
+            MakeColor4(251, 191, 36, 112),
+            MakeColor4(255, 251, 235, 245)
+        };
+    }
+    if (key == "slate") {
+        return {
+            MakeColor4(148, 163, 184, 255),
+            MakeColor4(100, 116, 139, 255),
+            MakeColor4(203, 213, 225, 255),
+            MakeColor4(190, 202, 220, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(16, 20, 24, 170),
+            MakeColor4(148, 163, 184, 72),
+            MakeColor4(241, 245, 249, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(16, 20, 24, 110),
+            MakeColor4(10, 13, 17, 200),
+            MakeColor4(203, 213, 225, 106),
+            MakeColor4(255, 255, 255, 245)
+        };
+    }
+    if (key == "sunset") {
+        return {
+            MakeColor4(251, 113, 133, 255),
+            MakeColor4(219, 39, 119, 255),
+            MakeColor4(244, 114, 182, 255),
+            MakeColor4(255, 154, 173, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(33, 17, 37, 170),
+            MakeColor4(244, 114, 182, 76),
+            MakeColor4(253, 242, 248, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(33, 17, 37, 110),
+            MakeColor4(20, 10, 22, 200),
+            MakeColor4(244, 114, 182, 112),
+            MakeColor4(255, 245, 250, 245)
+        };
+    }
+    if (key == "frost") {
+        return {
+            MakeColor4(56, 189, 248, 255),
+            MakeColor4(14, 165, 233, 255),
+            MakeColor4(125, 211, 252, 255),
+            MakeColor4(147, 224, 255, 255),
+            MakeColor4(0, 0, 0, 210),
+            MakeColor4(13, 22, 36, 166),
+            MakeColor4(125, 211, 252, 76),
+            MakeColor4(224, 242, 254, 238),
+            MakeColor4(0, 0, 0, 190),
+            MakeColor4(13, 22, 36, 108),
+            MakeColor4(7, 14, 26, 198),
+            MakeColor4(125, 211, 252, 110),
+            MakeColor4(240, 249, 255, 245)
+        };
+    }
+
+    return {
+        MakeColor4(167, 125, 255, 255),
+        MakeColor4(124, 101, 176, 255),
+        MakeColor4(196, 181, 253, 255),
+        MakeColor4(155, 220, 255, 255),
+        MakeColor4(0, 0, 0, 210),
+        MakeColor4(0, 0, 0, 145),
+        MakeColor4(255, 255, 255, 44),
+        MakeColor4(255, 255, 255, 235),
+        MakeColor4(0, 0, 0, 180),
+        MakeColor4(0, 0, 0, 90),
+        MakeColor4(0, 0, 0, 185),
+        MakeColor4(255, 255, 255, 90),
+        MakeColor4(255, 255, 255, 245)
+    };
 }
 
 float SwordDamageFromUnlocalizedName(const std::string& unlocLower) {
@@ -1785,54 +2193,121 @@ void RenderHUD(int winW, int winH) {
     if (g_guiOpen) return; // hide HUD when config is open
 
     Config cfg; { LockGuard lk(g_configMutex); cfg = g_config; }
-    std::vector<std::string> lines;
-    if (cfg.armed || cfg.clicking) {
-        char d[64];
-        snprintf(d, sizeof(d), "AutoClicker %.0f-%.0f", cfg.minCPS, cfg.maxCPS);
-        lines.push_back(d);
+
+    GameState state;
+    { LockGuard lk(g_stateMutex); state = g_gameState; }
+    if (state.guiOpen) {
+        return;
     }
-    if (cfg.leftClick) lines.push_back("Left Click");
-    if (cfg.rightClick) lines.push_back("Right Click");
-    if (cfg.jitter) lines.push_back("Jitter");
 
-    if (cfg.clickInChests) lines.push_back("Click In Chests");
-    if (cfg.nametags) lines.push_back("Nametags");
-    if (cfg.closestPlayerInfo) lines.push_back("Closest Player");
-    if (cfg.chestEsp) lines.push_back("Chest ESP");
+    if (!cfg.showModuleList) {
+        return;
+    }
 
-    std::sort(lines.begin(), lines.end(), [](const std::string& a, const std::string& b) {
-        if (a.size() != b.size()) return a.size() > b.size();
-        return a < b;
+    OverlayTheme theme = ResolveOverlayTheme(cfg.guiTheme);
+
+    struct ModLine {
+        std::string text;
+        Color4 accent;
+        float width;
+    };
+
+    std::vector<ModLine> mods;
+    mods.reserve(16);
+    auto pushMod = [&](const std::string& text, const Color4& accent) {
+        if (text.empty()) return;
+        mods.push_back({ text, accent, TextWidth(text.c_str(), 0.58f) });
+    };
+
+    if (cfg.armed) {
+        char acBuf[64];
+        int lo = (int)cfg.minCPS;
+        int hi = (int)cfg.maxCPS;
+        if (hi < lo) std::swap(hi, lo);
+        snprintf(acBuf, sizeof(acBuf), "Autoclicker %d-%d", lo, hi);
+        pushMod(acBuf, theme.accentPrimary);
+    }
+    if (cfg.clickInChests)    pushMod("Click in Chests", theme.accentTertiary);
+    if (cfg.closestPlayerInfo) pushMod("Closest Player", theme.accentSecondary);
+    if (cfg.rightClick)       pushMod("Rightclick", theme.accentTertiary);
+    if (cfg.chestEsp)         pushMod("Chest ESP", theme.accentSecondary);
+    if (cfg.nametags)         pushMod("Nametags", theme.accentPrimary);
+    if (cfg.jitter)           pushMod("Jitter", theme.accentSecondary);
+    if (cfg.breakBlocks)      pushMod("Break Blocks", theme.moduleText);
+
+    std::sort(mods.begin(), mods.end(), [](const ModLine& a, const ModLine& b) {
+        if (a.width != b.width) return a.width > b.width;
+        return a.text < b.text;
     });
 
-    float scale = 0.58f;
-    float lineH = CHAR_H * scale + 4.0f;
-    Color3 accent = AccentColor(0.0f);
-
-    // Watermark (top-left)
-    const std::string watermark = "LegoClicker";
-    float wmW = TextWidth(watermark.c_str(), scale) + 16.0f;
-    float wmH = lineH + 6.0f;
-    DrawRect(10.0f, 10.0f, wmW, wmH, 0.10f, 0.10f, 0.11f, 0.90f);
-    DrawRect(10.0f, 10.0f, 2.0f, wmH, accent.r, accent.g, accent.b, 1.0f);
-    DrawTextShadow(16.0f, 13.0f, watermark.c_str(), 0.92f, 0.93f, 0.95f, 1.0f, scale);
-
-    // ArrayList (top-right)
+    const float scale = 0.58f;
+    const float marginX = 10.0f;
     float y = 10.0f;
-    for (size_t i = 0; i < lines.size(); i++) {
-        const std::string& line = lines[i];
-        float tw = TextWidth(line.c_str(), scale);
-        float x = (float)winW - tw - 18.0f;
-        Color3 textColor = ChromaTextColor((float)i * 0.08f);
 
-        DrawRect(x - 7.0f, y - 1.0f, tw + 12.0f, lineH, 0.08f, 0.08f, 0.09f, 0.84f);
-        DrawRect(x - 7.0f, y - 1.0f, 1.7f, lineH, textColor.r, textColor.g, textColor.b, 1.0f);
-        DrawTextShadow(x, y, line.c_str(), textColor.r, textColor.g, textColor.b, 1.0f, scale);
-        y += lineH + 2.0f;
+    if (cfg.showLogo) {
+        const char* logoText = "LegoClicker";
+        float logoW = TextWidth(logoText, scale);
+        float logoX = (float)winW - marginX - logoW;
+        DrawTextShadow(logoX, y, logoText, theme.logoColor.r, theme.logoColor.g, theme.logoColor.b, theme.logoColor.a, scale);
+        y += CHAR_H * scale + 8.0f;
     }
 
-    const char* hint = "[INSERT] ClickGUI";
-    DrawTextShadow((float)winW - TextWidth(hint, scale * 0.82f) - 10.0f, y + 1.0f, hint, 0.42f, 0.42f, 0.48f, 0.95f, scale * 0.82f);
+    const float padX = 8.0f;
+    const float padY = 3.0f;
+    const float barW = 3.0f;
+    const float gapY = 2.0f;
+    const float fontH = CHAR_H * scale;
+    const int style = (std::max)(0, (std::min)(4, cfg.moduleListStyle));
+
+    for (size_t i = 0; i < mods.size(); i++) {
+        const ModLine& m = mods[i];
+        float textW = TextWidth(m.text.c_str(), scale);
+        float boxW = barW + padX + textW + padX;
+        float boxH = padY + fontH + padY;
+        float x0 = (float)winW - marginX - boxW;
+        float x1 = (float)winW - marginX;
+        float y0 = y;
+        float y1 = y + boxH;
+
+        if (style == 0) {
+            DrawRect(x0, y0, boxW, boxH, theme.moduleBg.r, theme.moduleBg.g, theme.moduleBg.b, theme.moduleBg.a);
+            DrawRect(x0, y0, barW, boxH, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawRect(x0, y0, boxW, 1.0f, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x0, y1 - 1.0f, boxW, 1.0f, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x0, y0, 1.0f, boxH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x1 - 1.0f, y0, 1.0f, boxH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawTextShadow(x0 + barW + padX, y0 + padY, m.text.c_str(), theme.moduleText.r, theme.moduleText.g, theme.moduleText.b, theme.moduleText.a, scale);
+        } else if (style == 1) {
+            float minW = textW + 4.0f;
+            DrawRect(x1 - minW, y0, minW, boxH, theme.moduleMinimalBg.r, theme.moduleMinimalBg.g, theme.moduleMinimalBg.b, theme.moduleMinimalBg.a);
+            DrawRect(x1 - 2.0f, y0, 2.0f, boxH, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawTextShadow(x1 - textW - 2.0f, y0 + padY, m.text.c_str(), m.accent.r, m.accent.g, m.accent.b, m.accent.a, scale);
+        } else if (style == 2) {
+            DrawRect(x0, y0, boxW, boxH, theme.moduleOutlinedBg.r, theme.moduleOutlinedBg.g, theme.moduleOutlinedBg.b, theme.moduleOutlinedBg.a);
+            DrawRect(x0, y0, boxW, 1.5f, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawRect(x0, y1 - 1.5f, boxW, 1.5f, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawRect(x0, y0, 1.5f, boxH, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawRect(x1 - 1.5f, y0, 1.5f, boxH, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawTextShadow(x0 + barW + padX, y0 + padY, m.text.c_str(), m.accent.r, m.accent.g, m.accent.b, m.accent.a, scale);
+        } else if (style == 3) {
+            DrawRect(x0, y0, boxW, boxH, theme.moduleMinimalBg.r, theme.moduleMinimalBg.g, theme.moduleMinimalBg.b, theme.moduleMinimalBg.a);
+            DrawRect(x0, y0, boxW, 1.0f, theme.moduleGlassBorder.r, theme.moduleGlassBorder.g, theme.moduleGlassBorder.b, theme.moduleGlassBorder.a);
+            DrawRect(x0, y1 - 1.0f, boxW, 1.0f, theme.moduleGlassBorder.r, theme.moduleGlassBorder.g, theme.moduleGlassBorder.b, theme.moduleGlassBorder.a);
+            DrawRect(x0, y0, 1.0f, boxH, theme.moduleGlassBorder.r, theme.moduleGlassBorder.g, theme.moduleGlassBorder.b, theme.moduleGlassBorder.a);
+            DrawRect(x1 - 1.0f, y0, 1.0f, boxH, theme.moduleGlassBorder.r, theme.moduleGlassBorder.g, theme.moduleGlassBorder.b, theme.moduleGlassBorder.a);
+            DrawRect(x0 + 1.0f, y0 + 1.0f, barW, boxH - 2.0f, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawTextShadow(x0 + barW + padX, y0 + padY, m.text.c_str(), theme.moduleText.r, theme.moduleText.g, theme.moduleText.b, theme.moduleText.a, scale);
+        } else {
+            DrawRect(x0, y0, boxW, boxH, m.accent.r, m.accent.g, m.accent.b, m.accent.a);
+            DrawRect(x0, y0, boxW, 1.0f, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x0, y1 - 1.0f, boxW, 1.0f, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x0, y0, 1.0f, boxH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawRect(x1 - 1.0f, y0, 1.0f, boxH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+            DrawTextShadow(x0 + barW + padX, y0 + padY, m.text.c_str(), theme.moduleBoldText.r, theme.moduleBoldText.g, theme.moduleBoldText.b, theme.moduleBoldText.a, scale);
+        }
+
+        y += boxH + gapY;
+    }
 }
 
 // ===================== NAMETAGS =====================
@@ -1967,26 +2442,63 @@ void RenderNametags(int w, int h) {
    static bool warnedMissingMappings = false;
     bool showHealth = true;
     bool showArmor = true;
+    bool nametagsEnabled = false;
     {
          LockGuard lk(g_configMutex);
-         if (!g_config.nametags) return;
+         nametagsEnabled = g_config.nametags;
+         if (!nametagsEnabled) return;
          showHealth = g_config.nametagShowHealth;
          showArmor = g_config.nametagShowArmor;
     }
-   if (!g_mapped || !g_mcInstance || !g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) return;
-   if (!g_theWorldField || !g_playerEntitiesField || !g_listSizeMethod || !g_listGetMethod ||
+   static unsigned int dbgTick = 0;
+
+   if (!g_mapped || !g_mcInstance) return;
+   if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
        !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) {
        if (!warnedMissingMappings) {
            warnedMissingMappings = true;
-           Log("Nametags disabled this session: required JNI mappings missing.");
+           Log("Nametags missing core JNI mappings.");
        }
        return;
    }
-   warnedMissingMappings = false;
-   g_tagFrameCounter++;
 
     ScopedJNIEnv env(g_jvm);
     if (!env) return;
+
+    MaybeRefreshMappings(env);
+    TryResolveWorldMappings(env);
+    TryResolveRenderMappings(env);
+
+    unsigned int now = GetTickCount();
+    if (now - dbgTick > 2500) {
+        dbgTick = now;
+        Log("Nametags tick: mapped=" + std::string(g_mapped ? "1" : "0")
+            + " worldField=" + std::string(g_theWorldField ? "1" : "0")
+            + " playersField=" + std::string(g_playerEntitiesField ? "1" : "0")
+            + " ari=" + std::string(g_activeRenderInfoClass ? "1" : "0")
+            + " mv=" + std::string(g_modelViewField ? "1" : "0")
+            + " pr=" + std::string(g_projectionField ? "1" : "0")
+            + " nametagsCfg=" + std::string(nametagsEnabled ? "1" : "0"));
+    }
+
+    if (!g_playerEntitiesField) {
+        if (!warnedMissingMappings) {
+            warnedMissingMappings = true;
+            Log("Nametags waiting for JNI world mappings.");
+        }
+        return;
+    }
+
+    if (!g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) {
+        if (!warnedMissingMappings) {
+            warnedMissingMappings = true;
+            Log("Nametags waiting for render mappings.");
+        }
+        return;
+    }
+
+   warnedMissingMappings = false;
+   g_tagFrameCounter++;
 
     // Safety check: Don't render if we have pending exceptions
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
@@ -2373,11 +2885,15 @@ void RenderClosestPlayerInfo(int w, int h) {
         showArmor = g_config.nametagShowArmor;
     }
     if (!enabled) return;
-    if (!g_mapped || !g_mcInstance || !g_theWorldField || !g_playerEntitiesField || !g_listSizeMethod || !g_listGetMethod) return;
+    if (!g_mapped || !g_mcInstance || !g_theWorldField || !g_listSizeMethod || !g_listGetMethod) return;
     if (!g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) return;
 
     ScopedJNIEnv env(g_jvm);
     if (!env) return;
+
+    TryResolveWorldMappings(env);
+    if (!g_playerEntitiesField) return;
+
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
     if (env->PushLocalFrame(256) < 0) { env->ExceptionClear(); return; }
 
@@ -2543,14 +3059,36 @@ void RenderClosestPlayerInfo(int w, int h) {
 }
 
 void RenderChestESP(int w, int h) {
+    static bool warnedChestMappings = false;
     { LockGuard lk(g_configMutex); if (!g_config.chestEsp) return; }
-    if (!g_mapped || !g_mcInstance || !g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) return;
-    if (!g_theWorldField || !g_loadedTileEntityListField || !g_listSizeMethod || !g_listGetMethod) return;
+    if (!g_mapped || !g_mcInstance) return;
+    if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod) return;
     if (!g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) return;
     if (!g_tileEntityPosField || !g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) return;
 
-    JNIEnv* env = nullptr;
-    if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) return;
+    ScopedJNIEnv env(g_jvm);
+    if (!env) return;
+
+    TryResolveWorldMappings(env);
+    TryResolveRenderMappings(env);
+
+    if (!g_loadedTileEntityListField) {
+        if (!warnedChestMappings) {
+            warnedChestMappings = true;
+            Log("ChestESP waiting for JNI world mappings.");
+        }
+        return;
+    }
+    if (!g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) {
+        if (!warnedChestMappings) {
+            warnedChestMappings = true;
+            Log("ChestESP waiting for render mappings.");
+        }
+        return;
+    }
+
+    warnedChestMappings = false;
+
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
     if (env->PushLocalFrame(256) < 0) { env->ExceptionClear(); return; }
 
@@ -3206,7 +3744,7 @@ void RenderClickGUI(int winW, int winH) {
         DrawText2D(settingsX + 9.0f, sy, "No extra settings.", 0.50f, 0.50f, 0.55f, 1.0f, scale * 0.72f);
     }
 
-    DrawText2D(px + 10.0f, py + panelH - 22.0f, "[INSERT] Close  |  Drag header to move  |  [RMB] keybind = unbind", 0.44f, 0.44f, 0.49f, 1.0f, scale * 0.73f);
+    DrawText2D(px + 10.0f, py + panelH - 22.0f, "Drag header to move  |  [RMB] keybind = unbind", 0.44f, 0.44f, 0.49f, 1.0f, scale * 0.73f);
 
     if (!frameCmds.empty()) {
         LockGuard lk(g_cmdMutex);
@@ -3275,17 +3813,7 @@ void OpenInternalGui() {
     Log("ClickGUI opened");
 }
 
-// Toggle GUI called from render thread
-static bool g_rshiftWasDown = false;
-void PollKeyboardToggle() {
-    bool menuKeyDown = (GetAsyncKeyState(VK_INSERT) & 0x8000) != 0;
-    
-    if (menuKeyDown && !g_rshiftWasDown) {
-        if (g_guiOpen) CloseInternalGui();
-        else OpenInternalGui();
-    }
-    g_rshiftWasDown = menuKeyDown;
-}
+void PollKeyboardToggle() {}
 
 void EnsureWndProcHook(HWND targetHwnd) {
     if (!targetHwnd) return;
@@ -3313,10 +3841,6 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
         if (currentHwnd) g_gameHwnd = currentHwnd;
         EnsureWndProcHook(currentHwnd);
 
-        // Poll Insert for ClickGUI toggle (LWJGL bypasses WM_KEYDOWN)
-        // Poll Insert for ClickGUI toggle
-        PollKeyboardToggle();
-
         // Get window size
         RECT rect; GetClientRect(WindowFromDC(hdc), &rect);
         int w = rect.right, h = rect.bottom;
@@ -3338,7 +3862,6 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
                 RenderClosestPlayerInfo(w, h);
                 RenderChestESP(w, h);
             }
-            RenderClickGUI(w, h);
 
             // Restore GL state
             glMatrixMode(GL_PROJECTION); glPopMatrix();
@@ -3490,17 +4013,60 @@ void ParseConfig(const std::string& line) {
         g_config.breakBlocks = getBool("breakBlocks");
         g_config.jitter = getBool("jitter");
         g_config.clickInChests = getBool("clickInChests");
+        g_config.aimAssist = getBool("aimAssist");
+        g_config.triggerbot = getBool("triggerbot");
+        g_config.gtbHelper = getBool("gtbHelper");
         g_config.nametags = getBool("nametags");
         g_config.closestPlayerInfo = getBool("closestPlayerInfo");
         g_config.nametagShowHealth = getBool("nametagShowHealth");
         g_config.nametagShowArmor = getBool("nametagShowArmor");
         g_config.chestEsp = getBool("chestEsp");
+        g_config.reachEnabled = getBool("reachEnabled");
+        g_config.velocityEnabled = getBool("velocityEnabled");
+
+        std::string showModuleListRaw = getStr("showModuleList");
+        g_config.showModuleList = showModuleListRaw.empty() ? true : (showModuleListRaw == "true");
+
+        int style = getInt("moduleListStyle");
+        if (style >= 0) g_config.moduleListStyle = (std::max)(0, (std::min)(4, style));
+
+        std::string showLogoRaw = getStr("showLogo");
+        g_config.showLogo = showLogoRaw.empty() ? true : (showLogoRaw == "true");
+
+        std::string guiThemeRaw = getStr("guiTheme");
+        g_config.guiTheme = guiThemeRaw.empty() ? "Default" : guiThemeRaw;
+
+        static bool lastNametagsLogged = false;
+        if (g_config.nametags != lastNametagsLogged) {
+            lastNametagsLogged = g_config.nametags;
+            Log(std::string("Config: nametags=") + (g_config.nametags ? "true" : "false"));
+        }
+
         // Per-module keybinds (-1 means absent / don't override)
         { int v = getInt("keybindAutoclicker");  if (v >= 0) g_config.keybindAutoclicker  = v; }
         { int v = getInt("keybindNametags");      if (v >= 0) g_config.keybindNametags      = v; }
         { int v = getInt("keybindClosestPlayer"); if (v >= 0) g_config.keybindClosestPlayer = v; }
         { int v = getInt("keybindChestEsp");      if (v >= 0) g_config.keybindChestEsp      = v; }
     }
+}
+
+bool TrySendCapabilities(SOCKET sock) {
+    if (sock == INVALID_SOCKET) return false;
+
+    static const char* kCapabilitiesJson =
+        "{\"type\":\"capabilities\","
+        "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"nametags\",\"closestplayer\",\"chestesp\"],"
+        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"chestesp\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
+        "\"state\":[\"holdingblock\",\"lookingatblock\"]}\n";
+
+    int sent = send(sock, kCapabilitiesJson, (int)strlen(kCapabilitiesJson), 0);
+    if (sent == SOCKET_ERROR) {
+        int err = WSAGetLastError();
+        if (err == WSAEWOULDBLOCK) return false;
+        Log("Capabilities send failed, err=" + std::to_string(err));
+        return false;
+    }
+    return true;
 }
 
 void ServerLoop() {
@@ -3533,7 +4099,13 @@ void ServerLoop() {
         u_long mode = 1; ioctlsocket(g_clientSocket, FIONBIO, &mode);
 
         std::string readBuf;
+        bool capabilitiesSent = false;
         while (g_running) {
+            if (!capabilitiesSent) {
+                capabilitiesSent = TrySendCapabilities(g_clientSocket);
+                if (capabilitiesSent) Log("Sent bridge capabilities packet");
+            }
+
             
             // Check config
             bool nametagsEnabled = false;
@@ -3625,7 +4197,7 @@ void ServerLoop() {
 
 // ===================== MAIN THREAD & DLLMAIN =====================
 DWORD WINAPI MainThread(LPVOID lpParam) {
-    Log("MainThread started | build 2026-02-16 23:00 crashfix-D (JNI mutex)");
+    Log("MainThread started | build 2026-03-27 10:59 ext-gui-189+themes+menu-fixes");
     HMODULE hJvm = GetModuleHandleA("jvm.dll");
     if (!hJvm) { Log("ERROR: jvm.dll not found"); return 0; }
     typedef jint(JNICALL* FnGetVMs)(JavaVM**, jsize, jsize*);
@@ -3649,9 +4221,13 @@ extern "C" __declspec(dllexport) void Dummy() {}
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
-        std::ofstream f("bridge_debug.log", std::ios_base::trunc);
+        InitLogPath(hModule);
+        std::ofstream f(g_logPath.c_str(), std::ios_base::trunc);
         f << "[Bridge] DLL_PROCESS_ATTACH" << std::endl; f.close();
+        Log("Log path: " + g_logPath);
         CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
+    } else if (reason == DLL_PROCESS_DETACH) {
+        Log("DLL_PROCESS_DETACH");
     }
     return TRUE;
 }

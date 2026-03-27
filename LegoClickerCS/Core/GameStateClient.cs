@@ -33,6 +33,7 @@ public class GameStateClient : INotifyPropertyChanged
     private bool _isInjected;
     private string _statusMessage = "Not injected";
     private string _injectedVersion = "1.8.9";
+    private BridgeCapabilities _capabilities = BridgeCapabilities.ForVersionFallback("1.8.9");
     private int _injectionProgress;
     private bool _isInjectionInProgress;
     private long _lastUiActionBarDispatchTicks;
@@ -174,6 +175,7 @@ public class GameStateClient : INotifyPropertyChanged
 
         var mcProcess = FindMinecraftProcess();
         string resolvedVersion = ResolveInjectionVersion(version, mcProcess);
+        Capabilities = BridgeCapabilities.ForVersionFallback(resolvedVersion);
 
         SetInjectionStage(5, "Checking existing bridge");
 
@@ -323,6 +325,25 @@ public class GameStateClient : INotifyPropertyChanged
         _readTask = Task.Run(() => ReadLoop(token), token);
     }
 
+    public BridgeCapabilities Capabilities
+    {
+        get => _capabilities;
+        private set
+        {
+            _capabilities = value;
+            OnPropertyChanged(nameof(Capabilities));
+        }
+    }
+
+    public bool SupportsModule(string moduleId)
+        => Capabilities.SupportsModule(moduleId);
+
+    public bool SupportsSetting(string settingName)
+        => Capabilities.SupportsSetting(settingName);
+
+    public bool SupportsStateField(string fieldName)
+        => Capabilities.SupportsStateField(fieldName);
+
     private async Task ReadLoop(CancellationToken token)
     {
         try
@@ -345,16 +366,21 @@ public class GameStateClient : INotifyPropertyChanged
                         continue;
                     }
 
+                    if (line.Contains("\"type\":\"capabilities\""))
+                    {
+                        HandleBridgeCapabilities(line);
+                        continue;
+                    }
+
                     var state = JsonSerializer.Deserialize<GameState>(line);
                     if (state != null)
                     {
                         state.IsConnected = true;
                         state.LastUpdate = DateTime.Now;
                         CurrentState = state;
-                        bool is121 = InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
-                        string actionBar = is121 ? state.ActionBar : "";
-                        if (is121)
+                        if (Capabilities.SupportsStateField("actionBar"))
                         {
+                            string actionBar = state.ActionBar;
                             long nowTicks = Environment.TickCount64;
                             long last = Interlocked.Read(ref _lastUiActionBarDispatchTicks);
                             if ((nowTicks - last) >= 25 && Interlocked.CompareExchange(ref _lastUiActionBarDispatchTicks, nowTicks, last) == last)
@@ -384,6 +410,7 @@ public class GameStateClient : INotifyPropertyChanged
             _client?.Dispose();
             _client = null;
             StatusMessage = "Disconnected from agent.";
+            Capabilities = BridgeCapabilities.ForVersionFallback(InjectedVersion);
         }
     }
 
@@ -451,6 +478,7 @@ public class GameStateClient : INotifyPropertyChanged
         IsInjectionInProgress = false;
         InjectionProgress = 0;
         StatusMessage = "Not injected";
+        Capabilities = BridgeCapabilities.ForVersionFallback(InjectedVersion);
     }
 
     // === Helpers ===
@@ -589,6 +617,25 @@ public class GameStateClient : INotifyPropertyChanged
 
     // === Config Sending (C# -> Bridge for HUD display) ===
 
+    private void HandleBridgeCapabilities(string json)
+    {
+        try
+        {
+            JsonNode? node = JsonNode.Parse(json);
+            if (!string.Equals(node?["type"]?.GetValue<string>(), "capabilities", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            BridgeCapabilities fallback = BridgeCapabilities.ForVersionFallback(InjectedVersion);
+            BridgeCapabilities parsed = BridgeCapabilities.FromPayload(node, fallback);
+            Capabilities = parsed;
+            Log($"Bridge capabilities updated (modules={parsed.ModuleCount}, settings={parsed.SettingCount}, state={parsed.StateFieldCount}).");
+        }
+        catch (Exception ex)
+        {
+            Log($"Error parsing bridge capabilities: {ex.Message}");
+        }
+    }
+
     private async Task ConfigSenderLoop(CancellationToken token)
     {
         while (!token.IsCancellationRequested && _client?.Connected == true)
@@ -686,12 +733,9 @@ public class GameStateClient : INotifyPropertyChanged
             switch (action)
             {
                 case "toggleExternalGui":
-                    if (InjectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var mw = System.Windows.Application.Current?.MainWindow as MainWindow;
-                        if (mw != null)
-                            mw.Dispatcher.Invoke(mw.ShowControlCenterFromBridge);
-                    }
+                    var mw = System.Windows.Application.Current?.MainWindow as MainWindow;
+                    if (mw != null)
+                        mw.Dispatcher.Invoke(mw.ShowControlCenterFromBridge);
                     break;
                 case "toggleArmed":
                     clicker.ToggleArmed();

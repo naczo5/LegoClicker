@@ -8,6 +8,10 @@ LegoClicker is a Windows utility client for Lunar Client.
 - **1.8.9 is deprecated** and kept only for legacy compatibility.
 - Main workflow is the external control center in `LegoClickerCS`.
 
+## Port tracking
+
+- 1.21 -> 1.8.9 parity tracker: `PORT_121_TO_189_PROGRESS.md`
+
 ## Features (current)
 
 - Autoclicker (left/right, CPS range, jitter, block-only options)
