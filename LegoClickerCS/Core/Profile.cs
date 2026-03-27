@@ -12,6 +12,7 @@ public class Profile
     public string GuiTheme { get; set; } = "Default";
     public string ModuleListStyle { get; set; } = "Default";
     public bool ShowLogo { get; set; } = true;
+    public bool IsArmed { get; set; } = false;
     public float MinCPS { get; set; } = 8.0f;
     public float MaxCPS { get; set; } = 12.0f;
     public bool LeftClickEnabled { get; set; } = true;
@@ -147,6 +148,7 @@ public static class ProfileManager
         var clicker = Clicker.Instance;
         return new Profile
         {
+            IsArmed = clicker.IsArmed,
             MinCPS = clicker.MinCPS,
             MaxCPS = clicker.MaxCPS,
             LeftClickEnabled = clicker.LeftClickEnabled,
@@ -200,6 +202,12 @@ public static class ProfileManager
     public static void ApplyToClicker(Profile profile)
     {
         var clicker = Clicker.Instance;
+
+        if (profile.IsArmed)
+            clicker.Arm();
+        else
+            clicker.Disarm();
+
         clicker.MinCPS = profile.MinCPS;
         clicker.MaxCPS = profile.MaxCPS;
         clicker.LeftClickEnabled = profile.LeftClickEnabled;

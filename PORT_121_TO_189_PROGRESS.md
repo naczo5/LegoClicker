@@ -448,6 +448,12 @@ Run these for each major phase completion:
   - menu visibility and mapping recovery fixes applied
 - Remaining work shifted to full feature and telemetry parity plan (P1-P12)
 
+### 2026-03-27 (config regression fix)
+
+- Fixed profile persistence for autoclicker armed state:
+  - added `IsArmed` to profile schema
+  - save/load now restores armed state between sessions
+
 ## Quick Triage Checklist (When New Bug Is Reported)
 
 - [ ] classify as protocol, rendering, input, or module logic gap
