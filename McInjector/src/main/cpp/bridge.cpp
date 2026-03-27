@@ -60,9 +60,20 @@ struct Config {
     bool closestPlayerInfo = false;
     bool nametagShowHealth = true;
     bool nametagShowArmor = true;
+    int nametagMaxCount = 8;
     bool chestEsp = false;
+    int chestEspMaxCount = 5;
+    std::string gtbHint;
+    int gtbCount = 0;
+    std::string gtbPreview;
     bool reachEnabled = false;
+    float reachMin = 3.0f;
+    float reachMax = 3.0f;
+    int reachChance = 100;
     bool velocityEnabled = false;
+    int velocityHorizontal = 100;
+    int velocityVertical = 100;
+    int velocityChance = 100;
     bool showModuleList = true;
     int moduleListStyle = 0;
     bool showLogo = true;
@@ -2259,10 +2270,14 @@ void RenderHUD(int winW, int winH) {
     if (cfg.clickInChests)    pushMod("Click in Chests", theme.accentTertiary);
     if (cfg.closestPlayerInfo) pushMod("Closest Player", theme.accentSecondary);
     if (cfg.rightClick)       pushMod("Rightclick", theme.accentTertiary);
+    if (cfg.aimAssist)        pushMod("Aim Assist", theme.accentPrimary);
     if (cfg.chestEsp)         pushMod("Chest ESP", theme.accentSecondary);
     if (cfg.nametags)         pushMod("Nametags", theme.accentPrimary);
+    if (cfg.gtbHelper)        pushMod("GTB Helper", theme.accentTertiary);
     if (cfg.jitter)           pushMod("Jitter", theme.accentSecondary);
     if (cfg.breakBlocks)      pushMod("Break Blocks", theme.moduleText);
+    if (cfg.reachEnabled)     pushMod("Reach", theme.accentPrimary);
+    if (cfg.velocityEnabled)  pushMod("Velocity", theme.accentTertiary);
 
     std::sort(mods.begin(), mods.end(), [](const ModLine& a, const ModLine& b) {
         if (a.width != b.width) return a.width > b.width;
@@ -2336,6 +2351,50 @@ void RenderHUD(int winW, int winH) {
         }
 
         y += boxH + gapY;
+    }
+
+    if (cfg.gtbHelper && !cfg.gtbHint.empty()) {
+        std::vector<std::string> lines;
+        std::stringstream pss(cfg.gtbPreview);
+        std::string line;
+        while (std::getline(pss, line, ',')) {
+            while (!line.empty() && std::isspace((unsigned char)line.front())) line.erase(line.begin());
+            while (!line.empty() && std::isspace((unsigned char)line.back())) line.pop_back();
+            if (!line.empty()) lines.push_back(line);
+            if (lines.size() >= 4) break;
+        }
+
+        float textScale = 0.52f;
+        float lineH = CHAR_H * textScale + 2.0f;
+        float panelW = 180.0f;
+        float panelH = 12.0f + lineH;
+        panelH += lineH * (float)lines.size();
+
+        float x1 = (float)winW - 10.0f;
+        float y1 = (float)winH - 10.0f;
+        float x0 = x1 - panelW;
+        float y0 = y1 - panelH;
+        if (x0 < 10.0f) x0 = 10.0f;
+        if (y0 < 10.0f) y0 = 10.0f;
+
+        DrawRect(x0, y0, panelW, panelH, theme.moduleBg.r, theme.moduleBg.g, theme.moduleBg.b, 0.92f);
+        DrawRect(x0, y0, panelW, 1.0f, theme.accentPrimary.r, theme.accentPrimary.g, theme.accentPrimary.b, 0.95f);
+        DrawRect(x0, y0 + panelH - 1.0f, panelW, 1.0f, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+        DrawRect(x0, y0, 1.0f, panelH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+        DrawRect(x0 + panelW - 1.0f, y0, 1.0f, panelH, theme.moduleBorder.r, theme.moduleBorder.g, theme.moduleBorder.b, theme.moduleBorder.a);
+
+        char hintBuf[320];
+        snprintf(hintBuf, sizeof(hintBuf), "GTB: %s (%d)", cfg.gtbHint.c_str(), (std::max)(0, cfg.gtbCount));
+        DrawTextShadow(x0 + 8.0f, y0 + 6.0f, hintBuf,
+            theme.moduleText.r, theme.moduleText.g, theme.moduleText.b, theme.moduleText.a, textScale);
+
+        float ty = y0 + 6.0f + lineH;
+        for (const std::string& raw : lines) {
+            std::string row = "- " + raw;
+            DrawTextShadow(x0 + 9.0f, ty, row.c_str(),
+                theme.accentTertiary.r, theme.accentTertiary.g, theme.accentTertiary.b, 0.95f, textScale);
+            ty += lineH;
+        }
     }
 }
 
@@ -2472,12 +2531,14 @@ void RenderNametags(int w, int h) {
     bool showHealth = true;
     bool showArmor = true;
     bool nametagsEnabled = false;
+    int nametagMaxCount = 8;
     {
          LockGuard lk(g_configMutex);
          nametagsEnabled = g_config.nametags;
          if (!nametagsEnabled) return;
          showHealth = g_config.nametagShowHealth;
          showArmor = g_config.nametagShowArmor;
+         nametagMaxCount = (std::max)(1, (std::min)(20, g_config.nametagMaxCount));
     }
    static unsigned int dbgTick = 0;
 
@@ -2651,7 +2712,7 @@ void RenderNametags(int w, int h) {
         goto exit_frame;
     }
     
-    for (int i = 0; i < size && count < 64; i++) {
+    for (int i = 0; i < size && count < nametagMaxCount; i++) {
         jobject entity = env->CallObjectMethod(startList, g_listGetMethod, i);
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
@@ -2876,7 +2937,7 @@ void RenderNametags(int w, int h) {
                  }
 
                  count++;
-                 if (count >= 40) {
+                 if (count >= nametagMaxCount) {
                      env->DeleteLocalRef(entity);
                      break;
                  }
@@ -3100,7 +3161,12 @@ void RenderClosestPlayerInfo(int w, int h) {
 
 void RenderChestESP(int w, int h) {
     static bool warnedChestMappings = false;
-    { LockGuard lk(g_configMutex); if (!g_config.chestEsp) return; }
+    int chestEspMaxCount = 5;
+    {
+        LockGuard lk(g_configMutex);
+        if (!g_config.chestEsp) return;
+        chestEspMaxCount = (std::max)(1, (std::min)(20, g_config.chestEspMaxCount));
+    }
     if (!g_mapped || !g_mcInstance) return;
     if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod) return;
     if (!g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) return;
@@ -3172,7 +3238,7 @@ void RenderChestESP(int w, int h) {
     }
 
     int drawn = 0;
-    for (int i = 0; i < size && drawn < 48; i++) {
+    for (int i = 0; i < size && drawn < chestEspMaxCount; i++) {
         jobject te = env->CallObjectMethod(tileList, g_listGetMethod, i);
         if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
         if (!te) continue;
@@ -4080,50 +4146,49 @@ void ParseConfig(const std::string& line) {
         g_config.nametagShowArmor = getBool("nametagShowArmor");
 
         int nametagMaxCount = getInt("nametagMaxCount");
-        if (nametagMaxCount < 1) nametagMaxCount = 6;
+        if (nametagMaxCount < 1) nametagMaxCount = g_config.nametagMaxCount;
         if (nametagMaxCount > 20) nametagMaxCount = 20;
+        g_config.nametagMaxCount = nametagMaxCount;
 
         int chestEspMaxCount = getInt("chestEspMaxCount");
-        if (chestEspMaxCount < 1) chestEspMaxCount = 6;
+        if (chestEspMaxCount < 1) chestEspMaxCount = g_config.chestEspMaxCount;
         if (chestEspMaxCount > 20) chestEspMaxCount = 20;
+        g_config.chestEspMaxCount = chestEspMaxCount;
 
         int reachChance = getInt("reachChance");
-        if (reachChance < 1) reachChance = 100;
+        if (reachChance < 1) reachChance = g_config.reachChance;
         if (reachChance > 100) reachChance = 100;
+        g_config.reachChance = reachChance;
 
         int velocityHorizontal = getInt("velocityHorizontal");
-        if (velocityHorizontal < 1) velocityHorizontal = 100;
+        if (velocityHorizontal < 1) velocityHorizontal = g_config.velocityHorizontal;
         if (velocityHorizontal > 100) velocityHorizontal = 100;
+        g_config.velocityHorizontal = velocityHorizontal;
 
         int velocityVertical = getInt("velocityVertical");
-        if (velocityVertical < 1) velocityVertical = 100;
+        if (velocityVertical < 1) velocityVertical = g_config.velocityVertical;
         if (velocityVertical > 100) velocityVertical = 100;
+        g_config.velocityVertical = velocityVertical;
 
         int velocityChance = getInt("velocityChance");
-        if (velocityChance < 1) velocityChance = 100;
+        if (velocityChance < 1) velocityChance = g_config.velocityChance;
         if (velocityChance > 100) velocityChance = 100;
-
-        // Parsed for protocol parity (runtime implementation in later phases).
-        (void)nametagMaxCount;
-        (void)chestEspMaxCount;
-        (void)reachChance;
-        (void)velocityHorizontal;
-        (void)velocityVertical;
-        (void)velocityChance;
+        g_config.velocityChance = velocityChance;
 
         std::string gtbHint = getStr("gtbHint");
         int gtbCount = getInt("gtbCount");
-        if (gtbCount < 0) gtbCount = 0;
+        if (gtbCount < 0) gtbCount = g_config.gtbCount;
         std::string gtbPreview = getStr("gtbPreview");
+        if (!gtbHint.empty()) g_config.gtbHint = gtbHint;
+        g_config.gtbCount = gtbCount;
+        if (!gtbPreview.empty()) g_config.gtbPreview = gtbPreview;
+
         float reachMin = getFloat("reachMin");
         float reachMax = getFloat("reachMax");
-        if (reachMin < 0.0f) reachMin = 0.0f;
+        if (reachMin <= 0.0f) reachMin = g_config.reachMin;
         if (reachMax < reachMin) reachMax = reachMin;
-        (void)gtbHint;
-        (void)gtbCount;
-        (void)gtbPreview;
-        (void)reachMin;
-        (void)reachMax;
+        g_config.reachMin = reachMin;
+        g_config.reachMax = reachMax;
 
         static bool lastNametagsLogged = false;
         if (g_config.nametags != lastNametagsLogged) {
@@ -4204,7 +4269,12 @@ void ServerLoop() {
             
             // Check config
             bool nametagsEnabled = false;
-            { LockGuard lk(g_configMutex); nametagsEnabled = g_config.nametags; }
+            bool needEntityTelemetry = false;
+            {
+                LockGuard lk(g_configMutex);
+                nametagsEnabled = g_config.nametags;
+                needEntityTelemetry = g_config.nametags || g_config.closestPlayerInfo || g_config.aimAssist;
+            }
 
             // ALWAYS Read Game State to update global state (for block detection etc.)
             GameState state;
@@ -4235,13 +4305,6 @@ void ServerLoop() {
             jsonToSend += "\"entities\":";
 
             std::string entitiesJson = "[]";
-            bool needEntityTelemetry = nametagsEnabled;
-            {
-                LockGuard lk(g_configMutex);
-                if (g_config.closestPlayerInfo || g_config.aimAssist || g_config.triggerbot) {
-                    needEntityTelemetry = true;
-                }
-            }
 
             if (needEntityTelemetry) {
                 LockGuard lk(g_jsonMutex);
@@ -4262,8 +4325,8 @@ void ServerLoop() {
                 }
             }
             
-            // Keep nametags responsive without pegging CPU.
-            Sleep(nametagsEnabled ? 6 : 12);
+            // Keep telemetry responsive without pegging CPU.
+            Sleep(needEntityTelemetry ? 6 : 12);
 
 
 
@@ -4296,7 +4359,7 @@ void ServerLoop() {
                 }
             }
 
-            Sleep(nametagsEnabled ? 10 : 25);
+            Sleep(needEntityTelemetry ? 10 : 25);
         }
         closesocket(g_clientSocket); g_clientSocket = INVALID_SOCKET;
         Log("Client disconnected");

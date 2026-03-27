@@ -209,7 +209,7 @@ Exit criteria:
 
 ## P4 - Entity Telemetry Decoupling in 1.8.9
 
-Status: Not started
+Status: In progress
 
 Why fourth:
 
@@ -221,6 +221,16 @@ Implementation tasks:
 - [ ] generate entity telemetry whenever any consumer requires it (aim/trigger/closest/nametags)
 - [ ] keep CPU budget controlled (adaptive sleep/update interval)
 - [ ] preserve current stability fixes for menu-injection transitions
+
+Progress notes:
+
+- Server loop now requests telemetry production when any current 1.8.9 consumer is active (`nametags`, `closest player`, `aim assist`) instead of tying pacing to nametags only.
+- Telemetry polling sleep windows now adapt to telemetry demand rather than nametag-only demand.
+
+Remaining for P4 completion:
+
+- [ ] runtime verification that `entities` keeps updating with nametags OFF and closest/aim ON
+- [ ] validate no CPU regression when all telemetry consumers are OFF
 
 Files expected:
 
@@ -241,11 +251,21 @@ Current state:
 
 Implementation tasks:
 
-- [ ] add missing module list entries when enabled:
+- [x] add missing module list entries when enabled:
   - `Aim Assist`, `GTB Helper`, `Reach`, `Velocity`
-- [ ] add GTB info panel rendering using `gtbHint/gtbCount/gtbPreview`
-- [ ] enforce `nametagMaxCount` in nametag rendering
-- [ ] enforce `chestEspMaxCount` in chest ESP rendering
+- [x] add GTB info panel rendering using `gtbHint/gtbCount/gtbPreview`
+- [x] enforce `nametagMaxCount` in nametag rendering
+- [x] enforce `chestEspMaxCount` in chest ESP rendering
+
+Progress notes:
+
+- 1.8.9 HUD module list now includes missing parity entries (Triggerbot intentionally omitted).
+- 1.8.9 HUD now renders GTB panel from bridge-config data (`gtbHint`, `gtbCount`, `gtbPreview`).
+- 1.8.9 nametag and chest ESP render loops now honor configured max-count limits.
+
+Remaining for P5 completion:
+
+- [ ] runtime visual parity pass (layout/readability/overflow) vs 1.21 for all styles
 
 Files expected:
 
