@@ -126,7 +126,7 @@ Exit criteria:
 
 ## P2 - State Payload Parity (1.8.9 -> C#)
 
-Status: Not started
+Status: In progress
 
 Why second:
 
@@ -135,7 +135,7 @@ Why second:
 
 Implementation tasks:
 
-- [ ] extend 1.8.9 `GameState` JSON payload with:
+- [x] extend 1.8.9 `GameState` JSON payload with:
   - `actionBar`
   - `lookingAtEntity`
   - `lookingAtEntityLatched`
@@ -143,8 +143,21 @@ Implementation tasks:
   - `attackCooldown`
   - `attackCooldownPerTick`
   - `stateMs`
-- [ ] ensure safe defaults when world/player are unavailable
-- [ ] keep payload format compatible with current `GameState.cs`
+- [x] ensure safe defaults when world/player are unavailable
+- [x] keep payload format compatible with current `GameState.cs`
+
+Progress notes:
+
+- 1.8.9 bridge now emits expanded state fields in outbound JSON.
+- Added conservative 1.8.9 derivation for parity-only fields:
+  - `lookingAtEntity` / `lookingAtEntityLatched` from `objectMouseOver`
+  - `breakingBlock` from `lookingAtBlock + LMB held`
+  - `attackCooldown=1.0` and `attackCooldownPerTick=0.08` fallback defaults
+  - `stateMs` from `GetTickCount64()`
+
+Remaining for P2 completion:
+
+- [ ] runtime verification on real 1.8.9 session that all new fields deserialize and update as expected
 
 Files expected:
 
@@ -167,12 +180,19 @@ Current state:
 
 Implementation tasks:
 
-- [ ] parse and clamp in 1.8.9:
+- [x] parse and clamp in 1.8.9:
   - `gtbHint`, `gtbCount`, `gtbPreview`
   - `nametagMaxCount`, `chestEspMaxCount`
   - `reachMin`, `reachMax`, `reachChance`
   - `velocityHorizontal`, `velocityVertical`, `velocityChance`
 - [ ] add any missing keybind fields if later needed for parity
+
+Progress notes:
+
+- 1.8.9 parser now accepts and clamps the extended parity fields.
+- Runtime behavior for these fields is still phased:
+  - parsed now for protocol parity and safe no-op consumption
+  - behavioral wiring lands in later phases (P5+ / module phases)
 
 Files expected:
 

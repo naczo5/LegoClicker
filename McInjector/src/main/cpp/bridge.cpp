@@ -85,10 +85,17 @@ struct GameState {
     bool mapped = false;
     bool guiOpen = false;
     std::string screenName;
+    std::string actionBar;
     float health = 20.0f;
     double posX = 0, posY = 0, posZ = 0;
     bool holdingBlock = false;
     bool lookingAtBlock = false;
+    bool lookingAtEntity = false;
+    bool lookingAtEntityLatched = false;
+    bool breakingBlock = false;
+    float attackCooldown = 1.0f;
+    float attackCooldownPerTick = 0.08f;
+    unsigned long long stateMs = 0;
 };
 static GameState g_gameState;
 static Mutex g_stateMutex;
@@ -102,6 +109,7 @@ static bool g_mouseRightDown = false;
 static int g_scrollDelta = 0;
 static float g_guiScrollY = 0;
 static bool g_nativeChatOpenedByClickGui = false;
+static unsigned long long g_lastEntitySeenMs = 0;
 
 struct UiState {
     float accentHue = 0.46f;      // muted teal default
@@ -1445,6 +1453,13 @@ GameState ReadGameState(JNIEnv* env) {
 
     // Check objectMouseOver
     s.lookingAtBlock = false;
+    s.lookingAtEntity = false;
+    s.lookingAtEntityLatched = false;
+    s.breakingBlock = false;
+    s.attackCooldown = 1.0f;
+    s.attackCooldownPerTick = 0.08f;
+    s.stateMs = (unsigned long long)GetTickCount64();
+    s.actionBar.clear();
     if (g_objectMouseOverField && g_typeOfHitField && g_enumNameMethod) {
         jobject mop = env->GetObjectField(g_mcInstance, g_objectMouseOverField);
         if (mop) {
@@ -1456,6 +1471,12 @@ GameState ReadGameState(JNIEnv* env) {
                     if (nameChars) {
                         if (strcmp(nameChars, "BLOCK") == 0) {
                             s.lookingAtBlock = true;
+                            bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                            s.breakingBlock = lmbDown;
+                        } else if (strcmp(nameChars, "ENTITY") == 0) {
+                            s.lookingAtEntity = true;
+                            s.lookingAtEntityLatched = true;
+                            g_lastEntitySeenMs = s.stateMs;
                         }
                         env->ReleaseStringUTFChars(nameStr, nameChars);
                     }
@@ -1465,6 +1486,14 @@ GameState ReadGameState(JNIEnv* env) {
                 env->DeleteLocalRef(typeOfHit);
             }
             env->DeleteLocalRef(mop);
+        }
+    }
+
+    if (!s.lookingAtEntity) {
+        unsigned long long nowMs = s.stateMs;
+        unsigned long long delta = nowMs - g_lastEntitySeenMs;
+        if (delta <= 120ULL) {
+            s.lookingAtEntityLatched = true;
         }
     }
 
@@ -2603,6 +2632,7 @@ void RenderNametags(int w, int h) {
 
     std::stringstream ss;
     ss << "[";
+    constexpr int kEntityJsonCap = 20;
     
     // Get Local Player for distance & health debug
     jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
@@ -2621,7 +2651,6 @@ void RenderNametags(int w, int h) {
         goto exit_frame;
     }
     
-
     for (int i = 0; i < size && count < 64; i++) {
         jobject entity = env->CallObjectMethod(startList, g_listGetMethod, i);
         if (env->ExceptionCheck()) {
@@ -2835,6 +2864,17 @@ void RenderNametags(int w, int h) {
                  if (lowHp) {
                      DrawTextShadow(px + mainPanelW - TextWidth("LOW", infoScale * 0.9f) - 4.0f, py + 2.0f, "LOW", 1.0f, 0.32f, 0.32f, alpha, infoScale * 0.9f);
                  }
+                 if (count < kEntityJsonCap) {
+                     if (count > 0) ss << ",";
+                     ss << "{";
+                     ss << "\"sx\":" << sX << ",";
+                     ss << "\"sy\":" << sY << ",";
+                     ss << "\"dist\":" << dist << ",";
+                     ss << "\"name\":\"" << JsonEscape(displayName) << "\",";
+                     ss << "\"hp\":" << hpClamped;
+                     ss << "}";
+                 }
+
                  count++;
                  if (count >= 40) {
                      env->DeleteLocalRef(entity);
@@ -4036,10 +4076,65 @@ void ParseConfig(const std::string& line) {
         std::string guiThemeRaw = getStr("guiTheme");
         g_config.guiTheme = guiThemeRaw.empty() ? "Default" : guiThemeRaw;
 
+        g_config.nametagShowHealth = getBool("nametagShowHealth");
+        g_config.nametagShowArmor = getBool("nametagShowArmor");
+
+        int nametagMaxCount = getInt("nametagMaxCount");
+        if (nametagMaxCount < 1) nametagMaxCount = 6;
+        if (nametagMaxCount > 20) nametagMaxCount = 20;
+
+        int chestEspMaxCount = getInt("chestEspMaxCount");
+        if (chestEspMaxCount < 1) chestEspMaxCount = 6;
+        if (chestEspMaxCount > 20) chestEspMaxCount = 20;
+
+        int reachChance = getInt("reachChance");
+        if (reachChance < 1) reachChance = 100;
+        if (reachChance > 100) reachChance = 100;
+
+        int velocityHorizontal = getInt("velocityHorizontal");
+        if (velocityHorizontal < 1) velocityHorizontal = 100;
+        if (velocityHorizontal > 100) velocityHorizontal = 100;
+
+        int velocityVertical = getInt("velocityVertical");
+        if (velocityVertical < 1) velocityVertical = 100;
+        if (velocityVertical > 100) velocityVertical = 100;
+
+        int velocityChance = getInt("velocityChance");
+        if (velocityChance < 1) velocityChance = 100;
+        if (velocityChance > 100) velocityChance = 100;
+
+        // Parsed for protocol parity (runtime implementation in later phases).
+        (void)nametagMaxCount;
+        (void)chestEspMaxCount;
+        (void)reachChance;
+        (void)velocityHorizontal;
+        (void)velocityVertical;
+        (void)velocityChance;
+
+        std::string gtbHint = getStr("gtbHint");
+        int gtbCount = getInt("gtbCount");
+        if (gtbCount < 0) gtbCount = 0;
+        std::string gtbPreview = getStr("gtbPreview");
+        float reachMin = getFloat("reachMin");
+        float reachMax = getFloat("reachMax");
+        if (reachMin < 0.0f) reachMin = 0.0f;
+        if (reachMax < reachMin) reachMax = reachMin;
+        (void)gtbHint;
+        (void)gtbCount;
+        (void)gtbPreview;
+        (void)reachMin;
+        (void)reachMax;
+
         static bool lastNametagsLogged = false;
         if (g_config.nametags != lastNametagsLogged) {
             lastNametagsLogged = g_config.nametags;
             Log(std::string("Config: nametags=") + (g_config.nametags ? "true" : "false"));
+        }
+
+        static bool loggedExtendedFields = false;
+        if (!loggedExtendedFields) {
+            loggedExtendedFields = true;
+            Log("Config parser accepts extended parity fields (GTB/Reach/Velocity/Caps).");
         }
 
         // Per-module keybinds (-1 means absent / don't override)
@@ -4056,8 +4151,8 @@ bool TrySendCapabilities(SOCKET sock) {
     static const char* kCapabilitiesJson =
         "{\"type\":\"capabilities\","
         "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"nametags\",\"closestplayer\",\"chestesp\"],"
-        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"chestesp\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
-        "\"state\":[\"holdingblock\",\"lookingatblock\"]}\n";
+        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
+        "\"state\":[\"actionbar\",\"holdingblock\",\"lookingatblock\",\"lookingatentity\",\"lookingatentitylatched\",\"breakingblock\",\"attackcooldown\",\"attackcooldownpertick\",\"statems\"]}\n";
 
     int sent = send(sock, kCapabilitiesJson, (int)strlen(kCapabilitiesJson), 0);
     if (sent == SOCKET_ERROR) {
@@ -4124,16 +4219,31 @@ void ServerLoop() {
             jsonToSend += "\"mapped\":" + std::string(state.mapped ? "true" : "false") + ",";
             jsonToSend += "\"guiOpen\":" + std::string(state.guiOpen ? "true" : "false") + ",";
             jsonToSend += "\"screenName\":\"" + JsonEscape(state.screenName) + "\",";
+            jsonToSend += "\"actionBar\":\"" + JsonEscape(state.actionBar) + "\",";
             jsonToSend += "\"health\":" + std::to_string(state.health) + ",";
             jsonToSend += "\"posX\":" + std::to_string(state.posX) + ",";
             jsonToSend += "\"posY\":" + std::to_string(state.posY) + ",";
             jsonToSend += "\"posZ\":" + std::to_string(state.posZ) + ",";
             jsonToSend += "\"holdingBlock\":" + std::string(state.holdingBlock ? "true" : "false") + ",";
             jsonToSend += "\"lookingAtBlock\":" + std::string(state.lookingAtBlock ? "true" : "false") + ",";
+            jsonToSend += "\"lookingAtEntity\":" + std::string(state.lookingAtEntity ? "true" : "false") + ",";
+            jsonToSend += "\"lookingAtEntityLatched\":" + std::string(state.lookingAtEntityLatched ? "true" : "false") + ",";
+            jsonToSend += "\"breakingBlock\":" + std::string(state.breakingBlock ? "true" : "false") + ",";
+            jsonToSend += "\"attackCooldown\":" + std::to_string(state.attackCooldown) + ",";
+            jsonToSend += "\"attackCooldownPerTick\":" + std::to_string(state.attackCooldownPerTick) + ",";
+            jsonToSend += "\"stateMs\":" + std::to_string(state.stateMs) + ",";
             jsonToSend += "\"entities\":";
 
             std::string entitiesJson = "[]";
-            if (nametagsEnabled) {
+            bool needEntityTelemetry = nametagsEnabled;
+            {
+                LockGuard lk(g_configMutex);
+                if (g_config.closestPlayerInfo || g_config.aimAssist || g_config.triggerbot) {
+                    needEntityTelemetry = true;
+                }
+            }
+
+            if (needEntityTelemetry) {
                 LockGuard lk(g_jsonMutex);
                 if (!g_pendingJson.empty()) {
                     entitiesJson = g_pendingJson;
