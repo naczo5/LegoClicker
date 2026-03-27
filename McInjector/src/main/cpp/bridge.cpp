@@ -2531,14 +2531,22 @@ void RenderNametags(int w, int h) {
     bool showHealth = true;
     bool showArmor = true;
     bool nametagsEnabled = false;
+    bool entityTelemetryNeeded = false;
     int nametagMaxCount = 8;
     {
          LockGuard lk(g_configMutex);
          nametagsEnabled = g_config.nametags;
-         if (!nametagsEnabled) return;
+         entityTelemetryNeeded = g_config.nametags || g_config.closestPlayerInfo || g_config.aimAssist;
+         if (!entityTelemetryNeeded) return;
          showHealth = g_config.nametagShowHealth;
          showArmor = g_config.nametagShowArmor;
          nametagMaxCount = (std::max)(1, (std::min)(20, g_config.nametagMaxCount));
+    }
+
+    // Default to empty telemetry each run so stale entities are not reused.
+    {
+        LockGuard lk(g_jsonMutex);
+        g_pendingJson = "[]";
     }
    static unsigned int dbgTick = 0;
 
@@ -2568,7 +2576,8 @@ void RenderNametags(int w, int h) {
             + " ari=" + std::string(g_activeRenderInfoClass ? "1" : "0")
             + " mv=" + std::string(g_modelViewField ? "1" : "0")
             + " pr=" + std::string(g_projectionField ? "1" : "0")
-            + " nametagsCfg=" + std::string(nametagsEnabled ? "1" : "0"));
+            + " nametagsCfg=" + std::string(nametagsEnabled ? "1" : "0")
+            + " telemetry=" + std::string(entityTelemetryNeeded ? "1" : "0"));
     }
 
     if (!g_playerEntitiesField) {

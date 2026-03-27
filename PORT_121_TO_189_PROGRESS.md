@@ -218,14 +218,15 @@ Why fourth:
 
 Implementation tasks:
 
-- [ ] generate entity telemetry whenever any consumer requires it (aim/trigger/closest/nametags)
-- [ ] keep CPU budget controlled (adaptive sleep/update interval)
+- [x] generate entity telemetry whenever any consumer requires it (aim/trigger/closest/nametags)
+- [x] keep CPU budget controlled (adaptive sleep/update interval)
 - [ ] preserve current stability fixes for menu-injection transitions
 
 Progress notes:
 
 - Server loop now requests telemetry production when any current 1.8.9 consumer is active (`nametags`, `closest player`, `aim assist`) instead of tying pacing to nametags only.
 - Telemetry polling sleep windows now adapt to telemetry demand rather than nametag-only demand.
+- Entity JSON cache now resets to `[]` each telemetry pass to avoid stale entity reuse when projection/list fetch fails.
 
 Remaining for P4 completion:
 
