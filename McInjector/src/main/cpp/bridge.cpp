@@ -122,6 +122,11 @@ static float g_guiScrollY = 0;
 static bool g_nativeChatOpenedByClickGui = false;
 static unsigned long long g_lastEntitySeenMs = 0;
 
+// 1.8.9 GTB/action-bar extraction mappings
+static jfieldID g_ingameGuiField = nullptr;
+static jfieldID g_overlayMessageField = nullptr;
+static jmethodID g_chatComponentGetTextMethod = nullptr;
+
 struct UiState {
     float accentHue = 0.46f;      // muted teal default
     float accentSat = 0.55f;
@@ -1248,6 +1253,58 @@ void TryResolveRenderMappings(JNIEnv* env) {
                 Log("Late-bound PROJECTION field");
             }
         }
+
+        // Ingame GUI / action-bar text mappings (for GTB on 1.8.9)
+        if (!g_ingameGuiField) {
+            g_ingameGuiField = env->GetFieldID(g_mcClass, "ingameGUI", "Lnet/minecraft/client/gui/GuiIngame;");
+            if (!g_ingameGuiField) {
+                env->ExceptionClear();
+                g_ingameGuiField = env->GetFieldID(g_mcClass, "field_71456_v", "Lnet/minecraft/client/gui/GuiIngame;");
+            }
+            if (!g_ingameGuiField) env->ExceptionClear();
+            else Log("Found ingameGUI field");
+        }
+
+        if (g_ingameGuiField && !g_overlayMessageField) {
+            jobject ingameGui = env->GetObjectField(g_mcInstance, g_ingameGuiField);
+            if (ingameGui && !env->ExceptionCheck()) {
+                jclass hudClass = env->GetObjectClass(ingameGui);
+                if (hudClass) {
+                    const char* overlayNames[] = {
+                        "recordPlaying",
+                        "overlayMessage",
+                        "field_73838_g",
+                        nullptr
+                    };
+                    for (int i = 0; overlayNames[i] && !g_overlayMessageField; i++) {
+                        g_overlayMessageField = env->GetFieldID(hudClass, overlayNames[i], "Lnet/minecraft/util/IChatComponent;");
+                        if (env->ExceptionCheck()) { env->ExceptionClear(); g_overlayMessageField = nullptr; }
+                    }
+                    if (g_overlayMessageField) Log("Found overlay/actionbar field on GuiIngame");
+                }
+                if (hudClass) env->DeleteLocalRef(hudClass);
+                env->DeleteLocalRef(ingameGui);
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+        }
+
+        if (!g_chatComponentGetTextMethod) {
+            jclass chatCompClass = LoadClassWithLoader(env, gcl, "net.minecraft.util.IChatComponent");
+            if (!chatCompClass) {
+                chatCompClass = env->FindClass("net/minecraft/util/IChatComponent");
+                if (env->ExceptionCheck()) env->ExceptionClear();
+            }
+            if (chatCompClass) {
+                g_chatComponentGetTextMethod = env->GetMethodID(chatCompClass, "getUnformattedText", "()Ljava/lang/String;");
+                if (!g_chatComponentGetTextMethod) {
+                    env->ExceptionClear();
+                    g_chatComponentGetTextMethod = env->GetMethodID(chatCompClass, "func_150260_c", "()Ljava/lang/String;");
+                }
+                if (!g_chatComponentGetTextMethod) env->ExceptionClear();
+                else Log("Found IChatComponent#getUnformattedText method");
+            }
+        }
     }
 
     if (!g_renderManagerField && g_mcClass) {
@@ -1505,6 +1562,33 @@ GameState ReadGameState(JNIEnv* env) {
         unsigned long long delta = nowMs - g_lastEntitySeenMs;
         if (delta <= 120ULL) {
             s.lookingAtEntityLatched = true;
+        }
+    }
+
+    // Read action-bar overlay text (used by GTB helper on C# side).
+    if (g_ingameGuiField && g_overlayMessageField && g_chatComponentGetTextMethod) {
+        jobject ingameGui = env->GetObjectField(g_mcInstance, g_ingameGuiField);
+        if (ingameGui && !env->ExceptionCheck()) {
+            jobject chatComp = env->GetObjectField(ingameGui, g_overlayMessageField);
+            if (!env->ExceptionCheck() && chatComp) {
+                jstring jtxt = (jstring)env->CallObjectMethod(chatComp, g_chatComponentGetTextMethod);
+                if (!env->ExceptionCheck() && jtxt) {
+                    const char* c = env->GetStringUTFChars(jtxt, nullptr);
+                    if (c) {
+                        s.actionBar = c;
+                        env->ReleaseStringUTFChars(jtxt, c);
+                    }
+                    env->DeleteLocalRef(jtxt);
+                } else if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                }
+                env->DeleteLocalRef(chatComp);
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+            env->DeleteLocalRef(ingameGui);
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
         }
     }
 
@@ -4290,7 +4374,7 @@ bool TrySendCapabilities(SOCKET sock) {
 
     static const char* kCapabilitiesJson =
         "{\"type\":\"capabilities\","
-        "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"nametags\",\"closestplayer\",\"chestesp\"],"
+        "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"gtbhelper\",\"nametags\",\"closestplayer\",\"chestesp\"],"
         "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
         "\"state\":[\"actionbar\",\"holdingblock\",\"lookingatblock\",\"lookingatentity\",\"lookingatentitylatched\",\"breakingblock\",\"attackcooldown\",\"attackcooldownpertick\",\"statems\"]}\n";
 

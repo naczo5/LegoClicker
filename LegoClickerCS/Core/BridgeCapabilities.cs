@@ -102,6 +102,7 @@ public sealed class BridgeCapabilities
                 "jitter",
                 "clickinchests",
                 "breakblocks",
+                "gtbhelper",
                 "nametags",
                 "closestplayer",
                 "chestesp"

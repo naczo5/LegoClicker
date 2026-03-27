@@ -67,7 +67,7 @@ These are completed and serve as the starting point for the remaining parity por
 | Module list module coverage | Includes all enabled modules | Missing some entries | In progress | Add missing labels (AimAssist/GTB/Reach/Velocity); Triggerbot intentionally omitted |
 | Config parsing parity | Broad | Partial | In progress | 1.8.9 ignores several sent fields |
 | State telemetry parity | Rich state payload | Minimal payload | In progress | Missing actionBar/entity/cooldown related fields |
-| GTB helper runtime | Enabled | UI-gated unavailable | Not started | Needs action bar + overlay parity |
+| GTB helper runtime | Enabled | Action-bar + UI path implemented | In progress | Needs live solver/output verification on 1.8.9 |
 | Aim Assist runtime | Enabled | UI-gated unavailable | Not started | Needs stable entity telemetry parity |
 | Triggerbot runtime | Enabled | Intentionally unavailable | Omitted | Kept unavailable on 1.8.9 by design |
 | Reach runtime | Enabled | UI-gated unavailable | Not started | Needs 1.8-specific implementation |
@@ -279,14 +279,20 @@ Exit criteria:
 
 ## P6 - GTB Helper Runtime Parity
 
-Status: Not started
+Status: In progress
 
 Implementation tasks:
 
-- [ ] extract action bar text on 1.8.9 bridge side
-- [ ] send action bar text in state payload on 1.8.9
-- [ ] remove 1.21-only dispatch gate for GTB state update in C#
+- [x] extract action bar text on 1.8.9 bridge side
+- [x] send action bar text in state payload on 1.8.9
+- [x] remove 1.21-only dispatch gate for GTB state update in C#
 - [ ] validate solver behavior and panel output in both versions
+
+Progress notes:
+
+- Added 1.8.9 JNI mappings for `Minecraft.ingameGUI` and overlay/action-bar component field.
+- Added `IChatComponent#getUnformattedText` extraction in 1.8.9 `ReadGameState` and wired to `actionBar` payload.
+- Exposed `gtbhelper` capability in 1.8.9 bridge + C# fallback capability map.
 
 Files expected:
 
