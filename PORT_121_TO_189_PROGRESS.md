@@ -25,6 +25,7 @@ Out of scope:
 
 - introducing new modules not present in 1.21
 - changing project safety rules (no packet/combat API injection)
+- porting Triggerbot runtime to 1.8.9 (module is cooldown-era PvP specific)
 
 ## Workflow Agreement
 
@@ -63,12 +64,12 @@ These are completed and serve as the starting point for the remaining parity por
 | External GUI flow | External-first | External-first | Done | Core behavior aligned |
 | Insert behavior | Disabled | Disabled | Done | Aligned |
 | Theme + module list style | Full | Full | Done | Aligned |
-| Module list module coverage | Includes all enabled modules | Missing some entries | In progress | Add missing labels (AimAssist/Triggerbot/GTB/Reach/Velocity) |
+| Module list module coverage | Includes all enabled modules | Missing some entries | In progress | Add missing labels (AimAssist/GTB/Reach/Velocity); Triggerbot intentionally omitted |
 | Config parsing parity | Broad | Partial | In progress | 1.8.9 ignores several sent fields |
 | State telemetry parity | Rich state payload | Minimal payload | In progress | Missing actionBar/entity/cooldown related fields |
 | GTB helper runtime | Enabled | UI-gated unavailable | Not started | Needs action bar + overlay parity |
 | Aim Assist runtime | Enabled | UI-gated unavailable | Not started | Needs stable entity telemetry parity |
-| Triggerbot runtime | Enabled | UI-gated unavailable | Not started | Needs lookingAtEntity/cooldown parity signals |
+| Triggerbot runtime | Enabled | Intentionally unavailable | Omitted | Kept unavailable on 1.8.9 by design |
 | Reach runtime | Enabled | UI-gated unavailable | Not started | Needs 1.8-specific implementation |
 | Velocity runtime | Enabled | UI-gated unavailable | Not started | Needs 1.8-specific implementation |
 | Nametag/chest caps | Supported (`nametagMaxCount`, `chestEspMaxCount`) | Not applied | Not started | Parse and enforce caps in 1.8.9 |
@@ -130,8 +131,12 @@ Status: In progress
 
 Why second:
 
-- required for Triggerbot/AimAssist/GTB parity
+- required for AimAssist/GTB parity and protocol consistency
 - prevents duplicate fallback logic in C#
+
+Note:
+
+- Triggerbot itself is omitted on 1.8.9, but these state fields remain useful for telemetry consistency and future-safe protocol parity.
 
 Implementation tasks:
 
@@ -209,7 +214,7 @@ Status: Not started
 Why fourth:
 
 - currently 1.8.9 entity payload production is coupled to nametags path
-- AimAssist/Triggerbot should not require nametags module to be enabled
+- AimAssist should not require nametags module to be enabled
 
 Implementation tasks:
 
@@ -237,7 +242,7 @@ Current state:
 Implementation tasks:
 
 - [ ] add missing module list entries when enabled:
-  - `Aim Assist`, `Triggerbot`, `GTB Helper`, `Reach`, `Velocity`
+  - `Aim Assist`, `GTB Helper`, `Reach`, `Velocity`
 - [ ] add GTB info panel rendering using `gtbHint/gtbCount/gtbPreview`
 - [ ] enforce `nametagMaxCount` in nametag rendering
 - [ ] enforce `chestEspMaxCount` in chest ESP rendering
@@ -291,24 +296,26 @@ Exit criteria:
 
 - same UX and control semantics for aim assist on both versions
 
-## P8 - Triggerbot Runtime Parity
+## P8 - Triggerbot on 1.8.9 (Omitted)
 
-Status: Not started
+Status: Done
 
-Implementation tasks:
+Decision:
 
-- [ ] remove 1.21-only runtime gate for Triggerbot when capability available
-- [ ] align entity detection and latency/cooldown timing behavior as closely as 1.8 allows
-- [ ] keep break-block and GUI safety behavior consistent
+- Triggerbot is intentionally not being ported to 1.8.9.
+- Rationale: it is tied to cooldown-era PvP behavior and does not map cleanly to legacy 1.8.9 combat expectations.
 
-Files expected:
+Implementation outcomes:
 
-- `LegoClickerCS/Core/Clicker.cs`
-- optional bridge updates in `bridge.cpp`
+- keep Triggerbot unavailable on 1.8.9 via bridge capabilities
+- keep UI explicit about unavailability reason
+- keep input/keybind toggle blocked when unsupported
 
-Exit criteria:
+Files affected:
 
-- Triggerbot behavior is comparable across versions with same settings
+- `LegoClickerCS/Core/BridgeCapabilities.cs`
+- `LegoClickerCS/MainWindow.xaml.cs`
+- `LegoClickerCS/Core/InputHooks.cs`
 
 ## P9 - Reach Parity
 
@@ -359,7 +366,7 @@ Status: Not started
 
 Implementation tasks:
 
-- [ ] remove `Unavailable: 1.21 only` for modules once parity is done
+- [ ] remove unavailable labels for modules once parity is done (except intentionally omitted Triggerbot on 1.8.9)
 - [ ] ensure keybind rows/buttons and module cards are consistent across versions
 - [ ] confirm profile save/load symmetry after all gates removed
 
@@ -406,7 +413,7 @@ Run these for each major phase completion:
 ## Risks and Notes
 
 - 1.8.9 JNI mapping variability can still create edge-case render telemetry gaps
-- 1.8.9 and 1.21 combat internals differ; Triggerbot parity should be behaviorally close, not byte-identical
+- Triggerbot is intentionally omitted on 1.8.9 due combat model mismatch
 - Reach/Velocity on 1.8.9 must stay within project safety constraints
 
 ## Progress Log

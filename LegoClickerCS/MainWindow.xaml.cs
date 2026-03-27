@@ -275,6 +275,14 @@ public partial class MainWindow : Window
     private static bool IsModuleSupported(string moduleId)
         => GameStateClient.Instance.SupportsModule(moduleId);
 
+    private static string GetUnavailableModuleReason(string moduleId)
+    {
+        if (string.Equals(moduleId, "triggerbot", StringComparison.OrdinalIgnoreCase))
+            return "Unavailable on 1.8.9 (cooldown-era PvP only)";
+
+        return "Unavailable on current bridge";
+    }
+
     private void UpdateVersionAvailabilityUi()
     {
         bool aimAssistSupported = IsModuleSupported("aimassist");
@@ -285,6 +293,7 @@ public partial class MainWindow : Window
 
         string available = "Available";
         string unavailable = "Unavailable on current bridge";
+        string triggerbotUnavailable = GetUnavailableModuleReason("triggerbot");
 
         AimAssistCard.IsEnabled = aimAssistSupported;
         TriggerbotCard.IsEnabled = triggerbotSupported;
@@ -300,7 +309,7 @@ public partial class MainWindow : Window
         if (!velocitySupported && clicker.VelocityEnabled) clicker.VelocityEnabled = false;
 
         AimAssistAvailabilityText.Text = aimAssistSupported ? available : unavailable;
-        TriggerbotAvailabilityText.Text = triggerbotSupported ? available : unavailable;
+        TriggerbotAvailabilityText.Text = triggerbotSupported ? available : triggerbotUnavailable;
         ReachAvailabilityText.Text = reachSupported ? available : unavailable;
         VelocityAvailabilityText.Text = velocitySupported ? available : unavailable;
         GtbHelperAvailabilityText.Text = gtbSupported
@@ -601,7 +610,7 @@ public partial class MainWindow : Window
         string title = ModuleTitles.TryGetValue(moduleId, out string? n) ? n : moduleId;
         if (!IsModuleSupported(moduleId))
         {
-            btn.Content = $"{title}: Unavailable on current bridge";
+            btn.Content = $"{title}: {GetUnavailableModuleReason(moduleId)}";
             return;
         }
 
