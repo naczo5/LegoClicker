@@ -2903,17 +2903,40 @@ void RenderNametags(int w, int h) {
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
 
-        // Project
+        // Project (prefer matrix when stable, otherwise fallback to angle/FOV)
         float sX = 0, sY = 0;
-        // Tag Height: Entity Height (approx 1.8) + 0.5 buffer
-        bool projected = false;
+        bool matrixProjected = false;
+        float matrixSX = 0, matrixSY = 0;
         if (matrixProjectionUsable) {
-            projected = WorldToScreen(rX, rY + 2.3, rZ, view, proj, w, h, sX, sY);
+            matrixProjected = WorldToScreen(rX, rY + 2.3, rZ, view, proj, w, h, matrixSX, matrixSY);
         }
-        if (!projected) {
-            LegoVec3 worldPos = { iX, iY + 2.3, iZ };
-            LegoVec3 camPos = { localPX, localPY + 1.62, localPZ };
-            projected = WorldToScreen(worldPos, camPos, fallbackYaw, fallbackPitch, fallbackFov, w, h, &sX, &sY);
+
+        float fallbackSX = 0, fallbackSY = 0;
+        LegoVec3 worldPos = { iX, iY + 2.3, iZ };
+        LegoVec3 camPos = { localPX, localPY + 1.62, localPZ };
+        bool fallbackProjected = WorldToScreen(worldPos, camPos, fallbackYaw, fallbackPitch, fallbackFov, w, h, &fallbackSX, &fallbackSY);
+
+        bool projected = false;
+        if (matrixProjected && fallbackProjected) {
+            float dxp = std::fabs(matrixSX - fallbackSX);
+            float dyp = std::fabs(matrixSY - fallbackSY);
+            bool matrixLooksWrong = dxp > (float)w * 0.35f || dyp > (float)h * 0.35f;
+            if (matrixLooksWrong) {
+                sX = fallbackSX;
+                sY = fallbackSY;
+            } else {
+                sX = matrixSX;
+                sY = matrixSY;
+            }
+            projected = true;
+        } else if (matrixProjected) {
+            sX = matrixSX;
+            sY = matrixSY;
+            projected = true;
+        } else if (fallbackProjected) {
+            sX = fallbackSX;
+            sY = fallbackSY;
+            projected = true;
         }
 
         if (projected) {
