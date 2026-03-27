@@ -2703,6 +2703,9 @@ void RenderNametags(int w, int h) {
     std::stringstream ss;
     ss << "[";
     constexpr int kEntityJsonCap = 20;
+    const int entityProcessCap = nametagsEnabled
+        ? (std::max)(1, (std::min)(20, nametagMaxCount))
+        : kEntityJsonCap;
     
     // Get Local Player for distance & health debug
     jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
@@ -2721,7 +2724,7 @@ void RenderNametags(int w, int h) {
         goto exit_frame;
     }
     
-    for (int i = 0; i < size && count < nametagMaxCount; i++) {
+    for (int i = 0; i < size && count < entityProcessCap; i++) {
         jobject entity = env->CallObjectMethod(startList, g_listGetMethod, i);
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
@@ -2797,11 +2800,32 @@ void RenderNametags(int w, int h) {
                  env->DeleteLocalRef(entity);
                  continue;
              }
-             std::string displayName = StripMinecraftFormatting(name);
-             if (!displayName.empty()) {
-                 float nameScale = (float)(0.78 / (dist * 0.04 + 1.0));
-                 if (nameScale < 0.38f) nameScale = 0.38f;
-                 if (nameScale > 0.60f) nameScale = 0.60f;
+              std::string displayName = StripMinecraftFormatting(name);
+              if (!displayName.empty()) {
+                  float hpClampedSimple = health < 0 ? 0 : (health > 40 ? 40 : health);
+
+                  if (!nametagsEnabled) {
+                      if (count < kEntityJsonCap) {
+                          if (count > 0) ss << ",";
+                          ss << "{";
+                          ss << "\"sx\":" << sX << ",";
+                          ss << "\"sy\":" << sY << ",";
+                          ss << "\"dist\":" << dist << ",";
+                          ss << "\"name\":\"" << JsonEscape(displayName) << "\",";
+                          ss << "\"hp\":" << hpClampedSimple;
+                          ss << "}";
+                      }
+                      count++;
+                      if (count >= entityProcessCap) {
+                          env->DeleteLocalRef(entity);
+                          break;
+                      }
+                      continue;
+                  }
+
+                  float nameScale = (float)(0.78 / (dist * 0.04 + 1.0));
+                  if (nameScale < 0.38f) nameScale = 0.38f;
+                  if (nameScale > 0.60f) nameScale = 0.60f;
 
                  float infoScale = nameScale * 0.88f;
                  float hpClamped = health < 0 ? 0 : (health > 40 ? 40 : health);
@@ -2945,11 +2969,11 @@ void RenderNametags(int w, int h) {
                      ss << "}";
                  }
 
-                 count++;
-                 if (count >= nametagMaxCount) {
-                     env->DeleteLocalRef(entity);
-                     break;
-                 }
+                  count++;
+                  if (count >= entityProcessCap) {
+                      env->DeleteLocalRef(entity);
+                      break;
+                  }
              }
         }
 

@@ -232,6 +232,7 @@ Remaining for P4 completion:
 
 - [ ] runtime verification that `entities` keeps updating with nametags OFF and closest/aim ON
 - [ ] validate no CPU regression when all telemetry consumers are OFF
+- [x] fixed coupling bug where telemetry-only mode could force nametag processing path
 
 Files expected:
 
