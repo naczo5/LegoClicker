@@ -2320,7 +2320,13 @@ void RenderHUD(int winW, int winH) {
 
     GameState state;
     { LockGuard lk(g_stateMutex); state = g_gameState; }
-    if (state.guiOpen) {
+    bool isChatScreen = false;
+    if (!state.screenName.empty()) {
+        isChatScreen = state.screenName.find("GuiChat") != std::string::npos
+            || state.screenName.find("ChatScreen") != std::string::npos
+            || state.screenName.find("class_408") != std::string::npos;
+    }
+    if (state.guiOpen && !isChatScreen) {
         return;
     }
 

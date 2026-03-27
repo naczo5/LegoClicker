@@ -468,6 +468,13 @@ Run these for each major phase completion:
   - matrix projection path now falls back to angle/FOV projection when matrix data is unavailable
   - this keeps nametags visible while still preserving telemetry decoupling from Closest Player
 
+### 2026-03-27 (GTB + chat UX fixes)
+
+- Improved GTB action-bar parsing robustness in C# solver:
+  - handles bracketed prefixes and score/status fragments more reliably
+  - scans multi-line action-bar payload candidates instead of assuming a single-line format
+- Adjusted HUD visibility behavior so opening chat does not hide overlays/module list
+
 ## Quick Triage Checklist (When New Bug Is Reported)
 
 - [ ] classify as protocol, rendering, input, or module logic gap

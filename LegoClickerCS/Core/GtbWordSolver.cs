@@ -155,43 +155,65 @@ public static class GtbWordSolver
     {
         if (string.IsNullOrWhiteSpace(actionBarText)) return "";
 
-        string s = Regex.Replace(actionBarText, "§.", "");
-        s = s.Trim();
-        if (!s.Contains('_')) return "";
-
-        var themeMatch = Regex.Match(s, @"(?i)\btheme\s+is\s+([A-Za-z_ ]+)");
-        if (themeMatch.Success)
-            s = themeMatch.Groups[1].Value;
-        else
+        foreach (string line in SplitCandidateLines(actionBarText))
         {
-            int colon = s.LastIndexOf(':');
-            if (colon >= 0 && colon + 1 < s.Length)
-                s = s[(colon + 1)..];
+            string? mask = TryExtractMaskFromLine(line);
+            if (!string.IsNullOrWhiteSpace(mask))
+                return mask;
         }
 
-        s = Regex.Replace(s, @"\s*\(\d+\)\s*$", "");
-        s = Regex.Replace(s, @"[^A-Za-z_ ]", "");
-        s = s.Trim();
-        int firstUnderscore = s.IndexOf('_');
-        if (firstUnderscore > 0 && s[..firstUnderscore].Contains(' '))
-            s = s[firstUnderscore..];
-
-        string decoded = DecodeSpacedMaskIfNeeded(s);
-        decoded = Regex.Replace(decoded, @"\s+", " ").Trim().ToLowerInvariant();
-        return decoded.Contains('_') ? decoded : "";
+        return "";
     }
 
     private static string ExtractSolvedWord(string actionBarText)
     {
         if (string.IsNullOrWhiteSpace(actionBarText)) return "";
 
-        string s = Regex.Replace(actionBarText, "§.", "");
-        s = s.Trim();
-        if (s.Contains('_')) return "";
+        foreach (string line in SplitCandidateLines(actionBarText))
+        {
+            string solved = TryExtractSolvedWordFromLine(line);
+            if (!string.IsNullOrWhiteSpace(solved))
+                return solved;
+        }
 
-        var themeMatch = Regex.Match(s, @"(?i)\btheme\s+is\s+([A-Za-z ]+)");
+        return "";
+    }
+
+    private static IEnumerable<string> SplitCandidateLines(string text)
+    {
+        string cleaned = Regex.Replace(text, "§.", "").Trim();
+        if (string.IsNullOrWhiteSpace(cleaned))
+            yield break;
+
+        string[] lines = cleaned.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0)
+        {
+            yield return cleaned;
+            yield break;
+        }
+
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+                yield return trimmed;
+        }
+    }
+
+    private static string? TryExtractMaskFromLine(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+
+        string s = input.Trim();
+        if (!s.Contains('_')) return null;
+
+        s = Regex.Replace(s, @"\[[^\]]*\]", " ");
+
+        var themeMatch = Regex.Match(s, @"(?i)\btheme\s+is\s+([A-Za-z_ ]+)");
         if (themeMatch.Success)
+        {
             s = themeMatch.Groups[1].Value;
+        }
         else
         {
             int colon = s.LastIndexOf(':');
@@ -200,7 +222,44 @@ public static class GtbWordSolver
         }
 
         s = Regex.Replace(s, @"\s*\(\d+\)\s*$", "");
-        s = Regex.Replace(s, @"[^A-Za-z ]", "");
+        s = Regex.Replace(s, @"\b\d+/\d+\b", " ");
+        s = Regex.Replace(s, @"[^A-Za-z_ ]", " ");
+        s = Regex.Replace(s, @"\s+", " ").Trim();
+
+        int firstUnderscore = s.IndexOf('_');
+        if (firstUnderscore > 0)
+            s = s[firstUnderscore..].Trim();
+
+        string decoded = DecodeSpacedMaskIfNeeded(s);
+        decoded = Regex.Replace(decoded, @"\s+", " ").Trim().ToLowerInvariant();
+        return decoded.Contains('_') ? decoded : null;
+    }
+
+    private static string TryExtractSolvedWordFromLine(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return "";
+
+        string s = input.Trim();
+        if (s.Contains('_')) return "";
+
+        s = Regex.Replace(s, @"\[[^\]]*\]", " ");
+
+        var themeMatch = Regex.Match(s, @"(?i)\btheme\s+is\s+([A-Za-z ]+)");
+        if (themeMatch.Success)
+        {
+            s = themeMatch.Groups[1].Value;
+        }
+        else
+        {
+            int colon = s.LastIndexOf(':');
+            if (colon >= 0 && colon + 1 < s.Length)
+                s = s[(colon + 1)..];
+        }
+
+        s = Regex.Replace(s, @"\s*\(\d+\)\s*$", "");
+        s = Regex.Replace(s, @"\b\d+/\d+\b", " ");
+        s = Regex.Replace(s, @"[^A-Za-z ]", " ");
+        s = Regex.Replace(s, @"\s+", " ").Trim();
         return NormalizeWord(s);
     }
 
