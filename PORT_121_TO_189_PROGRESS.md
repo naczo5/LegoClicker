@@ -456,6 +456,12 @@ Run these for each major phase completion:
   - added `IsArmed` to profile schema
   - save/load now restores armed state between sessions
 
+### 2026-03-27 (render regression fix)
+
+- Fixed 1.8.9 nametag rendering regression introduced during telemetry decoupling:
+  - matrix projection path now falls back to angle/FOV projection when matrix data is unavailable
+  - this keeps nametags visible while still preserving telemetry decoupling from Closest Player
+
 ## Quick Triage Checklist (When New Bug Is Reported)
 
 - [ ] classify as protocol, rendering, input, or module logic gap

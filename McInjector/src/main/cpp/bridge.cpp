@@ -2615,10 +2615,18 @@ void RenderNametags(int w, int h) {
     Matrix4x4 view = GetMatrix(env, g_modelViewField);
     Matrix4x4 proj = GetMatrix(env, g_projectionField);
 
+    auto MatrixMagnitude = [](const Matrix4x4& m) {
+        float sum = 0.0f;
+        for (int i = 0; i < 16; i++) sum += std::fabs(m.m[i]);
+        return sum;
+    };
+
+    bool matrixProjectionUsable = MatrixMagnitude(view) > 0.0001f && MatrixMagnitude(proj) > 0.0001f;
+
     static int logctr = 0;
     if (logctr++ % 600 == 0) {
          Log("Matrix Debug - View[0]: " + std::to_string(view.m[0]) + " Proj[0]: " + std::to_string(proj.m[0]));
-         if (view.m[0] == 0 && view.m[5] == 0 && view.m[15] == 0) Log("WARNING: View matrix seems empty!");
+         if (!matrixProjectionUsable) Log("WARNING: Matrix projection unavailable, using angle fallback.");
     }
 
     // 2. Get Partial Ticks
@@ -2709,6 +2717,9 @@ void RenderNametags(int w, int h) {
     
     // Get Local Player for distance & health debug
     jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+    float fallbackYaw = 0.0f;
+    float fallbackPitch = 0.0f;
+    float fallbackFov = 70.0f;
     
     double localPX = 0.0, localPY = 0.0, localPZ = 0.0;
     bool haveLocalPos = false;
@@ -2723,7 +2734,30 @@ void RenderNametags(int w, int h) {
         env->DeleteLocalRef(world);
         goto exit_frame;
     }
-    
+
+    if (player) {
+        if (g_rotationYawField) {
+            fallbackYaw = env->GetFloatField(player, g_rotationYawField);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); fallbackYaw = 0.0f; }
+        }
+        if (g_rotationPitchField) {
+            fallbackPitch = env->GetFloatField(player, g_rotationPitchField);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); fallbackPitch = 0.0f; }
+        }
+    }
+    if (g_gameSettingsField && g_fovSettingField) {
+        jobject gs = env->GetObjectField(g_mcInstance, g_gameSettingsField);
+        if (gs) {
+            float fov = env->GetFloatField(gs, g_fovSettingField);
+            if (!env->ExceptionCheck() && fov >= 10.0f && fov <= 170.0f) {
+                fallbackFov = fov;
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+            env->DeleteLocalRef(gs);
+        }
+    }
+
     for (int i = 0; i < size && count < entityProcessCap; i++) {
         jobject entity = env->CallObjectMethod(startList, g_listGetMethod, i);
         if (env->ExceptionCheck()) {
@@ -2782,7 +2816,15 @@ void RenderNametags(int w, int h) {
         // Project
         float sX = 0, sY = 0;
         // Tag Height: Entity Height (approx 1.8) + 0.5 buffer
-        bool projected = WorldToScreen(rX, rY + 2.3, rZ, view, proj, w, h, sX, sY);
+        bool projected = false;
+        if (matrixProjectionUsable) {
+            projected = WorldToScreen(rX, rY + 2.3, rZ, view, proj, w, h, sX, sY);
+        }
+        if (!projected) {
+            LegoVec3 worldPos = { iX, iY + 2.3, iZ };
+            LegoVec3 camPos = { localPX, localPY + 1.62, localPZ };
+            projected = WorldToScreen(worldPos, camPos, fallbackYaw, fallbackPitch, fallbackFov, w, h, &sX, &sY);
+        }
 
         if (projected) {
              if (logctr % 600 == 0 && count == 0) {
