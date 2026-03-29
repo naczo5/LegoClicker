@@ -9,7 +9,7 @@ It documents build/test/lint commands, repository conventions, and safety rules.
 
 - `LegoClickerCS/`: .NET 8 WPF loader + external GUI (`LegoClicker` executable).
 - `LegoClickerCS/Core/`: clicker engine, input hooks, profile persistence, TCP client.
-- `McInjector/`: native bridge DLL builds (`bridge.dll`, `bridge_121.dll`).
+- `McInjector/`: native bridge DLL builds (`bridge.dll`, `bridge_261.dll`).
 - `McInjector/src/main/cpp/`: JNI/Win32/OpenGL/ImGui bridge sources.
 - `build_dll.bat`, `build_exe.bat`, `build_release.bat`: top-level build helpers.
 
@@ -34,8 +34,8 @@ Build shell preference:
 
 - Build both bridges: `build_dll.bat`
 - Build 1.8.9 bridge only: `McInjector\build.bat`
-- Build 1.21 bridge only: `McInjector\build_121.bat`
-- One-off direct compile path used by scripts: `build_bridge.bat`
+- Build 26.1 bridge only: `McInjector\build_261.bat`
+- `build_bridge.bat` is deprecated and kept as a compatibility stub.
 
 ### C# loader builds
 
@@ -58,7 +58,7 @@ Use these as practical quality gates:
 - C# compile gate: `dotnet build LegoClickerCS\LegoClickerCS.csproj`
 - Optional formatting check (if available in environment):
   - `dotnet format LegoClickerCS\LegoClickerCS.csproj --verify-no-changes`
-- Native compile gate: `McInjector\build_121.bat` and/or `McInjector\build.bat`
+- Native compile gate: `McInjector\build_261.bat` and/or `McInjector\build.bat`
 
 ## Test Commands
 

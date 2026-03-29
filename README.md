@@ -52,13 +52,8 @@ Run from repository root unless noted.
 ### Native bridge DLLs
 
 - Build both: `build_dll.bat`
-- Build 1.21 only: `McInjector\build_121.bat`
 - Build 26.1 only: `McInjector\build_261.bat`
 - Build 1.8.9 only: `McInjector\build.bat`
-
-Direct one-off compile script for 1.21:
-
-- `build_bridge.bat`
 
 ### Loader (C#)
 
@@ -73,9 +68,9 @@ Direct one-off compile script for 1.21:
 
 ## Notes on versions
 
-- `bridge_121.dll` and `bridge_261.dll` are actively maintained bridges.
+- `bridge_261.dll` is the modern bridge used for both 26.1 and 1.21 injection.
 - `bridge.dll` (1.8.9) is supported.
-- All three bridge versions are configured through the external GUI.
+- Supported runtime bridges are configured through the external GUI.
 
 ## Project structure
 
@@ -85,11 +80,9 @@ legoclickerC/
 |  |- Core/                    # Clicker, hooks, profile, TCP client
 |  |- MainWindow.xaml(.cs)     # Main UI
 |  |- bridge.dll               # 1.8.9 bridge (legacy)
-|  |- bridge_121.dll           # 1.21 bridge
 |  `- bridge_261.dll           # 26.1 bridge
 |- McInjector/
 |  |- build.bat                # 1.8.9 bridge build (legacy)
-|  |- build_121.bat            # 1.21 bridge build
 |  |- build_261.bat            # 26.1 bridge build
 |  `- src/main/cpp/            # Native bridge sources
 |- docs/                       # Website

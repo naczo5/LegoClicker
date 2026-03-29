@@ -47,9 +47,9 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-copy /Y "McInjector\bridge_121.dll" "%RELEASE_DIR%\" >nul
+copy /Y "McInjector\bridge_261.dll" "%RELEASE_DIR%\" >nul
 if %errorlevel% neq 0 (
-    echo [Release] ERROR: Missing McInjector\bridge_121.dll.
+    echo [Release] ERROR: Missing McInjector\bridge_261.dll.
     exit /b %errorlevel%
 )
 
