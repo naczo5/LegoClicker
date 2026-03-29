@@ -7,7 +7,7 @@ It documents build/test/lint commands, repository conventions, and safety rules.
 
 ## Repository Overview
 
-- `LegoClickerCS/`: .NET 8 WPF loader/control center (`LegoClicker` executable).
+- `LegoClickerCS/`: .NET 8 WPF loader + external GUI (`LegoClicker` executable).
 - `LegoClickerCS/Core/`: clicker engine, input hooks, profile persistence, TCP client.
 - `McInjector/`: native bridge DLL builds (`bridge.dll`, `bridge_121.dll`).
 - `McInjector/src/main/cpp/`: JNI/Win32/OpenGL/ImGui bridge sources.

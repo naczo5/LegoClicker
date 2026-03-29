@@ -10,6 +10,7 @@ namespace LegoClickerCS.Core;
 
 public class Clicker : INotifyPropertyChanged
 {
+    private const int AimAssistStateFreshMs = 220;
     private const int TriggerbotStateFreshMs = 35;
     private static Clicker? _instance;
     public static Clicker Instance => _instance ??= new Clicker();
@@ -56,6 +57,8 @@ public class Clicker : INotifyPropertyChanged
     private Task? _clickTask;
     private Task? _aimAssistTask;
     private Task? _triggerbotTask;
+    private double _aimAssistFilteredDx;
+    private double _aimAssistFilteredDy;
     
     // Settings
     private float _minCPS = 8.0f;
@@ -342,12 +345,16 @@ public class Clicker : INotifyPropertyChanged
         var task = _aimAssistTask;
         _aimAssistCts = null;
         _aimAssistTask = null;
+        _aimAssistFilteredDx = 0.0;
+        _aimAssistFilteredDy = 0.0;
         if (cts != null)
         {
             cts.Cancel();
             _ = DisposeCtsWhenDoneAsync(cts, task);
         }
     }
+
+    public bool IsUsingLeftButton => _useLeftButton;
 
     private void StartTriggerbotLoop()
     {
@@ -846,7 +853,7 @@ public class Clicker : INotifyPropertyChanged
         }
 
         GtbWordSolver.TryLearnSolvedWord(actionBarText);
-        var (mask, matches) = GtbWordSolver.Solve(actionBarText, maxResults: 25);
+        var (mask, matches) = GtbWordSolver.Solve(actionBarText, maxResults: 200);
         if (string.IsNullOrWhiteSpace(mask))
         {
             SetGtbState("", 0, "");
@@ -877,16 +884,43 @@ public class Clicker : INotifyPropertyChanged
                     AimAssistEnabled &&
                     supportedVersion &&
                     GameStateClient.Instance.IsConnected &&
-                    WindowDetection.IsMinecraftActive() &&
-                    !WindowDetection.IsCursorVisible();
+                    WindowDetection.IsMinecraftActive();
 
-                if (shouldRun)
+                if (!shouldRun)
                 {
-                    bool leftHeld = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-                    bool autoLeftClicking = IsClicking && _useLeftButton;
-                    if (leftHeld || autoLeftClicking)
-                        TryApplyAimAssist();
+                    await Task.Delay(8, token).ConfigureAwait(false);
+                    continue;
                 }
+
+                var state = GameStateClient.Instance.CurrentState;
+                if (state.GuiOpen && WindowDetection.IsCursorVisible())
+                {
+                    await Task.Delay(16, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                long nowMs = Environment.TickCount64;
+                long stateAgeMs;
+                if (state.StateMs > 0)
+                {
+                    long bridgeMs = unchecked((long)state.StateMs);
+                    stateAgeMs = nowMs - bridgeMs;
+                }
+                else
+                {
+                    stateAgeMs = (long)(DateTime.Now - state.LastUpdate).TotalMilliseconds;
+                }
+                if (stateAgeMs < 0) stateAgeMs = 0;
+                if (stateAgeMs > AimAssistStateFreshMs)
+                {
+                    await Task.Delay(8, token).ConfigureAwait(false);
+                    continue;
+                }
+
+                bool leftHeld = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+                bool autoLeftClicking = IsClicking && _useLeftButton;
+                if (leftHeld || autoLeftClicking)
+                    TryApplyAimAssist();
 
                 await Task.Delay(8, token).ConfigureAwait(false);
             }
@@ -1304,7 +1338,17 @@ public class Clicker : INotifyPropertyChanged
     private void TryApplyAimAssist()
     {
         var state = GameStateClient.Instance.CurrentState;
-        if (state.Entities.Count == 0) return;
+        if (state.Entities.Count == 0)
+        {
+            _aimAssistFilteredDx = 0.0;
+            _aimAssistFilteredDy = 0.0;
+            return;
+        }
+        bool isLegacyBridge = GameStateClient.Instance.InjectedVersion.StartsWith("1.8", StringComparison.OrdinalIgnoreCase);
+
+        // 1.8.9 projection can become unreliable in edge/fallback scenarios; avoid ghost tracking.
+        if (isLegacyBridge && !state.LookingAtEntity && !state.LookingAtEntityLatched)
+            return;
 
         var rect = WindowDetection.GetMinecraftWindowRect();
         if (!rect.HasValue) return;
@@ -1316,6 +1360,8 @@ public class Clicker : INotifyPropertyChanged
         double centerX = width * 0.5;
         double centerY = height * 0.5;
         double maxAngle = AimAssistFov * 0.5;
+        double legacyRadiusPx = Math.Max(28.0, Math.Min(width, height) * 0.12);
+        double legacyRadiusSq = legacyRadiusPx * legacyRadiusPx;
         double bestScore = double.MaxValue;
         double bestDx = 0;
         double bestDy = 0;
@@ -1327,6 +1373,7 @@ public class Clicker : INotifyPropertyChanged
 
             double dx = entity.Sx - centerX;
             double dy = entity.Sy - centerY;
+            if (isLegacyBridge && (dx * dx + dy * dy) > legacyRadiusSq) continue;
             double radial = Math.Sqrt(dx * dx + dy * dy);
             double angle = Math.Atan2(radial, centerX) * (180.0 / Math.PI);
             if (angle > maxAngle) continue;
@@ -1342,15 +1389,27 @@ public class Clicker : INotifyPropertyChanged
 
         if (bestScore == double.MaxValue) return;
 
-        double strength = AimAssistStrength / 100.0;
-        int moveX = (int)Math.Round(bestDx * strength);
-        int moveY = (int)Math.Round(bestDy * strength);
+        // Light temporal filter keeps closest-point targeting, but suppresses endpoint orbiting.
+        const double filterAlpha = 0.40;
+        _aimAssistFilteredDx += (bestDx - _aimAssistFilteredDx) * filterAlpha;
+        _aimAssistFilteredDy += (bestDy - _aimAssistFilteredDy) * filterAlpha;
+
+        double strengthNorm = AimAssistStrength / 100.0;
+        double strength = isLegacyBridge
+            ? (0.16 + 0.54 * strengthNorm * strengthNorm)
+            : (0.08 + 0.36 * strengthNorm * strengthNorm);
+
+        int moveX = (int)Math.Round(_aimAssistFilteredDx * strength);
+        int moveY = (int)Math.Round(_aimAssistFilteredDy * strength);
 
         if (moveX == 0 && Math.Abs(bestDx) > 1) moveX = Math.Sign(bestDx);
         if (moveY == 0 && Math.Abs(bestDy) > 1) moveY = Math.Sign(bestDy);
 
-        moveX = Math.Clamp(moveX, -40, 40);
-        moveY = Math.Clamp(moveY, -40, 40);
+        int maxStep = isLegacyBridge
+            ? (int)Math.Round(8 + 14 * strengthNorm)
+            : (int)Math.Round(4 + 16 * strengthNorm);
+        moveX = Math.Clamp(moveX, -maxStep, maxStep);
+        moveY = Math.Clamp(moveY, -maxStep, maxStep);
 
         if (moveX == 0 && moveY == 0) return;
 
