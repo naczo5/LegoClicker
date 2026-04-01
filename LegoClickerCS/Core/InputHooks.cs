@@ -238,7 +238,7 @@ public static class InputHooks
             }
             else if (msg == WM_LBUTTONUP)
             {
-                if (Clicker.Instance.IsClicking)
+                if (Clicker.Instance.IsClicking && Clicker.Instance.IsUsingLeftButton)
                 {
                     Application.Current?.Dispatcher.BeginInvoke(() =>
                     {
@@ -262,13 +262,19 @@ public static class InputHooks
                         }
                     }
                     
+                    if (Clicker.Instance.IsClicking && Clicker.Instance.IsUsingLeftButton)
+                    {
+                        // Keep left autoclick stream alive for blockhit sequences.
+                        return;
+                    }
+
                     Clicker.Instance.StartClicking(false);
                     OnStateChanged?.Invoke();
                 });
             }
             else if (msg == WM_RBUTTONUP)
             {
-                if (Clicker.Instance.IsClicking)
+                if (Clicker.Instance.IsClicking && !Clicker.Instance.IsUsingLeftButton)
                 {
                     Application.Current?.Dispatcher.BeginInvoke(() =>
                     {

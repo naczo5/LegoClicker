@@ -175,6 +175,7 @@ public class GameStateClient : INotifyPropertyChanged
 
         var mcProcess = FindMinecraftProcess();
         string resolvedVersion = ResolveInjectionVersion(version, mcProcess);
+        Log($"Resolved injection version: requested={version}, resolved={resolvedVersion}, title='{mcProcess?.MainWindowTitle ?? "<none>"}'");
         Capabilities = BridgeCapabilities.ForVersionFallback(resolvedVersion);
 
         SetInjectionStage(5, "Checking existing bridge");
@@ -208,8 +209,14 @@ public class GameStateClient : INotifyPropertyChanged
         }
         
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        string dllName = resolvedVersion == "1.21" ? "bridge_121.dll" : "bridge.dll";
+        string dllName = resolvedVersion switch
+        {
+            "26.1" => "bridge_261.dll",
+            "1.21" => "bridge_261.dll", // Modern bridge is shared by 26.1 and 1.21
+            _ => "bridge.dll"
+        };
         string dllPath = Path.Combine(baseDir, dllName);
+        SetInjectionStage(20, $"Injecting {dllName}");
         
         Log($"Attempting to inject: {dllPath} into PID {mcProcess.Id}");
 
@@ -544,16 +551,103 @@ public class GameStateClient : INotifyPropertyChanged
 
     private static string ResolveInjectionVersion(string requestedVersion, Process? process)
     {
-        if (string.Equals(requestedVersion, "1.21", StringComparison.OrdinalIgnoreCase))
-            return "1.21";
-        if (string.Equals(requestedVersion, "1.8.9", StringComparison.OrdinalIgnoreCase))
-            return "1.8.9";
+        if (!string.Equals(requestedVersion, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            string? explicitVersion = NormalizeDetectedVersion(requestedVersion);
+            if (!string.IsNullOrEmpty(explicitVersion))
+                return explicitVersion;
+        }
 
         string title = process?.MainWindowTitle?.ToLowerInvariant() ?? string.Empty;
-        if (title.Contains("1.21.11") || title.Contains("1.21")) return "1.21";
-        if (title.Contains("1.8.9")) return "1.8.9";
+        string? fromTitle = NormalizeDetectedVersion(title);
+        if (!string.IsNullOrEmpty(fromTitle))
+            return fromTitle;
+
+        string? fromLunarSettings = TryResolveVersionFromLunarSettings();
+        if (!string.IsNullOrEmpty(fromLunarSettings))
+            return fromLunarSettings;
 
         return "1.21";
+    }
+
+    private static string? TryResolveVersionFromLunarSettings()
+    {
+        try
+        {
+            string lunarRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".lunarclient");
+            string launcherPath = Path.Combine(lunarRoot, "settings", "launcher.json");
+            if (File.Exists(launcherPath))
+            {
+                JsonNode? launcher = JsonNode.Parse(File.ReadAllText(launcherPath));
+                string? gameProfile = launcher?["settings"]?["gameProfile"]?.GetValue<string>();
+                string? fromProfile = ResolveVersionFromGameProfile(lunarRoot, gameProfile);
+                if (!string.IsNullOrEmpty(fromProfile))
+                    return fromProfile;
+            }
+
+            string cachePath = Path.Combine(lunarRoot, "settings", "cache.json");
+            if (File.Exists(cachePath))
+            {
+                JsonNode? cache = JsonNode.Parse(File.ReadAllText(cachePath));
+                JsonArray? history = cache?["profileSelectHistory"]?["lunar"] as JsonArray;
+                if (history != null)
+                {
+                    foreach (JsonNode? entry in history)
+                    {
+                        string? version = entry?["version"]?.GetValue<string>();
+                        string? normalized = NormalizeDetectedVersion(version);
+                        if (!string.IsNullOrEmpty(normalized))
+                            return normalized;
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private static string? ResolveVersionFromGameProfile(string lunarRoot, string? gameProfile)
+    {
+        if (string.IsNullOrWhiteSpace(gameProfile) || !gameProfile.StartsWith("lunar-", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        string major = gameProfile.Substring("lunar-".Length);
+        string profilePath = Path.Combine(lunarRoot, "profiles", "lunar", major, "profile.json");
+        if (File.Exists(profilePath))
+        {
+            try
+            {
+                JsonNode? profile = JsonNode.Parse(File.ReadAllText(profilePath));
+                string? gameVersion = profile?["gameVersion"]?.GetValue<string>();
+                string? normalized = NormalizeDetectedVersion(gameVersion);
+                if (!string.IsNullOrEmpty(normalized))
+                    return normalized;
+            }
+            catch
+            {
+            }
+        }
+
+        return NormalizeDetectedVersion(major);
+    }
+
+    private static string? NormalizeDetectedVersion(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        string value = raw.Trim().ToLowerInvariant();
+        if (value.Contains("26.1") || value.Contains("minecraft 26") || value.Contains("version 26") || value == "26" || value.StartsWith("26."))
+            return "26.1";
+        if (value.Contains("1.21") || value == "1.21")
+            return "1.21";
+        if (value.Contains("1.8.9") || value == "1.8" || value.StartsWith("1.8."))
+            return "1.8.9";
+
+        return null;
     }
 
 

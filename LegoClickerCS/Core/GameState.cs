@@ -25,6 +25,9 @@ public class GameState
     [JsonPropertyName("health")]
     public float Health { get; set; } = -1;
 
+    [JsonPropertyName("fov")]
+    public float Fov { get; set; } = 70.0f;
+
     [JsonPropertyName("holdingBlock")]
     public bool HoldingBlock { get; set; }
 

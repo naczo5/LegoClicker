@@ -25,8 +25,10 @@ public sealed class BridgeCapabilities
     {
         bool is121 = !string.IsNullOrWhiteSpace(injectedVersion)
             && injectedVersion.StartsWith("1.21", StringComparison.OrdinalIgnoreCase);
+        bool is261 = !string.IsNullOrWhiteSpace(injectedVersion)
+            && injectedVersion.StartsWith("26.1", StringComparison.OrdinalIgnoreCase);
 
-        if (is121)
+        if (is121 || is261)
         {
             return new BridgeCapabilities(
                 BuildSet(
@@ -102,10 +104,13 @@ public sealed class BridgeCapabilities
                 "jitter",
                 "clickinchests",
                 "breakblocks",
+                "aimassist",
                 "gtbhelper",
                 "nametags",
                 "closestplayer",
-                "chestesp"
+                "chestesp",
+                "reach",
+                "velocity"
             ),
             BuildSet(
                 "mincps",
@@ -118,11 +123,22 @@ public sealed class BridgeCapabilities
                 "breakblocks",
                 "jitter",
                 "clickinchests",
+                "aimassistfov",
+                "aimassistrange",
+                "aimassiststrength",
                 "nametags",
                 "closestplayerinfo",
                 "nametagshowhealth",
                 "nametagshowarmor",
                 "chestesp",
+                "reachenabled",
+                "reachmin",
+                "reachmax",
+                "reachchance",
+                "velocityenabled",
+                "velocityhorizontal",
+                "velocityvertical",
+                "velocitychance",
                 "showmodulelist",
                 "moduleliststyle",
                 "showlogo",
@@ -133,8 +149,15 @@ public sealed class BridgeCapabilities
                 "keybindchestesp"
             ),
             BuildSet(
+                "actionbar",
                 "holdingblock",
-                "lookingatblock"
+                "lookingatblock",
+                "lookingatentity",
+                "lookingatentitylatched",
+                "breakingblock",
+                "attackcooldown",
+                "attackcooldownpertick",
+                "statems"
             )
         );
     }

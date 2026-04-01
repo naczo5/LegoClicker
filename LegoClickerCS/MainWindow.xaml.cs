@@ -191,6 +191,8 @@ public partial class MainWindow : Window
             clicker.ModuleListStyle = NormalizeModuleListStyle(clicker.ModuleListStyle);
         }
 
+        DiscordRichPresenceService.Instance.Start();
+
         // Initial UI state
         UpdateGameStateUI();
         UpdateKeybindButtons();
@@ -291,10 +293,6 @@ public partial class MainWindow : Window
         bool reachSupported = IsModuleSupported("reach");
         bool velocitySupported = IsModuleSupported("velocity");
 
-        string available = "Available";
-        string unavailable = "Unavailable on current bridge";
-        string triggerbotUnavailable = GetUnavailableModuleReason("triggerbot");
-
         AimAssistCard.IsEnabled = aimAssistSupported;
         TriggerbotCard.IsEnabled = triggerbotSupported;
         GtbHelperCard.IsEnabled = gtbSupported;
@@ -308,13 +306,14 @@ public partial class MainWindow : Window
         if (!reachSupported && clicker.ReachEnabled) clicker.ReachEnabled = false;
         if (!velocitySupported && clicker.VelocityEnabled) clicker.VelocityEnabled = false;
 
-        AimAssistAvailabilityText.Text = aimAssistSupported ? available : unavailable;
-        TriggerbotAvailabilityText.Text = triggerbotSupported ? available : triggerbotUnavailable;
-        ReachAvailabilityText.Text = reachSupported ? available : unavailable;
-        VelocityAvailabilityText.Text = velocitySupported ? available : unavailable;
+        // Update availability text - only show unavailable message for Triggerbot (intentionally 1.21-only)
+        AimAssistAvailabilityText.Text = aimAssistSupported ? "Available" : "Unavailable on current bridge";
+        TriggerbotAvailabilityText.Text = triggerbotSupported ? "Available" : "Unavailable on 1.8.9 (cooldown-era PvP only)";
+        ReachAvailabilityText.Text = reachSupported ? "Available" : "Unavailable on current bridge";
+        VelocityAvailabilityText.Text = velocitySupported ? "Available" : "Unavailable on current bridge";
         GtbHelperAvailabilityText.Text = gtbSupported
             ? "Hypixel Guess The Build helper using action-bar hints."
-            : unavailable;
+            : "Unavailable on current bridge";
 
         KeybindAimAssistButton.IsEnabled = aimAssistSupported;
         KeybindTriggerbotButton.IsEnabled = triggerbotSupported;
@@ -552,6 +551,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        DiscordRichPresenceService.Instance.Stop();
+
         var profile = ProfileManager.CreateFromClicker();
         profile.Name = "config";
         ProfileManager.SaveProfile(profile);

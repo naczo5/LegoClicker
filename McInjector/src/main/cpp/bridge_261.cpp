@@ -6698,7 +6698,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             int drawnTags = -1;
 
             // ── Nametags: no JNI on render thread, all data from background-thread snapshots ──
-            if (cfg.nametags && sharedCamFound) {
+            if (!g_realGuiOpen && cfg.nametags && sharedCamFound) {
                 drawnTags = 0;
                 const int nametagRenderCap = (std::max)(1, (std::min)(20, cfg.nametagMaxCount));
 
@@ -6820,7 +6820,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             } // cfg.nametags
 
             // ── Chest ESP: draw bounding rect over each nearby chest ──
-            if (cfg.chestEsp && sharedCamFound) {
+            if (!g_realGuiOpen && cfg.chestEsp && sharedCamFound) {
                 LockGuard chestLk(g_chestListMutex); // protect g_chestList from background scan thread
                 // Use shared camera data (same source as nametags – no redundant JNI fetch)
                 const LegoVec3   espCam   = sharedCam;

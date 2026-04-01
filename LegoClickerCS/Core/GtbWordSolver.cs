@@ -226,13 +226,17 @@ public static class GtbWordSolver
         s = Regex.Replace(s, @"[^A-Za-z_ ]", " ");
         s = Regex.Replace(s, @"\s+", " ").Trim();
 
-        int firstUnderscore = s.IndexOf('_');
-        if (firstUnderscore > 0)
-            s = s[firstUnderscore..].Trim();
-
         string decoded = DecodeSpacedMaskIfNeeded(s);
         decoded = Regex.Replace(decoded, @"\s+", " ").Trim().ToLowerInvariant();
-        return decoded.Contains('_') ? decoded : null;
+        if (!decoded.Contains('_'))
+            return null;
+
+        Match maskMatch = Regex.Match(decoded, @"[a-z_]*_[a-z_]*(?: [a-z_]*_[a-z_]*)*");
+        if (!maskMatch.Success)
+            return null;
+
+        string mask = maskMatch.Value.Trim();
+        return mask.Contains('_') ? mask : null;
     }
 
     private static string TryExtractSolvedWordFromLine(string input)

@@ -15,6 +15,7 @@ public partial class App : Application
     
     protected override void OnExit(ExitEventArgs e)
     {
+        DiscordRichPresenceService.Instance.Stop();
         // Cleanup hooks
         InputHooks.Uninstall();
         Clicker.Instance.Stop();

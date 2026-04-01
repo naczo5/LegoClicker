@@ -113,6 +113,36 @@ public class Clicker : INotifyPropertyChanged
     private bool _showLogo = true;
     public bool ShowLogo { get => _showLogo; set { _showLogo = value; OnPropertyChanged(nameof(ShowLogo)); } }
 
+    private bool _discordRpcEnabled = true;
+    public bool DiscordRpcEnabled
+    {
+        get => _discordRpcEnabled;
+        set
+        {
+            if (_discordRpcEnabled != value)
+            {
+                _discordRpcEnabled = value;
+                OnPropertyChanged(nameof(DiscordRpcEnabled));
+                OnPropertyChanged(nameof(DiscordRpcStatusText));
+                StateChanged?.Invoke();
+            }
+        }
+    }
+
+    private string _discordRpcStatusText = "Ready";
+    public string DiscordRpcStatusText
+    {
+        get => _discordRpcStatusText;
+        internal set
+        {
+            if (_discordRpcStatusText != value)
+            {
+                _discordRpcStatusText = value;
+                OnPropertyChanged(nameof(DiscordRpcStatusText));
+            }
+        }
+    }
+
     public bool IsArmed
     {
         get => _isArmed;
@@ -1345,8 +1375,6 @@ public class Clicker : INotifyPropertyChanged
             return;
         }
         bool isLegacyBridge = GameStateClient.Instance.InjectedVersion.StartsWith("1.8", StringComparison.OrdinalIgnoreCase);
-
-        // 1.8.9 projection can become unreliable in edge/fallback scenarios; avoid ghost tracking.
         if (isLegacyBridge && !state.LookingAtEntity && !state.LookingAtEntityLatched)
             return;
 
@@ -1360,8 +1388,16 @@ public class Clicker : INotifyPropertyChanged
         double centerX = width * 0.5;
         double centerY = height * 0.5;
         double maxAngle = AimAssistFov * 0.5;
-        double legacyRadiusPx = Math.Max(28.0, Math.Min(width, height) * 0.12);
-        double legacyRadiusSq = legacyRadiusPx * legacyRadiusPx;
+        double legacyFocalLengthPx = 1.0;
+        if (isLegacyBridge)
+        {
+            double gameFov = state.Fov;
+            if (gameFov < 10.0 || gameFov > 170.0)
+                gameFov = 70.0;
+            legacyFocalLengthPx = height / (2.0 * Math.Tan((gameFov * Math.PI / 180.0) * 0.5));
+            if (legacyFocalLengthPx < 1.0)
+                legacyFocalLengthPx = 1.0;
+        }
         double bestScore = double.MaxValue;
         double bestDx = 0;
         double bestDy = 0;
@@ -1373,9 +1409,10 @@ public class Clicker : INotifyPropertyChanged
 
             double dx = entity.Sx - centerX;
             double dy = entity.Sy - centerY;
-            if (isLegacyBridge && (dx * dx + dy * dy) > legacyRadiusSq) continue;
             double radial = Math.Sqrt(dx * dx + dy * dy);
-            double angle = Math.Atan2(radial, centerX) * (180.0 / Math.PI);
+            double angle = isLegacyBridge
+                ? Math.Atan2(radial, legacyFocalLengthPx) * (180.0 / Math.PI)
+                : Math.Atan2(radial, centerX) * (180.0 / Math.PI);
             if (angle > maxAngle) continue;
 
             double score = dx * dx + dy * dy;

@@ -122,9 +122,13 @@
         <StackPanel x:Name="LoaderPanel" VerticalAlignment="Center">
             <TextBlock Text="Injection Control" Foreground="{DynamicResource TextBrush}"
                        FontSize="16" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center"/>
-            <TextBlock Text="Supported versions: 1.8.9 and 1.21.11 (auto-detected)"
-                       Foreground="{DynamicResource DimTextBrush}"
-                       FontSize="11" HorizontalAlignment="Center" Margin="0,0,0,10"/>
+            <TextBlock Text="Supported versions: 1.8.9, 1.21.x, and 26.1 (auto-detected)"
+                        Foreground="{DynamicResource DimTextBrush}"
+                        FontSize="11"
+                        HorizontalAlignment="Center"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap"
+                        Margin="0,0,0,10"/>
 
             <Button x:Name="InjectButton" Content="Inject" Height="35"
                     Style="{StaticResource DarkButton}" Click="InjectButton_Click"
@@ -148,7 +152,7 @@
                          Visibility="Collapsed"/>
         </StackPanel>
 
-        <!-- 1.21 control center (shown after connect) -->
+        <!-- Control center (shown after connect) -->
         <TabControl x:Name="ControlPanel"
                     Visibility="Collapsed"
                     TabStripPlacement="Left"
@@ -207,9 +211,10 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border x:Name="AimAssistCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
                             <StackPanel>
-                                <CheckBox Content="Aim Assist (1.21)" IsChecked="{Binding AimAssistEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <CheckBox Content="Aim Assist" IsChecked="{Binding AimAssistEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="AimAssistAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
 
                                 <DockPanel Margin="0,10,0,0" IsEnabled="{Binding AimAssistEnabled}">
                                     <TextBlock Text="FOV" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
@@ -237,9 +242,10 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+                        <Border x:Name="TriggerbotCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
                             <StackPanel>
-                                <CheckBox Content="Triggerbot (1.21)" IsChecked="{Binding TriggerbotEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <CheckBox Content="Triggerbot" IsChecked="{Binding TriggerbotEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="TriggerbotAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
 
                                 <DockPanel Margin="0,10,0,0" IsEnabled="{Binding TriggerbotEnabled}">
                                     <TextBlock Text="Cooldown Threshold (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
@@ -336,8 +342,29 @@
                     <StackPanel Margin="12,0,0,0">
                         <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
                             <StackPanel>
-                                <CheckBox Content="GTB Helper (1.21)" IsChecked="{Binding GtbHelperEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
-                                <TextBlock Text="Hypixel Guess The Build helper using action-bar hints." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
+                                <CheckBox Content="Discord Rich Presence" IsChecked="{Binding DiscordRpcEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock Text="Shows your current client version, armed/clicking state, and in-game status on Discord."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,10"/>
+                                <TextBlock Text="{Binding DiscordRpcStatusText}"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="The Discord activity includes a Repository button linking to this project."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,4,0,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="GtbHelperCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="GTB Helper" IsChecked="{Binding GtbHelperEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="GtbHelperAvailabilityText" Text="Hypixel Guess The Build helper using action-bar hints." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -369,9 +396,10 @@
             <TabItem Header="Risky">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12,0,0,0">
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                        <Border x:Name="ReachCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
                             <StackPanel>
-                                <TextBlock Text="Reach (1.21)" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock Text="Reach" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="ReachAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
                                 <CheckBox Content="Enable Reach" IsChecked="{Binding ReachEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
 
                                 <DockPanel Margin="0,10,0,0">
@@ -400,9 +428,10 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border x:Name="VelocityCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
                             <StackPanel>
-                                <TextBlock Text="Velocity (1.21)" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock Text="Velocity" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="VelocityAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
                                 <TextBlock Text="idk if you should use it outside of singleplayer"
                                            Foreground="{DynamicResource DimTextBrush}"
                                            FontSize="11"

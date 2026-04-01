@@ -14,6 +14,7 @@ LegoClicker is a Windows utility client for Lunar Client.
 - Triggerbot
 - Reach and Velocity controls
 - GTB Helper
+- Discord Rich Presence
 - Nametags, Closest Player panel, Chest ESP
 - Per-module keybinds
 - Profiles saved in `%AppData%\LegoClicker\profiles\`
@@ -71,6 +72,7 @@ Run from repository root unless noted.
 - `bridge_261.dll` is the modern bridge used for both 26.1 and 1.21 injection.
 - `bridge.dll` (1.8.9) is supported.
 - Supported runtime bridges are configured through the external GUI.
+- Discord Rich Presence is configured from the external GUI under the Utility tab.
 
 ## Project structure
 

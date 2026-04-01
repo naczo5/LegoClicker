@@ -12,6 +12,7 @@ public class Profile
     public string GuiTheme { get; set; } = "Default";
     public string ModuleListStyle { get; set; } = "Default";
     public bool ShowLogo { get; set; } = true;
+    public bool DiscordRpcEnabled { get; set; } = true;
     public bool IsArmed { get; set; } = false;
     public float MinCPS { get; set; } = 8.0f;
     public float MaxCPS { get; set; } = 12.0f;
@@ -155,6 +156,7 @@ public static class ProfileManager
             GuiTheme = clicker.GuiTheme,
             ModuleListStyle = clicker.ModuleListStyle,
             ShowLogo = clicker.ShowLogo,
+            DiscordRpcEnabled = clicker.DiscordRpcEnabled,
             
             RightClickEnabled = clicker.RightClickEnabled,
             RightMinCPS = clicker.RightMinCPS,
@@ -214,6 +216,7 @@ public static class ProfileManager
         if (profile.GuiTheme != null) clicker.GuiTheme = profile.GuiTheme;
         if (profile.ModuleListStyle != null) clicker.ModuleListStyle = profile.ModuleListStyle;
         clicker.ShowLogo = profile.ShowLogo;
+        clicker.DiscordRpcEnabled = profile.DiscordRpcEnabled;
         
         clicker.RightClickEnabled = profile.RightClickEnabled;
         clicker.RightMinCPS = profile.RightMinCPS;
