@@ -103,7 +103,6 @@ legoclickerC/
 - Bridge-side logic is intended to be read-only for game state.
 - Do not add direct packet sending or in-game combat method calls.
 
-## 1.8.9
+## Gameplay
 
-![Gameplay HUD](screenshots/gameplay.png)
-![Internal ClickGUI (1.8.9 path)](screenshots/clickgui.png)
+![Gameplay HUD](screenshots/javaw_IRuOvgo6iF.png)
