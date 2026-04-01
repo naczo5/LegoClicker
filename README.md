@@ -105,4 +105,4 @@ legoclickerC/
 
 ## Gameplay
 
-![Gameplay HUD](screenshots/javaw_IRuOvgo6iF.png)
+![Gameplay HUD](screenshots/gameplay.png)
