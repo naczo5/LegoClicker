@@ -79,6 +79,7 @@ public static class InputHooks
         ["chestesp"]      = 0,
         ["reach"]         = 0,
         ["velocity"]      = 0,
+        ["panic"]         = 0,
     };
 
     public static void SetModuleKey(string moduleId, int vk)
@@ -111,6 +112,12 @@ public static class InputHooks
 
     private static void ToggleModule(string moduleId)
     {
+        if (string.Equals(moduleId, "panic", StringComparison.OrdinalIgnoreCase))
+        {
+            Clicker.Instance.TriggerPanic();
+            return;
+        }
+
         if (!GameStateClient.Instance.SupportsModule(moduleId))
             return;
 
@@ -215,7 +222,8 @@ public static class InputHooks
             if (msg == WM_LBUTTONDOWN) IsPhysicalLeftButtonDown = true;
             else if (msg == WM_LBUTTONUP) IsPhysicalLeftButtonDown = false;
 
-            if (!Clicker.Instance.IsArmed)
+            bool isLeftClickMessage = msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP;
+            if (isLeftClickMessage && !Clicker.Instance.IsArmed)
                 return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
             
             if (msg == WM_LBUTTONDOWN)
@@ -225,8 +233,24 @@ public static class InputHooks
                     if (GameStateClient.Instance.IsConnected)
                     {
                         var state = GameStateClient.Instance.CurrentState;
-                        // 1.21: keep intent based on LookingAtBlock; the actual pause is gated by BreakingBlock/intent in Clicker.
-                        Clicker.Instance.IsMiningIntent = state.LookingAtBlock;
+                        bool chestGuiOpen =
+                            state.GuiOpen &&
+                            (state.ScreenName.Contains("GuiChest", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("ContainerScreen", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("class_481", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("GuiContainer", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("HopperScreen", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("class_488", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("ShulkerBox", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("class_495", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("HandledScreen", StringComparison.OrdinalIgnoreCase) ||
+                             state.ScreenName.Contains("class_465", StringComparison.OrdinalIgnoreCase));
+
+                        // In chest/container screens, a left click should not mark mining intent.
+                        if (chestGuiOpen && Clicker.Instance.ClickInChests)
+                            Clicker.Instance.IsMiningIntent = false;
+                        else
+                            Clicker.Instance.IsMiningIntent = state.LookingAtBlock;
                     }
                     else
                     {
@@ -254,8 +278,8 @@ public static class InputHooks
                     // Check if right-click-only-block is enabled
                     if (Clicker.Instance.RightClickOnlyBlock)
                     {
-                        // Only start clicking if player is holding a block
-                        if (!GameStateClient.Instance.IsConnected || !GameStateClient.Instance.CurrentState.HoldingBlock)
+                        // Fail-open when state is unavailable; only block if connected and confirmed not holding a block.
+                        if (GameStateClient.Instance.IsConnected && !GameStateClient.Instance.CurrentState.HoldingBlock)
                         {
                             // Don't start clicking - player isn't holding a block
                             return;

@@ -52,7 +52,8 @@ public partial class MainWindow : Window
         ["chestesp"] = "Chest ESP",
         ["closestplayer"] = "Closest Player",
         ["reach"] = "Reach",
-        ["velocity"] = "Velocity"
+        ["velocity"] = "Velocity",
+        ["panic"] = "Panic"
     };
 
     private static readonly Dictionary<string, GuiPalette> GuiPalettes = new(StringComparer.OrdinalIgnoreCase)
@@ -275,7 +276,8 @@ public partial class MainWindow : Window
     }
 
     private static bool IsModuleSupported(string moduleId)
-        => GameStateClient.Instance.SupportsModule(moduleId);
+        => string.Equals(moduleId, "panic", StringComparison.OrdinalIgnoreCase)
+            || GameStateClient.Instance.SupportsModule(moduleId);
 
     private static string GetUnavailableModuleReason(string moduleId)
     {
@@ -320,6 +322,7 @@ public partial class MainWindow : Window
         KeybindGtbHelperButton.IsEnabled = gtbSupported;
         KeybindReachButton.IsEnabled = reachSupported;
         KeybindVelocityButton.IsEnabled = velocitySupported;
+        KeybindPanicButton.IsEnabled = true;
     }
     
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -450,6 +453,26 @@ public partial class MainWindow : Window
         ProfileManager.SaveProfile(profile);
 
         Application.Current.Shutdown();
+    }
+
+    private void PanicButton_Click(object sender, RoutedEventArgs e)
+    {
+        Clicker.Instance.TriggerPanic();
+    }
+
+    internal void EnterPanicStealthMode()
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.Invoke(EnterPanicStealthMode);
+            return;
+        }
+
+        _pendingKeybindModuleId = null;
+        InputHooks.StopKeyCapture();
+        ShowInTaskbar = false;
+        WindowState = WindowState.Minimized;
+        Hide();
     }
     
     private async void InjectButton_Click(object sender, RoutedEventArgs e)
@@ -604,6 +627,7 @@ public partial class MainWindow : Window
         SetKeybindButtonContent(KeybindClosestPlayerButton, "closestplayer");
         SetKeybindButtonContent(KeybindReachButton, "reach");
         SetKeybindButtonContent(KeybindVelocityButton, "velocity");
+        SetKeybindButtonContent(KeybindPanicButton, "panic");
     }
 
     private void SetKeybindButtonContent(Button btn, string moduleId)

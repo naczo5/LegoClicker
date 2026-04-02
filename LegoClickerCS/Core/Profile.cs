@@ -72,6 +72,7 @@ public class Profile
         ["chestesp"]      = 0,
         ["reach"]         = 0,
         ["velocity"]      = 0,
+        ["panic"]         = 0,
     };
     public string Theme { get; set; } = "Dark";
 }
@@ -204,6 +205,10 @@ public static class ProfileManager
     public static void ApplyToClicker(Profile profile)
     {
         var clicker = Clicker.Instance;
+
+        // Panic can force-disable left click for stealth in-memory; never persist that lockout.
+        if (!profile.LeftClickEnabled)
+            profile.LeftClickEnabled = true;
 
         if (profile.IsArmed)
             clicker.Arm();

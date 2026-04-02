@@ -368,6 +368,26 @@
                             </StackPanel>
                         </Border>
 
+                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Panic" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
+                                <TextBlock Text="Immediately disables modules, hides UI/overlay settings, disconnects, and closes the loader. Best-effort only: this does not truly deinject while the game stays open."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,10"/>
+                                <Button Content="Trigger Panic Now"
+                                        Click="PanicButton_Click"
+                                        Style="{StaticResource DarkButton}"
+                                        Width="170"
+                                        Margin="0,0,0,10"/>
+                                <TextBlock Text="You can also bind Panic in Module Keybinds."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
                         <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
                             <StackPanel>
                                 <TextBlock Text="Module Keybinds" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
@@ -386,6 +406,7 @@
                                     <Button x:Name="KeybindClosestPlayerButton" Tag="closestplayer" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindReachButton" Tag="reach" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                     <Button x:Name="KeybindVelocityButton" Tag="velocity" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindPanicButton" Tag="panic" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>

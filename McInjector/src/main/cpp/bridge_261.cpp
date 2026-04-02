@@ -507,6 +507,15 @@ static float       g_jniAttackCooldown = 1.0f;
 static float       g_jniAttackCooldownPerTick = 0.08f;
 static unsigned long long g_jniStateMs = 0;
 static unsigned long long g_lastEntitySeenMs = 0;
+static bool        g_loggedCooldownProgressResolve = false;
+static bool        g_loggedCooldownPerTickResolve = false;
+static bool        g_loggedCooldownProgressMissing = false;
+static bool        g_loggedCooldownPerTickMissing = false;
+static bool        g_loggedCooldownPlayerFieldMissing = false;
+static bool        g_loggedCooldownPlayerObjectMissing = false;
+static unsigned long long g_lastCooldownProgressFallbackLogMs = 0;
+static unsigned long long g_lastCooldownPerTickFallbackLogMs = 0;
+static unsigned long long g_lastCooldownSampleLogMs = 0;
 static Mutex       g_jniStateMtx;
 static std::string g_lastLoggedScreen;
 static jfieldID    g_inGameHudField_121 = nullptr; // MinecraftClient.inGameHud
@@ -5461,18 +5470,35 @@ static void UpdateJniState() {
             if (!guiOpen && lmbDown && lookingAtBlock) breakingBlock = true;
         }
 
+        // Resolve and cache Minecraft.player field across known mappings.
+        auto ResolvePlayerField = [&]() -> jfieldID {
+            if (g_playerField_121) return g_playerField_121;
+            const char* playerNames[] = { "player", "field_1724", "f_91074_", nullptr };
+            const char* playerSigs[] = {
+                "Lnet/minecraft/client/player/LocalPlayer;",
+                "Lnet/minecraft/class_746;",
+                "Lnet/minecraft/world/entity/player/Player;",
+                nullptr
+            };
+            for (int ni = 0; playerNames[ni]; ni++) {
+                for (int si = 0; playerSigs[si]; si++) {
+                    jfieldID fid = env->GetFieldID(mcCls, playerNames[ni], playerSigs[si]);
+                    if (env->ExceptionCheck()) {
+                        env->ExceptionClear();
+                        fid = nullptr;
+                    }
+                    if (fid) {
+                        g_playerField_121 = fid;
+                        return fid;
+                    }
+                }
+            }
+            return nullptr;
+        };
+
         // ===== holdingBlock (main hand item is BlockItem) =====
         bool holdingBlock = false;
-        jfieldID plFld = env->GetFieldID(mcCls, "player", "Lnet/minecraft/client/player/LocalPlayer;");
-        if (env->ExceptionCheck()) { env->ExceptionClear(); plFld = nullptr; }
-        if (!plFld) {
-            plFld = env->GetFieldID(mcCls, "field_1724", "Lnet/minecraft/class_746;");
-            if (env->ExceptionCheck()) { env->ExceptionClear(); plFld = nullptr; }
-        }
-        if (!plFld) {
-            plFld = env->GetFieldID(mcCls, "field_1724", "Lnet/minecraft/client/player/LocalPlayer;");
-            if (env->ExceptionCheck()) { env->ExceptionClear(); plFld = nullptr; }
-        }
+        jfieldID plFld = ResolvePlayerField();
         if (plFld) {
             jobject plObj = env->GetObjectField(g_mcInstance, plFld);
             if (plObj && !env->ExceptionCheck()) {
@@ -5564,11 +5590,10 @@ static void UpdateJniState() {
         float attackCooldown = 1.0f;
         float attackCooldownPerTick = 0.08f;
         if (inWorld) {
-            jfieldID plFld2 = env->GetFieldID(mcCls, "field_1724", "Lnet/minecraft/class_746;");
-            if (env->ExceptionCheck()) { env->ExceptionClear(); plFld2 = nullptr; }
-            if (!plFld2) {
-                plFld2 = env->GetFieldID(mcCls, "field_1724", "Lnet/minecraft/client/player/LocalPlayer;");
-                if (env->ExceptionCheck()) { env->ExceptionClear(); plFld2 = nullptr; }
+            jfieldID plFld2 = ResolvePlayerField();
+            if (!plFld2 && !g_loggedCooldownPlayerFieldMissing) {
+                g_loggedCooldownPlayerFieldMissing = true;
+                Log("CooldownJNI: failed to resolve player field (player/field_1724/f_91074_); using cooldown defaults.");
             }
             if (plFld2) {
                 jobject plObj2 = env->GetObjectField(g_mcInstance, plFld2);
@@ -5578,10 +5603,18 @@ static void UpdateJniState() {
                         static jmethodID s_getAttackCooldownProgress = nullptr;
                         static jmethodID s_getAttackCooldownPerTick = nullptr;
                         if (!s_getAttackCooldownProgress) {
-                            const char* names[] = { "getAttackAnim", "getAttackCooldownProgress", "method_7261", nullptr };
+                            const char* names[] = { "getAttackStrengthScale", "getAttackCooldownProgress", "method_7261", nullptr };
                             for (int ni = 0; names[ni] && !s_getAttackCooldownProgress; ni++) {
                                 s_getAttackCooldownProgress = env->GetMethodID(plCls2, names[ni], "(F)F");
+                                if (s_getAttackCooldownProgress && !g_loggedCooldownProgressResolve) {
+                                    g_loggedCooldownProgressResolve = true;
+                                    Log(std::string("CooldownJNI: resolved progress method: ") + names[ni] + "(F)F");
+                                }
                                 if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownProgress = nullptr; }
+                            }
+                            if (!s_getAttackCooldownProgress && !g_loggedCooldownProgressMissing) {
+                                g_loggedCooldownProgressMissing = true;
+                                Log("CooldownJNI: failed to resolve progress method; progress will fallback to 1.0.");
                             }
                         }
 
@@ -5589,24 +5622,52 @@ static void UpdateJniState() {
                             const char* names[] = { "getCurrentItemAttackStrengthDelay", "getAttackCooldownProgressPerTick", "method_7279", nullptr };
                             for (int ni = 0; names[ni] && !s_getAttackCooldownPerTick; ni++) {
                                 s_getAttackCooldownPerTick = env->GetMethodID(plCls2, names[ni], "()F");
+                                if (s_getAttackCooldownPerTick && !g_loggedCooldownPerTickResolve) {
+                                    g_loggedCooldownPerTickResolve = true;
+                                    Log(std::string("CooldownJNI: resolved perTick method: ") + names[ni] + "()F");
+                                }
                                 if (env->ExceptionCheck()) { env->ExceptionClear(); s_getAttackCooldownPerTick = nullptr; }
+                            }
+                            if (!s_getAttackCooldownPerTick && !g_loggedCooldownPerTickMissing) {
+                                g_loggedCooldownPerTickMissing = true;
+                                Log("CooldownJNI: failed to resolve perTick method; perTick will fallback to 0.08.");
                             }
                         }
 
                         if (s_getAttackCooldownProgress) {
                             attackCooldown = env->CallFloatMethod(plObj2, s_getAttackCooldownProgress, 0.0f);
-                            if (env->ExceptionCheck()) { env->ExceptionClear(); attackCooldown = 1.0f; }
+                            if (env->ExceptionCheck()) {
+                                env->ExceptionClear();
+                                attackCooldown = 1.0f;
+                                if ((nowMs - g_lastCooldownProgressFallbackLogMs) > 5000ULL) {
+                                    g_lastCooldownProgressFallbackLogMs = nowMs;
+                                    Log("CooldownJNI: progress call threw; fallback to 1.0.");
+                                }
+                            }
                         }
 
                         if (s_getAttackCooldownPerTick) {
                             attackCooldownPerTick = env->CallFloatMethod(plObj2, s_getAttackCooldownPerTick);
-                            if (env->ExceptionCheck()) { env->ExceptionClear(); attackCooldownPerTick = 0.08f; }
+                            if (env->ExceptionCheck()) {
+                                env->ExceptionClear();
+                                attackCooldownPerTick = 0.08f;
+                                if ((nowMs - g_lastCooldownPerTickFallbackLogMs) > 5000ULL) {
+                                    g_lastCooldownPerTickFallbackLogMs = nowMs;
+                                    Log("CooldownJNI: perTick call threw; fallback to 0.08.");
+                                }
+                            }
                         }
 
                         env->DeleteLocalRef(plCls2);
                     }
                     env->DeleteLocalRef(plObj2);
-                } else env->ExceptionClear();
+                } else {
+                    env->ExceptionClear();
+                    if (!g_loggedCooldownPlayerObjectMissing) {
+                        g_loggedCooldownPlayerObjectMissing = true;
+                        Log("CooldownJNI: player object unavailable; using cooldown defaults.");
+                    }
+                }
             }
         }
 
@@ -5617,6 +5678,11 @@ static void UpdateJniState() {
         if (attackCooldownPerTick <= 0.0f) attackCooldownPerTick = 0.08f;
         // Keep values > 1.0f intact: some mappings return cooldown period in ticks
         // (e.g., sword ~= 12.5), and C# normalizes by inverting these values.
+        if (inWorld && (nowMs - g_lastCooldownSampleLogMs) > 5000ULL) {
+            g_lastCooldownSampleLogMs = nowMs;
+            Log("CooldownJNI sample: attackCooldown=" + std::to_string(attackCooldown)
+                + " perTick=" + std::to_string(attackCooldownPerTick));
+        }
 
         if (inWorld) {
             EnsureHudTextFields(env, mcCls, nullptr);

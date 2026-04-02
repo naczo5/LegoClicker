@@ -24,6 +24,8 @@ LegoClicker is a Windows utility client for Lunar Client.
 
 ![GUI Showcase GIF](screenshots/gui.gif)
 
+![Gameplay HUD](screenshots/gameplay.png)
+
 ## Requirements
 
 - Windows 10/11 x64
@@ -103,6 +105,8 @@ legoclickerC/
 - Bridge-side logic is intended to be read-only for game state.
 - Do not add direct packet sending or in-game combat method calls.
 
-## Gameplay
+## TODO
 
-![Gameplay HUD](screenshots/gameplay.png)
+- Fix: fov setting not working in 1.8.9
+
+

@@ -59,6 +59,7 @@ public class Clicker : INotifyPropertyChanged
     private Task? _triggerbotTask;
     private double _aimAssistFilteredDx;
     private double _aimAssistFilteredDy;
+    private int _panicInProgress;
     
     // Settings
     private float _minCPS = 8.0f;
@@ -326,9 +327,16 @@ public class Clicker : INotifyPropertyChanged
     
     public void StartClicking(bool leftButton)
     {
-        if (!IsArmed) return;
-        if (leftButton && !LeftClickEnabled) return;
-        if (!leftButton && !RightClickEnabled) return;
+        if (leftButton)
+        {
+            if (!IsArmed || !LeftClickEnabled) return;
+        }
+        else
+        {
+            // Right-click autoclick is intentionally independent from "Armed"
+            // so it can work when left autoclicker is disabled.
+            if (!RightClickEnabled) return;
+        }
         if (IsClicking) return;
         
         _useLeftButton = leftButton;
@@ -359,6 +367,67 @@ public class Clicker : INotifyPropertyChanged
         Disarm();
         StopAimAssistLoop();
         StopTriggerbotLoop();
+    }
+
+    public void TriggerPanic()
+    {
+        _ = TriggerPanicAsync();
+    }
+
+    public async Task TriggerPanicAsync()
+    {
+        if (System.Windows.Application.Current?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(TriggerPanic);
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _panicInProgress, 1) == 1)
+            return;
+
+        try
+        {
+            Disarm();
+            LeftClickEnabled = true;
+            RightClickEnabled = false;
+            JitterEnabled = false;
+            ClickInChests = false;
+            BreakBlocksEnabled = false;
+            IsMiningIntent = false;
+
+            AimAssistEnabled = false;
+            TriggerbotEnabled = false;
+            GtbHelperEnabled = false;
+            NametagsEnabled = false;
+            ClosestPlayerInfoEnabled = false;
+            ChestEspEnabled = false;
+            ReachEnabled = false;
+            VelocityEnabled = false;
+
+            ShowModuleList = false;
+            ShowLogo = false;
+            DiscordRpcEnabled = false;
+
+            if (System.Windows.Application.Current?.MainWindow is LegoClickerCS.MainWindow mainWindow)
+                mainWindow.EnterPanicStealthMode();
+
+            if (GameStateClient.Instance.IsConnected)
+                await Task.Delay(250).ConfigureAwait(false);
+
+            GameStateClient.Instance.Disconnect();
+
+            var app = System.Windows.Application.Current;
+            if (app != null)
+                app.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Panic] Unexpected panic error: {ex}");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _panicInProgress, 0);
+        }
     }
 
     private void StartAimAssistLoop()
@@ -1185,6 +1254,37 @@ public class Clicker : INotifyPropertyChanged
         return Math.Clamp(normalized, 0.025f, 0.25f);
     }
 
+    private static bool IsAlwaysBlockedGuiScreen(string screen)
+    {
+        return screen.Contains("GuiInventory", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("InventoryScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_490", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("GuiCrafting", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("CraftingScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_479", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("GuiFurnace", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("FurnaceScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_3871", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("AbstractFurnace", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("GuiRepair", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("AnvilScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_471", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsChestGuiScreen(string screen)
+    {
+        return screen.Contains("GuiChest", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("ContainerScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_481", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("GuiContainer", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("HopperScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_488", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("ShulkerBox", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_495", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("HandledScreen", StringComparison.OrdinalIgnoreCase) ||
+               screen.Contains("class_465", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task ClickLoop(CancellationToken token)
     {
         var stopwatch = new Stopwatch();
@@ -1204,20 +1304,8 @@ public class Clicker : INotifyPropertyChanged
                 if (state.GuiOpen)
                 {
                     string screen = state.ScreenName;
-                    
-                    // Always block in these specific GUIs (1.8.9 + 1.21 names + Fabric mappings)
-                    bool alwaysBlock = screen.Contains("GuiInventory")   || screen.Contains("InventoryScreen")  || screen.Contains("class_490") || // Inventory
-                                       screen.Contains("GuiCrafting")    || screen.Contains("CraftingScreen")   || screen.Contains("class_479") || // Crafting
-                                       screen.Contains("GuiFurnace")     || screen.Contains("FurnaceScreen")    || screen.Contains("class_3871") || // Furnace
-                                       screen.Contains("AbstractFurnace") ||
-                                       screen.Contains("GuiRepair")      || screen.Contains("AnvilScreen")      || screen.Contains("class_471");   // Anvil
-                                       
-                    // Conditionally block in Chests/Containers
-                    bool isChest = screen.Contains("GuiChest")     || screen.Contains("ContainerScreen") || screen.Contains("class_481") || // Chest/Generic container
-                                   screen.Contains("GuiContainer")  || screen.Contains("HopperScreen")    || screen.Contains("class_488") || // Hopper
-                                   screen.Contains("ShulkerBox")    || screen.Contains("class_495")       ||
-                                   // Generic fallback for any container screen in 1.21 if exact matches fail:
-                                   screen.Contains("HandledScreen") || screen.Contains("class_465");
+                    bool alwaysBlock = IsAlwaysBlockedGuiScreen(screen);
+                    bool isChest = IsChestGuiScreen(screen);
 
                     bool shouldBlock = false;
 
@@ -1263,13 +1351,8 @@ public class Clicker : INotifyPropertyChanged
             // Right Click Logic: "Only hold block" check
             if (!_useLeftButton && RightClickOnlyBlock)
             {
-                bool holdingBlock = false;
-                if (GameStateClient.Instance.IsConnected)
-                {
-                    holdingBlock = GameStateClient.Instance.CurrentState.HoldingBlock;
-                }
-                
-                if (!holdingBlock)
+                // Fail-open when state is unavailable; only pause when connected and confirmed not holding a block.
+                if (GameStateClient.Instance.IsConnected && !GameStateClient.Instance.CurrentState.HoldingBlock)
                 {
                     await Task.Delay(100, token).ConfigureAwait(false);
                     continue;
@@ -1282,8 +1365,18 @@ public class Clicker : INotifyPropertyChanged
                 if (GameStateClient.Instance.IsConnected)
                 {
                     var state = GameStateClient.Instance.CurrentState;
+                    bool allowChestClicks =
+                        state.GuiOpen &&
+                        WindowDetection.IsCursorVisible() &&
+                        ClickInChests &&
+                        IsChestGuiScreen(state.ScreenName);
 
-                    if (GameStateClient.Instance.SupportsStateField("breakingBlock"))
+                    if (allowChestClicks)
+                    {
+                        // Chest GUI clicks should never be treated as block-mining intent.
+                        IsMiningIntent = false;
+                    }
+                    else if (GameStateClient.Instance.SupportsStateField("breakingBlock"))
                     {
                         // Modern state payload: pause when we are actually breaking a block.
                         if (!state.LookingAtBlock)

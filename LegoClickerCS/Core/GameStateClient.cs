@@ -567,7 +567,8 @@ public class GameStateClient : INotifyPropertyChanged
         if (!string.IsNullOrEmpty(fromLunarSettings))
             return fromLunarSettings;
 
-        return "1.21";
+        // Preserve legacy behavior as safer fallback when auto-detection is inconclusive.
+        return "1.8.9";
     }
 
     private static string? TryResolveVersionFromLunarSettings()
@@ -575,22 +576,12 @@ public class GameStateClient : INotifyPropertyChanged
         try
         {
             string lunarRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".lunarclient");
-            string launcherPath = Path.Combine(lunarRoot, "settings", "launcher.json");
-            if (File.Exists(launcherPath))
-            {
-                JsonNode? launcher = JsonNode.Parse(File.ReadAllText(launcherPath));
-                string? gameProfile = launcher?["settings"]?["gameProfile"]?.GetValue<string>();
-                string? fromProfile = ResolveVersionFromGameProfile(lunarRoot, gameProfile);
-                if (!string.IsNullOrEmpty(fromProfile))
-                    return fromProfile;
-            }
-
             string cachePath = Path.Combine(lunarRoot, "settings", "cache.json");
             if (File.Exists(cachePath))
             {
                 JsonNode? cache = JsonNode.Parse(File.ReadAllText(cachePath));
-                JsonArray? history = cache?["profileSelectHistory"]?["lunar"] as JsonArray;
-                if (history != null)
+                JsonNode? historyNode = cache?["profileSelectHistory"]?["lunar"];
+                if (historyNode is JsonArray history)
                 {
                     foreach (JsonNode? entry in history)
                     {
@@ -600,6 +591,16 @@ public class GameStateClient : INotifyPropertyChanged
                             return normalized;
                     }
                 }
+            }
+
+            string launcherPath = Path.Combine(lunarRoot, "settings", "launcher.json");
+            if (File.Exists(launcherPath))
+            {
+                JsonNode? launcher = JsonNode.Parse(File.ReadAllText(launcherPath));
+                string? gameProfile = launcher?["settings"]?["gameProfile"]?.GetValue<string>();
+                string? fromProfile = ResolveVersionFromGameProfile(lunarRoot, gameProfile);
+                if (!string.IsNullOrEmpty(fromProfile))
+                    return fromProfile;
             }
         }
         catch
