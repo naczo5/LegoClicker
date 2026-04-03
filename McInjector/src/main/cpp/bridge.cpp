@@ -3312,6 +3312,17 @@ std::string RelativeDirectionText(float localYawDeg, double toX, double toZ) {
     return delta < 0.0f ? "Left" : "Right";
 }
 
+static bool IsChatScreenName(const std::string& screenName) {
+    if (screenName.empty()) return false;
+    return screenName.find("GuiChat") != std::string::npos
+        || screenName.find("ChatScreen") != std::string::npos
+        || screenName.find("class_408") != std::string::npos;
+}
+
+static bool ShouldHideWorldRenderModules(const GameState& state) {
+    return state.guiOpen && !IsChatScreenName(state.screenName);
+}
+
 // ===================== HUD RENDERING =====================
 void RenderHUD(int winW, int winH) {
     if (g_guiOpen) return; // hide HUD when config is open
@@ -3320,13 +3331,7 @@ void RenderHUD(int winW, int winH) {
 
     GameState state;
     { LockGuard lk(g_stateMutex); state = g_gameState; }
-    bool isChatScreen = false;
-    if (!state.screenName.empty()) {
-        isChatScreen = state.screenName.find("GuiChat") != std::string::npos
-            || state.screenName.find("ChatScreen") != std::string::npos
-            || state.screenName.find("class_408") != std::string::npos;
-    }
-    if (state.guiOpen && !isChatScreen) {
+    if (ShouldHideWorldRenderModules(state)) {
         return;
     }
 
@@ -5221,7 +5226,9 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
             glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
             RenderHUD(w, h);
-            {
+            GameState state;
+            { LockGuard lk(g_stateMutex); state = g_gameState; }
+            if (!ShouldHideWorldRenderModules(state)) {
                 LockGuard jniLk(g_jniMutex);
                 RenderNametags(w, h);
                 RenderClosestPlayerInfo(w, h);

@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#b28cff" />
 
   <link rel="canonical" href="https://naczo5.github.io/LegoClicker/" />
-
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="LegoClicker" />
   <meta property="og:title" content="LegoClicker — Minecraft Utility Client" />
@@ -23,12 +23,9 @@
   <meta name="twitter:image" content="https://naczo5.github.io/LegoClicker/screenshots/gameplay.png" />
   <title>LegoClicker — Minecraft Utility Client</title>
   <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-
-  <!-- Matrix canvas background -->
-  <canvas id="matrix"></canvas>
 
   <!-- NAV -->
   <nav>
@@ -38,7 +35,7 @@
         <li><a href="#features">Features</a></li>
         <li><a href="#status">Status</a></li>
         <li><a href="#setup">Setup</a></li>
-        <li><a href="#download" class="nav-dl">Download</a></li>
+        <li><a href="https://github.com/naczo5/LegoClicker/releases" class="nav-dl">Download</a></li>
       </ul>
     </div>
   </nav>
@@ -48,9 +45,9 @@
     <div class="hero-content">
       <div class="badge">SUPPORTED: LUNAR CLIENT 1.8.9, 1.21.x, AND 26.1</div>
       <h1>LEGO<span class="accent">CLICKER</span></h1>
-      <p class="tagline">External control center for all supported versions.<br>Built for Lunar Client 1.8.9, 1.21.x, and 26.1.</p>
+      <p class="tagline">A vibrant external control center for Lunar Client.<br>Built for 1.8.9, 1.21.x, and 26.1.</p>
       <div class="hero-btns">
-        <a href="#download" class="btn-primary">GET CLIENT</a>
+        <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary">GET RELEASES</a>
         <a href="#features" class="btn-ghost">VIEW FEATURES</a>
       </div>
       <div class="hero-stats">
@@ -61,18 +58,17 @@
         <div class="stat"><span class="stat-num">26.1</span><span class="stat-label">SUPPORTED</span></div>
       </div>
     </div>
-    <div class="hero-art">
-      <div class="art-ring ring1"></div>
-      <div class="art-ring ring2"></div>
-      <div class="art-ring ring3"></div>
-      <div class="art-icon">☠</div>
+    <div class="hero-preview">
+      <div class="preview-shell">
+        <img src="screenshots/121_gui.png" alt="LegoClicker control center preview" loading="eager" />
+      </div>
     </div>
   </section>
 
   <!-- FEATURES -->
   <section id="features" class="section">
     <div class="section-header">
-      <span class="section-tag">// MODULES</span>
+      <span class="section-tag">MODULES</span>
       <h2>Features</h2>
       <p>Current modules and controls</p>
     </div>
@@ -157,7 +153,7 @@
   <!-- SCREENSHOTS -->
   <section class="section">
     <div class="section-header">
-      <span class="section-tag">// PREVIEW</span>
+      <span class="section-tag">PREVIEW</span>
       <h2>Screenshots</h2>
       <p>Current gameplay and GUI previews</p>
     </div>
@@ -176,7 +172,7 @@
   <!-- STATUS -->
   <section id="status" class="section alt-section">
     <div class="section-header">
-      <span class="section-tag">// STATUS</span>
+      <span class="section-tag">STATUS</span>
       <h2>Support Status</h2>
       <p>last checked: <span id="status-date"></span></p>
     </div>
@@ -203,7 +199,7 @@
   <!-- HOW IT WORKS -->
   <section class="section">
     <div class="section-header">
-      <span class="section-tag">// ARCHITECTURE</span>
+      <span class="section-tag">ARCHITECTURE</span>
       <h2>How it works</h2>
       <p>Loader and bridge overview</p>
     </div>
@@ -231,7 +227,7 @@
   <!-- SETUP -->
   <section id="setup" class="section alt-section">
     <div class="section-header">
-      <span class="section-tag">// SETUP</span>
+      <span class="section-tag">SETUP</span>
       <h2>Requirements &amp; Setup</h2>
     </div>
     <div class="setup-cols">
@@ -265,7 +261,7 @@
   <!-- DOWNLOAD -->
   <section id="download" class="section download-section">
     <div class="section-header">
-      <span class="section-tag">// DOWNLOAD</span>
+      <span class="section-tag">DOWNLOAD</span>
       <h2>Get LegoClicker</h2>
       <p>Open source build for Windows x64.</p>
     </div>
@@ -277,7 +273,7 @@
         <div class="dl-row"><span>License</span><span class="dl-val">Open Source</span></div>
       </div>
       <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary btn-lg" id="github-link">
-        VIEW ON GITHUB
+        OPEN LATEST RELEASES
       </a>
       <p class="dl-note">Build from source using the commands in README.</p>
     </div>

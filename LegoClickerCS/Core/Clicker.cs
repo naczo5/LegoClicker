@@ -1468,8 +1468,6 @@ public class Clicker : INotifyPropertyChanged
             return;
         }
         bool isLegacyBridge = GameStateClient.Instance.InjectedVersion.StartsWith("1.8", StringComparison.OrdinalIgnoreCase);
-        if (isLegacyBridge && !state.LookingAtEntity && !state.LookingAtEntityLatched)
-            return;
 
         var rect = WindowDetection.GetMinecraftWindowRect();
         if (!rect.HasValue) return;

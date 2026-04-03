@@ -19,6 +19,11 @@
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#AA000000" BlurRadius="14" ShadowDepth="2" Opacity="0.36"/>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -32,7 +37,13 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="card" Property="Background" Value="{DynamicResource PanelBrush}"/>
                                 <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="{DynamicResource AccentColor}" BlurRadius="22" ShadowDepth="0" Opacity="0.26"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="card" Property="Opacity" Value="0.9"/>
@@ -43,24 +54,57 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ControlCardStyle" TargetType="Border">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="{DynamicResource PanelColor}" Offset="0"/>
+                        <GradientStop Color="{DynamicResource SliderBgColor}" Offset="1"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SliderFgBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#CC000000" BlurRadius="20" ShadowDepth="3" Opacity="0.46"/>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="{DynamicResource AccentColor}" BlurRadius="24" ShadowDepth="0" Opacity="0.25"/>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="ControlCenterTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="{DynamicResource DimTextBrush}"/>
-            <Setter Property="Padding" Value="18,16"/>
+            <Setter Property="Padding" Value="14,10"/>
             <Setter Property="Margin" Value="0"/>
-            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="Width" Value="150"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
                         <Border x:Name="tabBorder"
                                 Background="{DynamicResource SliderBgBrush}"
+                                BorderBrush="{DynamicResource SliderFgBrush}"
+                                BorderThickness="1"
                                 CornerRadius="8"
                                 Padding="{TemplateBinding Padding}"
-                                Margin="0,0,0,10"
-                                MinHeight="68">
+                                Margin="0,0,0,8"
+                                MinHeight="50">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
                                               ContentSource="Header"/>
@@ -68,10 +112,17 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabHoverBrush}"/>
+                                <Setter TargetName="tabBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabSelectedBrush}"/>
+                                <Setter TargetName="tabBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter TargetName="tabBorder" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="{DynamicResource AccentColor}" BlurRadius="18" ShadowDepth="0" Opacity="0.24"/>
+                                    </Setter.Value>
+                                </Setter>
                                 <Setter Property="Foreground" Value="White"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -86,24 +137,25 @@
                     <ControlTemplate TargetType="TabControl">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="210"/>
-                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="176"/>
+                                <ColumnDefinition Width="10"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
                             <Border Grid.Column="0"
                                     Background="{DynamicResource PanelBrush}"
+                                    BorderBrush="{DynamicResource SliderBgBrush}"
+                                    BorderThickness="1"
                                     CornerRadius="12"
-                                    Padding="8">
-                                <UniformGrid IsItemsHost="True"
-                                             Columns="1"
-                                             KeyboardNavigation.TabIndex="1"
-                                             VerticalAlignment="Stretch"/>
+                                    Padding="7,10,7,8">
+                                <StackPanel IsItemsHost="True"
+                                            KeyboardNavigation.TabIndex="1"
+                                            VerticalAlignment="Top"/>
                             </Border>
 
                             <Border Grid.Column="2"
                                     Background="{DynamicResource BgBrush}"
-                                    BorderBrush="{DynamicResource PanelBrush}"
+                                    BorderBrush="{DynamicResource SliderBgBrush}"
                                     BorderThickness="1"
                                     CornerRadius="12">
                                 <ContentPresenter x:Name="PART_SelectedContentHost"
@@ -163,9 +215,9 @@
                     Padding="0"
                     Margin="0">
             <TabItem Header="Combat">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,0,0,0">
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox Content="AutoClicker" IsChecked="{Binding IsArmed, Mode=OneWay}" Style="{StaticResource ModuleSwitch}" Click="ToggleArmed_Click"/>
                                 <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource AccentBrush}" FontSize="12" Margin="0,4,0,10" />
@@ -190,7 +242,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="Right Click" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" />
                                 <CheckBox Content="Enable Right Click" IsChecked="{Binding RightClickEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}" Margin="0,8,0,10"/>
@@ -211,7 +263,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border x:Name="AimAssistCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border x:Name="AimAssistCard" Style="{StaticResource ControlCardStyle}">
                             <StackPanel>
                                 <CheckBox Content="Aim Assist" IsChecked="{Binding AimAssistEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock x:Name="AimAssistAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
@@ -242,7 +294,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border x:Name="TriggerbotCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+                        <Border x:Name="TriggerbotCard" Style="{StaticResource ControlCardStyle}" Margin="0,12,0,0">
                             <StackPanel>
                                 <CheckBox Content="Triggerbot" IsChecked="{Binding TriggerbotEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock x:Name="TriggerbotAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
@@ -287,9 +339,9 @@
             </TabItem>
 
             <TabItem Header="Render">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,0,0,0">
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox Content="Nametags" IsChecked="{Binding NametagsEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <WrapPanel Margin="0,10,0,0" IsEnabled="{Binding NametagsEnabled}">
@@ -307,7 +359,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox Content="Chest ESP" IsChecked="{Binding ChestEspEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <DockPanel Margin="0,10,0,0" IsEnabled="{Binding ChestEspEnabled}">
@@ -320,14 +372,14 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border Style="{StaticResource ControlCardStyle}">
                             <StackPanel>
                                 <CheckBox Content="Closest Player" IsChecked="{Binding ClosestPlayerInfoEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock Text="Includes 4-way direction arrow (^, v, &lt;, &gt;)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,12,0,0">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,12,0,0">
                             <StackPanel>
                                 <CheckBox Content="Show module list (top-right)" IsChecked="{Binding ShowModuleList, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock Text="Shows/hides the active modules overlay list in-game." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
@@ -338,9 +390,9 @@
             </TabItem>
 
             <TabItem Header="Utility">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,0,0,0">
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox Content="Discord Rich Presence" IsChecked="{Binding DiscordRpcEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock Text="Shows your current client version, armed/clicking state, and in-game status on Discord."
@@ -361,14 +413,14 @@
                             </StackPanel>
                         </Border>
 
-                        <Border x:Name="GtbHelperCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                        <Border x:Name="GtbHelperCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <CheckBox Content="GTB Helper" IsChecked="{Binding GtbHelperEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
                                 <TextBlock x:Name="GtbHelperAvailabilityText" Text="Hypixel Guess The Build helper using action-bar hints." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="Panic" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
                                 <TextBlock Text="Immediately disables modules, hides UI/overlay settings, disconnects, and closes the loader. Best-effort only: this does not truly deinject while the game stays open."
@@ -388,7 +440,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border Style="{StaticResource ControlCardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Module Keybinds" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
                                 <TextBlock Text="Click a button, then press a key (Esc = unbind)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,4,0,10"/>
@@ -415,9 +467,9 @@
             </TabItem>
 
             <TabItem Header="Risky">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,0,0,0">
-                        <Border x:Name="ReachCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border x:Name="ReachCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="Reach" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
                                 <TextBlock x:Name="ReachAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
@@ -449,7 +501,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border x:Name="VelocityCard" Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12">
+                        <Border x:Name="VelocityCard" Style="{StaticResource ControlCardStyle}">
                             <StackPanel>
                                 <TextBlock Text="Velocity" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
                                 <TextBlock x:Name="VelocityAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
@@ -489,9 +541,9 @@
             </TabItem>
         
             <TabItem Header="Customization">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,0,0,0">
-                        <Border Background="{DynamicResource PanelBrush}" CornerRadius="12" Padding="12" Margin="0,0,0,12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="GUI Customization" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
                                 

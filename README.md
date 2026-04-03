@@ -48,6 +48,8 @@ Add this to Lunar Client custom JVM arguments:
 3. Click **Inject**.
 4. Use the external GUI.
 
+_If you are playing on 1.8.9, it is recommended to inject while in a world/server, to ensure all features work correctly_
+
 ## Build
 
 Run from repository root unless noted.
@@ -107,6 +109,4 @@ legoclickerC/
 
 ## TODO
 
-- Fix: fov setting not working in 1.8.9
-
-
+- Bug: Block only check doesn't work if injected in menu (1.8.9)

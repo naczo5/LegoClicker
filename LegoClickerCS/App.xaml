@@ -239,12 +239,19 @@
 
         <!-- Global dark ScrollBar style (used by ScrollViewer in control center) -->
         <Style TargetType="ScrollBar">
-            <Setter Property="Width" Value="10"/>
+            <Setter Property="Width" Value="4"/>
+            <Setter Property="MinWidth" Value="4"/>
             <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Margin" Value="0,2,0,2"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
                         <Grid>
+                            <Border Width="2"
+                                    HorizontalAlignment="Center"
+                                    CornerRadius="2"
+                                    Background="{DynamicResource SliderBgBrush}"
+                                    Opacity="0.45"/>
                             <Track x:Name="PART_Track" IsDirectionReversed="True">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="ScrollBar.LineUpCommand" Opacity="0"/>
@@ -256,9 +263,15 @@
                                     <Thumb>
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border CornerRadius="4"
-                                                        Background="{DynamicResource SliderFgBrush}"
-                                                        Opacity="0.75"/>
+                                                <Border Width="4"
+                                                        HorizontalAlignment="Center"
+                                                        CornerRadius="2"
+                                                        Background="{DynamicResource AccentBrush}"
+                                                        Opacity="0.92">
+                                                    <Border.Effect>
+                                                        <DropShadowEffect Color="{DynamicResource AccentColor}" BlurRadius="8" ShadowDepth="0" Opacity="0.35"/>
+                                                    </Border.Effect>
+                                                </Border>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -267,7 +280,8 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="PART_Track" Property="Opacity" Value="1"/>
+                                <Setter Property="Width" Value="5"/>
+                                <Setter Property="Opacity" Value="1"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
