@@ -37,8 +37,9 @@ CRASH_LOG_LOCATIONS.md
 !/McInjector/build_121.bat
 *.md
 !README.md
-!PORT_121_TO_189_PROGRESS.md
+!GUIDE.md
 /LegoClicker_Release
+/archive
 
 # ── OS ───────────────────────────────────────────────────────────
 Thumbs.db

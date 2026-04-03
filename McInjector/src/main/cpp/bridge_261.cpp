@@ -1436,10 +1436,110 @@ static jmethodID FindZeroArgMethodReturningClass(JNIEnv* env, jclass owner, jcla
 
 static jclass g_chestBlockEntityClasses[4] = { nullptr, nullptr, nullptr, nullptr };
 
+static bool IsChestLikeToken(const std::string& valueLower) {
+    return valueLower.find("chest") != std::string::npos
+        || valueLower.find("barrel") != std::string::npos
+        || valueLower.find("shulker") != std::string::npos;
+}
+
+static void EnsureChestStateDetectionCaches(JNIEnv* env, jobject be) {
+    if (!env) return;
+
+    if (!g_blockStateClass_121) {
+        const char* stateNames[] = {
+            "net.minecraft.class_2680",
+            "net.minecraft.world.level.block.state.BlockState",
+            "net.minecraft.block.BlockState",
+            nullptr
+        };
+        for (int i = 0; stateNames[i] && !g_blockStateClass_121; i++) {
+            jclass c = nullptr;
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, stateNames[i]);
+            if (!c) {
+                std::string alt = stateNames[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+            if (c) { g_blockStateClass_121 = (jclass)env->NewGlobalRef(c); env->DeleteLocalRef(c); }
+        }
+    }
+    if (!g_blockClass_121) {
+        const char* blockNames[] = {
+            "net.minecraft.class_2248",
+            "net.minecraft.world.level.block.Block",
+            "net.minecraft.block.Block",
+            nullptr
+        };
+        for (int i = 0; blockNames[i] && !g_blockClass_121; i++) {
+            jclass c = nullptr;
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, blockNames[i]);
+            if (!c) {
+                std::string alt = blockNames[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+            if (c) { g_blockClass_121 = (jclass)env->NewGlobalRef(c); env->DeleteLocalRef(c); }
+        }
+    }
+
+    if (be && !g_beGetCachedState_121) {
+        jclass beCls = env->GetObjectClass(be);
+        if (beCls) {
+            const char* names[] = { "getCachedState", "method_11010", nullptr };
+            const char* sigs[] = {
+                "()Lnet/minecraft/class_2680;",
+                "()Lnet/minecraft/world/level/block/state/BlockState;",
+                "()Lnet/minecraft/block/BlockState;",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_beGetCachedState_121; ni++) {
+                for (int si = 0; sigs[si] && !g_beGetCachedState_121; si++) {
+                    g_beGetCachedState_121 = env->GetMethodID(beCls, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_beGetCachedState_121 = nullptr; }
+                }
+            }
+            if (!g_beGetCachedState_121 && g_blockStateClass_121) {
+                g_beGetCachedState_121 = FindZeroArgMethodReturningClass(env, beCls, g_blockStateClass_121, nullptr, nullptr, "()Ljava/lang/Object;");
+            }
+            env->DeleteLocalRef(beCls);
+        }
+    }
+
+    if (!g_stateGetBlock_121 && g_blockStateClass_121) {
+        const char* names[] = { "getBlock", "method_26204", nullptr };
+        const char* sigs[] = {
+            "()Lnet/minecraft/class_2248;",
+            "()Lnet/minecraft/world/level/block/Block;",
+            "()Lnet/minecraft/block/Block;",
+            nullptr
+        };
+        for (int ni = 0; names[ni] && !g_stateGetBlock_121; ni++) {
+            for (int si = 0; sigs[si] && !g_stateGetBlock_121; si++) {
+                g_stateGetBlock_121 = env->GetMethodID(g_blockStateClass_121, names[ni], sigs[si]);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_stateGetBlock_121 = nullptr; }
+            }
+        }
+        if (!g_stateGetBlock_121 && g_blockClass_121) {
+            g_stateGetBlock_121 = FindZeroArgMethodReturningClass(env, g_blockStateClass_121, g_blockClass_121, nullptr, nullptr, "()Ljava/lang/Object;");
+        }
+    }
+
+    if (!g_blockGetTranslationKey_121 && g_blockClass_121) {
+        const char* names[] = { "getTranslationKey", "getDescriptionId", "method_9518", nullptr };
+        for (int i = 0; names[i] && !g_blockGetTranslationKey_121; i++) {
+            g_blockGetTranslationKey_121 = env->GetMethodID(g_blockClass_121, names[i], "()Ljava/lang/String;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_blockGetTranslationKey_121 = nullptr; }
+        }
+    }
+}
+
 static bool IsChestBlockEntity(JNIEnv* env, jobject be) {
     if (!env || !be) return false;
     
     static bool init = false;
+    static bool s_initLogged = false;
     if (!init) {
         init = true;
         const char* yarn[] = { "net.minecraft.class_2595", "net.minecraft.class_2611", "net.minecraft.class_3719", "net.minecraft.class_2627" };
@@ -1461,11 +1561,66 @@ static bool IsChestBlockEntity(JNIEnv* env, jobject be) {
             }
             if (c) { g_chestBlockEntityClasses[i] = (jclass)env->NewGlobalRef(c); env->DeleteLocalRef(c); }
         }
+        Log("IsChestBlockEntity init: classes loaded = " + std::to_string(g_chestBlockEntityClasses[0] ? 1 : 0) + "," + std::to_string(g_chestBlockEntityClasses[1] ? 1 : 0) + "," + std::to_string(g_chestBlockEntityClasses[2] ? 1 : 0) + "," + std::to_string(g_chestBlockEntityClasses[3] ? 1 : 0));
+    }
+
+    // Diagnostic: log BE class name on first call
+    if (!s_initLogged) {
+        s_initLogged = true;
+        jclass beCls = env->GetObjectClass(be);
+        std::string beClsName = beCls ? GetClassNameFromClass(env, beCls) : "null";
+        if (beCls) env->DeleteLocalRef(beCls);
+        Log("IsChestBlockEntity first BE class: " + beClsName);
     }
     
     for (int i = 0; i < 4; i++) {
         if (g_chestBlockEntityClasses[i] && env->IsInstanceOf(be, g_chestBlockEntityClasses[i])) return true;
     }
+
+    // Fallback: detect chest-like block entities via BlockState -> Block translation key/class name.
+    // This keeps Chest ESP resilient when class IDs shift across client remaps.
+    EnsureChestStateDetectionCaches(env, be);
+    if (g_beGetCachedState_121 && g_stateGetBlock_121) {
+        jobject stateObj = env->CallObjectMethod(be, g_beGetCachedState_121);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); stateObj = nullptr; }
+        if (stateObj) {
+            jobject blockObj = env->CallObjectMethod(stateObj, g_stateGetBlock_121);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); blockObj = nullptr; }
+            if (blockObj) {
+                bool matched = false;
+
+                if (g_blockGetTranslationKey_121) {
+                    jstring jKey = (jstring)env->CallObjectMethod(blockObj, g_blockGetTranslationKey_121);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); jKey = nullptr; }
+                    if (jKey) {
+                        const char* cKey = env->GetStringUTFChars(jKey, nullptr);
+                        std::string key = cKey ? cKey : "";
+                        if (cKey) env->ReleaseStringUTFChars(jKey, cKey);
+                        env->DeleteLocalRef(jKey);
+                        matched = IsChestLikeToken(ToLowerAscii(key));
+                    }
+                }
+
+                if (!matched) {
+                    jclass blkCls = env->GetObjectClass(blockObj);
+                    if (!env->ExceptionCheck() && blkCls) {
+                        std::string clsName = GetClassNameFromClass(env, blkCls);
+                        matched = IsChestLikeToken(ToLowerAscii(clsName));
+                        env->DeleteLocalRef(blkCls);
+                    } else {
+                        env->ExceptionClear();
+                    }
+                }
+
+                env->DeleteLocalRef(blockObj);
+                env->DeleteLocalRef(stateObj);
+                if (matched) return true;
+            } else {
+                env->DeleteLocalRef(stateObj);
+            }
+        }
+    }
+
     return false;
 }
 
@@ -2954,17 +3109,32 @@ static void UpdateChestList(JNIEnv* env) {
     g_lastChestScanMs = now;
     std::vector<ChestData121> localList;
 
-    if (!g_mcInstance || !g_worldField_121 || !g_playerField_121) return;
+    // Diagnostic: log entry every 5 seconds
+    static DWORD s_chestEntryLogMs = 0;
+    bool entryLog = (now - s_chestEntryLogMs > 5000);
+    if (entryLog) s_chestEntryLogMs = now;
+
+    if (!g_mcInstance || !g_worldField_121 || !g_playerField_121) {
+        if (entryLog) Log("ChestESP: precondition fail mc=" + std::to_string((long long)g_mcInstance) + " world=" + std::to_string((long long)g_worldField_121) + " player=" + std::to_string((long long)g_playerField_121));
+        return;
+    }
     jobject worldObj = env->GetObjectField(g_mcInstance, g_worldField_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); worldObj = nullptr; }
-    if (!worldObj) return;
+    if (!worldObj) {
+        if (entryLog) Log("ChestESP: worldObj is null");
+        return;
+    }
 
     // Player position — use bg cam state (already read this iteration; no extra JNI)
     double sx = 0, sy = 0, sz = 0;
     { LockGuard lk(g_bgCamMutex); sx = g_bgCamState.camX; sy = g_bgCamState.camY; sz = g_bgCamState.camZ; }
 
     EnsureBlockEntityClass(env);
-    if (!EnsureChunkAccess(env, worldObj)) { env->DeleteLocalRef(worldObj); return; }
+    if (!EnsureChunkAccess(env, worldObj)) {
+        if (entryLog) Log("ChestESP: EnsureChunkAccess failed");
+        env->DeleteLocalRef(worldObj);
+        return;
+    }
 
     // Ensure direct HashMap field access (eliminates Call*Method for BE iteration)
     EnsureHashMapDirectFields(env);
@@ -2981,6 +3151,8 @@ static void UpdateChestList(JNIEnv* env) {
     bool sawHashMap = false;
     bool usedDirectPath = false;
     bool usedFallbackPath = false;
+    int chunksScanned = 0;
+    int chunksWithBEMap = 0;
 
     for (int dx = -RANGE; dx <= RANGE; dx++) {
         for (int dz = -RANGE; dz <= RANGE; dz++) {
@@ -2989,6 +3161,7 @@ static void UpdateChestList(JNIEnv* env) {
             jobject chunkObj = env->CallObjectMethod(worldObj, g_worldGetChunkMethod_121, pcx + dx, pcz + dz);
             if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
             if (!chunkObj) continue;
+            chunksScanned++;
 
             if (!g_chunkBlockEntitiesMapField_121)
                 EnsureChunkBEMap(env, chunkObj);
@@ -2997,6 +3170,7 @@ static void UpdateChestList(JNIEnv* env) {
                 jobject mapObj = env->GetObjectField(chunkObj, g_chunkBlockEntitiesMapField_121);
                 if (env->ExceptionCheck()) { env->ExceptionClear(); mapObj = nullptr; }
                 if (mapObj) {
+                    chunksWithBEMap++;
                     if (!loggedMapDiag) {
                         loggedMapDiag = true;
                         Log("ChestESP: blockEntities map found on chunk.");
@@ -3189,7 +3363,7 @@ static void UpdateChestList(JNIEnv* env) {
         }
     }
 
-    if (shouldLog) { lastLogMs = now; Log("UpdateChestList: found " + std::to_string(totalChests) + " chests, listed=" + std::to_string(localList.size()) + ", scanned " + std::to_string(totalBEsScanned) + " BEs, hmDirect=" + std::to_string(g_javaHashMapTableField ? 1 : 0) + " hashMapSeen=" + std::to_string(sawHashMap ? 1 : 0) + " usedDirect=" + std::to_string(usedDirectPath ? 1 : 0) + " usedFallback=" + std::to_string(usedFallbackPath ? 1 : 0) + " bePos=" + std::to_string(g_beGetPos_121 ? 1 : 0) + " bpX=" + std::to_string(g_blockPosX_121 ? 1 : 0)); }
+    if (shouldLog) { lastLogMs = now; Log("UpdateChestList: chunks=" + std::to_string(chunksScanned) + " withMap=" + std::to_string(chunksWithBEMap) + " chests=" + std::to_string(totalChests) + " listed=" + std::to_string(localList.size()) + " BEs=" + std::to_string(totalBEsScanned) + " hmDirect=" + std::to_string(g_javaHashMapTableField ? 1 : 0) + " hashMapSeen=" + std::to_string(sawHashMap ? 1 : 0) + " usedDirect=" + std::to_string(usedDirectPath ? 1 : 0) + " usedFallback=" + std::to_string(usedFallbackPath ? 1 : 0)); }
 
     env->DeleteLocalRef(worldObj);
 
@@ -5388,8 +5562,9 @@ static void UpdateJniState() {
         // Any screen change (especially connecting/loading) = world may be transitioning.
         // Pause chunk scanning for 5 seconds to avoid racing with world teardown.
         g_worldTransitionEndMs = GetTickCount() + 5000;
-        // Force re-discovery of chunk BE map field on new server
-        g_chunkBlockEntitiesMapField_121 = nullptr;
+        // NOTE: Do NOT reset g_chunkBlockEntitiesMapField_121 here - the field ID is 
+        // stable across world changes and resetting it causes chest ESP to take a long
+        // time to rediscover after lobby switches.
     }
 
     // ===== lookingAtBlock (crosshair hit = BLOCK) =====
@@ -6336,6 +6511,14 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
             bool inWorldNow = IsInWorldNow(env);
             { LockGuard lk(g_jniStateMtx); g_jniInWorld = inWorldNow; }
             if (inWorldNow) {
+                // Periodic diagnostic for chest esp config state
+                static DWORD s_cfgLogMs = 0;
+                DWORD nowMs = GetTickCount();
+                if (nowMs - s_cfgLogMs > 10000) {
+                    s_cfgLogMs = nowMs;
+                    Log("ScanThread cfg: chestEsp=" + std::to_string(cfg.chestEsp) + " nametags=" + std::to_string(cfg.nametags) + " closestPlayer=" + std::to_string(cfg.closestPlayer));
+                }
+
                 static bool s_reachWasEnabled = false;
                 if (cfg.reachEnabled || s_reachWasEnabled) {
                     UpdateReach(env, cfg);
