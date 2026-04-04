@@ -156,6 +156,7 @@ static UiState g_uiState;
 #define ATLAS_ROWS 8
 #define ATLAS_W (ATLAS_COLS * CHAR_W) // 256
 #define ATLAS_H (ATLAS_ROWS * CHAR_H) // 256
+static float g_glyphAdvance[128] = {};
 
 // Hook
 typedef BOOL(WINAPI* SwapBuffersFn)(HDC);
@@ -281,6 +282,8 @@ static std::vector<std::string> g_pendingCommands;
 static Mutex g_cmdMutex;
 
 static std::string g_logPath = "bridge_debug.log";
+static bool g_privateMinecraftiaLoaded = false;
+static std::string g_privateMinecraftiaPath;
 
 // Forward declarations for player-name filtering helpers used by reach/telemetry paths.
 static bool LooksLikeFakePlayerLine(const std::string& rawName);
@@ -304,6 +307,71 @@ void InitLogPath(HMODULE hModule) {
 void Log(const std::string& msg) {
     std::ofstream f(g_logPath.c_str(), std::ios_base::app);
     f << "[Bridge] " << msg << std::endl;
+}
+
+static std::string GetBridgeDir() {
+    size_t sep = g_logPath.find_last_of("\\/");
+    if (sep == std::string::npos) return ".";
+    return g_logPath.substr(0, sep);
+}
+
+static bool FileExistsLocal(const std::string& path) {
+    std::ifstream f(path.c_str(), std::ios::binary);
+    return f.good();
+}
+
+static bool IsLikelyFontBinary(const std::string& path) {
+    std::ifstream f(path.c_str(), std::ios::binary);
+    if (!f.good()) return false;
+    unsigned char hdr[4] = { 0 };
+    f.read((char*)hdr, 4);
+    if (f.gcount() < 4) return false;
+    if (hdr[0] == 0x00 && hdr[1] == 0x01 && hdr[2] == 0x00 && hdr[3] == 0x00) return true;
+    if (hdr[0] == 'O' && hdr[1] == 'T' && hdr[2] == 'T' && hdr[3] == 'O') return true;
+    if (hdr[0] == 't' && hdr[1] == 'r' && hdr[2] == 'u' && hdr[3] == 'e') return true;
+    if (hdr[0] == 't' && hdr[1] == 't' && hdr[2] == 'c' && hdr[3] == 'f') return true;
+    return false;
+}
+
+static void LoadMinecraftiaPrivateFont() {
+    if (g_privateMinecraftiaLoaded) return;
+
+    std::string bridgeDir = GetBridgeDir();
+    std::vector<std::string> candidates = {
+        bridgeDir + "\\minecraftia.ttf",
+        bridgeDir + "\\Minecraftia.ttf",
+        bridgeDir + "\\Data\\minecraftia.ttf",
+        bridgeDir + "\\Data\\Minecraftia.ttf",
+        "C:\\Windows\\Fonts\\minecraftia.ttf",
+        "C:\\Windows\\Fonts\\Minecraftia.ttf"
+    };
+
+    for (const std::string& path : candidates) {
+        if (!FileExistsLocal(path)) continue;
+        if (!IsLikelyFontBinary(path)) {
+            Log("Skipping invalid Minecraftia font candidate: " + path);
+            continue;
+        }
+
+        int loadedCount = AddFontResourceExA(path.c_str(), FR_PRIVATE, nullptr);
+        if (loadedCount > 0) {
+            g_privateMinecraftiaLoaded = true;
+            g_privateMinecraftiaPath = path;
+            Log("Loaded private Minecraftia font: " + path);
+            return;
+        }
+    }
+
+    Log("Minecraftia font file not found or failed to register privately; using system fallback.");
+}
+
+static void UnloadMinecraftiaPrivateFont() {
+    if (!g_privateMinecraftiaLoaded || g_privateMinecraftiaPath.empty()) return;
+    if (RemoveFontResourceExA(g_privateMinecraftiaPath.c_str(), FR_PRIVATE, nullptr)) {
+        Log("Unloaded private Minecraftia font: " + g_privateMinecraftiaPath);
+    }
+    g_privateMinecraftiaLoaded = false;
+    g_privateMinecraftiaPath.clear();
 }
 
 std::string JsonEscape(const std::string& s) {
@@ -2479,16 +2547,45 @@ void InitFont() {
     bmi.bmiHeader.biPlanes = 1; bmi.bmiHeader.biBitCount = 32; bmi.bmiHeader.biCompression = BI_RGB;
     void* bits; HBITMAP hBmp = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
     SelectObject(hdc, hBmp);
-    HFONT hFont = CreateFontA(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-        VARIABLE_PITCH | FF_SWISS, "Consolas");
+
+    LoadMinecraftiaPrivateFont();
+    HFONT hFont = CreateFontA(30, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, NONANTIALIASED_QUALITY,
+        FIXED_PITCH | FF_DONTCARE, "Minecraftia");
+    if (!hFont) {
+        hFont = CreateFontA(30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+            ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            VARIABLE_PITCH | FF_SWISS, "Consolas");
+    }
+
     SelectObject(hdc, hFont);
+    char selectedFace[LF_FACESIZE] = {};
+    GetTextFaceA(hdc, LF_FACESIZE, selectedFace);
     SetBkColor(hdc, RGB(0, 0, 0)); SetTextColor(hdc, RGB(255, 255, 255));
     SetTextAlign(hdc, TA_LEFT | TA_TOP);
+    for (int i = 0; i < 128; i++) g_glyphAdvance[i] = (float)CHAR_W;
+
+    SIZE spaceSize = { CHAR_W, 0 };
+    char spaceCh = ' ';
+    if (!GetTextExtentPoint32A(hdc, &spaceCh, 1, &spaceSize) || spaceSize.cx <= 0) {
+        spaceSize.cx = CHAR_W;
+    }
+
     for (int i = 0; i < 128; i++) {
-        char c = (char)i; if (c < 32) c = ' ';
+        char c = (char)i;
+        char glyph = (c < 32) ? ' ' : c;
         int col = i % ATLAS_COLS, row = i / ATLAS_COLS;
-        TextOutA(hdc, col * CHAR_W, row * CHAR_H, &c, 1);
+        TextOutA(hdc, col * CHAR_W, row * CHAR_H, &glyph, 1);
+
+        SIZE glyphSize = { 0, 0 };
+        if (!GetTextExtentPoint32A(hdc, &glyph, 1, &glyphSize) || glyphSize.cx <= 0) {
+            glyphSize.cx = spaceSize.cx;
+        }
+
+        float adv = (float)glyphSize.cx;
+        if (adv < 4.0f) adv = 4.0f;
+        if (adv > (float)CHAR_W) adv = (float)CHAR_W;
+        g_glyphAdvance[i] = adv;
     }
     unsigned char* px = new unsigned char[ATLAS_W * ATLAS_H * 4];
     for (int i = 0; i < ATLAS_W * ATLAS_H; i++) {
@@ -2504,7 +2601,7 @@ void InitFont() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     delete[] px; DeleteObject(hBmp); DeleteObject(hFont); DeleteDC(hdc);
     g_glInitialized = true;
-    Log("Font texture created (High Res - Consolas)");
+    Log(std::string("Font texture created (legacy) using face: ") + selectedFace);
 }
 
 void DrawRect(float x, float y, float w, float h, float r, float g, float b, float a) {
@@ -2525,6 +2622,7 @@ void DrawText2D(float x, float y, const char* text, float r, float g, float b, f
     for (int i = 0; text[i]; i++) {
         unsigned char c = text[i];
         if (c < 32 || c > 127) c = '?';
+        float adv = g_glyphAdvance[c] * scale;
         float tx = (float)(c % ATLAS_COLS) / ATLAS_COLS;
         float ty = (float)(c / ATLAS_COLS) / ATLAS_ROWS;
         float tw = 1.0f / ATLAS_COLS, th = 1.0f / ATLAS_ROWS;
@@ -2532,12 +2630,21 @@ void DrawText2D(float x, float y, const char* text, float r, float g, float b, f
         glTexCoord2f(tx+tw, ty);   glVertex2f(cx+cw, y);
         glTexCoord2f(tx+tw, ty+th);glVertex2f(cx+cw, y+ch);
         glTexCoord2f(tx, ty+th);   glVertex2f(cx, y+ch);
-        cx += cw;
+        cx += adv;
     }
     glEnd();
 }
 
-float TextWidth(const char* text, float scale = 1.0f) { return strlen(text) * CHAR_W * scale; }
+float TextWidth(const char* text, float scale = 1.0f) {
+    if (!text || !*text) return 0.0f;
+    float width = 0.0f;
+    for (int i = 0; text[i]; i++) {
+        unsigned char c = (unsigned char)text[i];
+        if (c < 32 || c > 127) c = '?';
+        width += g_glyphAdvance[c] * scale;
+    }
+    return width;
+}
 
 // Text with shadow for readability
 void DrawTextShadow(float x, float y, const char* text, float r, float g, float b, float a, float scale = 1.0f) {
@@ -4337,7 +4444,7 @@ void RenderClosestPlayerInfo(int w, int h) {
 
     std::string dirText = RelativeDirectionText(localYaw, bestDx, bestDz);
     char distDir[64];
-    snprintf(distDir, sizeof(distDir), "%.1fm | %s", (float)bestDist, dirText.c_str());
+    snprintf(distDir, sizeof(distDir), "%.1fm [%s]", (float)bestDist, dirText.c_str());
 
     float nameScale = 0.56f;
     float infoScale = 0.46f;
@@ -5686,6 +5793,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
         Log("Log path: " + g_logPath);
         CreateThread(nullptr, 0, MainThread, nullptr, 0, nullptr);
     } else if (reason == DLL_PROCESS_DETACH) {
+        UnloadMinecraftiaPrivateFont();
         Log("DLL_PROCESS_DETACH");
     }
     return TRUE;
