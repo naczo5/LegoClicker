@@ -149,6 +149,7 @@ nav ul a:hover { color: #fff; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5rem;
   text-decoration: none;
   border-radius: 999px;
   padding: 12px 24px;
@@ -157,6 +158,15 @@ nav ul a:hover { color: #fff; }
   letter-spacing: 0.09em;
   text-transform: uppercase;
   transition: transform 0.18s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+
+.btn-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .btn-primary {
