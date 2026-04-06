@@ -101,4 +101,4 @@ legoclickerC/
 
 ## TODO
 
-- Bug: Block only check doesn't work if injected in menu (1.8.9)
+

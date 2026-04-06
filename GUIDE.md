@@ -41,6 +41,8 @@ Use the provided batch scripts in the root directory:
 ### Running
 Run `LegoClicker.exe` (or `dotnet run` in `LegoClickerCS`), select the version, and click "Inject".
 
+For legacy 1.8.9, menu injection is supported: you can inject while in menus/lobby and mappings will bootstrap when entering a world.
+
 ---
 
 ## 3. How to Implement New Features
@@ -73,6 +75,7 @@ Run `LegoClicker.exe` (or `dotnet run` in `LegoClickerCS`), select the version, 
 *   **DO** treat the bridge-side logic as strictly **read-only**.
 *   **DO** use `SendInput` from the external C# loader to simulate human input.
 *   **DO** respect the cross-thread limitations of JNI. Only use JNI calls from threads properly attached to the JVM. Avoid heavy JNI reflection inside the high-frequency `wglSwapBuffers` render thread; cache method and field IDs beforehand!
+*   **DO** preserve **menu-injection compatibility** in all code changes (especially 1.8.9): mappings and feature behavior must recover correctly when injected in menus/lobby, not only when injected in-world.
 
 ---
 

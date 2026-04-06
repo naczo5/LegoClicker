@@ -1158,10 +1158,32 @@ bool DiscoverMappings(JNIEnv* env) {
                   }
              }
 
-             if (g_inventoryField) {
-                  // Find getCurrentItem in InventoryPlayer
-                  // We need the class of the field
-                   // ... lazily we can just search for method "getCurrentItem" in the object we get
+             if (g_inventoryField && !g_getCurrentItemMethod) {
+                  jobject pObj = env->GetObjectField(g_mcInstance, g_thePlayerField);
+                  if (!env->ExceptionCheck() && pObj) {
+                      jobject invObj = env->GetObjectField(pObj, g_inventoryField);
+                      if (!env->ExceptionCheck() && invObj) {
+                          jclass invClass = env->GetObjectClass(invObj);
+                          if (invClass) {
+                              g_getCurrentItemMethod = env->GetMethodID(invClass, "getCurrentItem", "()Lnet/minecraft/item/ItemStack;");
+                              if (!g_getCurrentItemMethod) {
+                                  env->ExceptionClear();
+                                  g_getCurrentItemMethod = env->GetMethodID(invClass, "func_70448_g", "()Lnet/minecraft/item/ItemStack;");
+                              }
+                              if (!g_getCurrentItemMethod) env->ExceptionClear();
+                              else Log("Found InventoryPlayer.getCurrentItem");
+                              env->DeleteLocalRef(invClass);
+                          } else if (env->ExceptionCheck()) {
+                              env->ExceptionClear();
+                          }
+                          env->DeleteLocalRef(invObj);
+                      } else if (env->ExceptionCheck()) {
+                          env->ExceptionClear();
+                      }
+                      env->DeleteLocalRef(pObj);
+                  } else if (env->ExceptionCheck()) {
+                      env->ExceptionClear();
+                  }
              }
         }
     }
@@ -1709,32 +1731,255 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
     }
 }
 
+static bool NeedsCoreMappingRefresh() {
+    return !g_mapped
+        || !g_mcInstance
+        || !g_theWorldField;
+}
+
+static void TryResolveScreenFieldDirect(JNIEnv* env) {
+    if (!env || !g_mcClass || g_currentScreenField) return;
+
+    g_currentScreenField = env->GetFieldID(g_mcClass, "currentScreen", "Lnet/minecraft/client/gui/GuiScreen;");
+    if (!g_currentScreenField) {
+        env->ExceptionClear();
+        g_currentScreenField = env->GetFieldID(g_mcClass, "field_71462_r", "Lnet/minecraft/client/gui/GuiScreen;");
+    }
+    if (!g_currentScreenField) {
+        env->ExceptionClear();
+    } else {
+        Log("Late-bound currentScreen field");
+    }
+}
+
+static void TryResolveHoldingBlockMappings(JNIEnv* env) {
+    if (!env) return;
+
+    // Late-resolve ItemBlock class
+    if (!g_itemBlockClass) {
+        jobject gcl = EnsureGameClassLoader(env);
+        jclass ibClass = nullptr;
+        if (gcl) {
+            ibClass = LoadClassWithLoader(env, gcl, "net.minecraft.item.ItemBlock");
+        }
+        if (!ibClass) {
+            ibClass = env->FindClass("net/minecraft/item/ItemBlock");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+        if (ibClass && !env->ExceptionCheck()) {
+            g_itemBlockClass = (jclass)env->NewGlobalRef(ibClass);
+            Log("Late-bound ItemBlock class");
+        }
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
+    // Late-resolve g_inventoryField (THE KEY FIX: this was missing before!)
+    if (!g_inventoryField && g_mcInstance && g_thePlayerField) {
+        jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+        if (!env->ExceptionCheck() && player) {
+            // Get reflection helpers
+            jclass cClass = env->FindClass("java/lang/Class");
+            jclass cField = env->FindClass("java/lang/reflect/Field");
+            if (cClass && cField) {
+                jmethodID mGetFields = env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
+                jmethodID mGetSuper = env->GetMethodID(cClass, "getSuperclass", "()Ljava/lang/Class;");
+                jmethodID mFType = env->GetMethodID(cField, "getType", "()Ljava/lang/Class;");
+                
+                if (mGetFields && mGetSuper && mFType) {
+                    jclass pClass = env->GetObjectClass(player);
+                    jclass walk = pClass;
+                    int depth = 0;
+                    while (walk && depth < 5 && !g_inventoryField) {
+                        jobjectArray fields = (jobjectArray)env->CallObjectMethod(walk, mGetFields);
+                        if (fields && !env->ExceptionCheck()) {
+                            jsize fc = env->GetArrayLength(fields);
+                            for (int i = 0; i < fc; i++) {
+                                jobject f = env->GetObjectArrayElement(fields, i);
+                                if (!f) continue;
+                                jclass ft = (jclass)env->CallObjectMethod(f, mFType);
+                                if (ft && !env->ExceptionCheck()) {
+                                    std::string ftn = GetClassNameFromClass(env, ft);
+                                    if (ftn.find("InventoryPlayer") != std::string::npos) {
+                                        g_inventoryField = env->FromReflectedField(f);
+                                        Log("Late-bound inventory field");
+                                        break;
+                                    }
+                                    env->DeleteLocalRef(ft);
+                                } else if (env->ExceptionCheck()) {
+                                    env->ExceptionClear();
+                                }
+                                env->DeleteLocalRef(f);
+                            }
+                            env->DeleteLocalRef(fields);
+                        } else if (env->ExceptionCheck()) {
+                            env->ExceptionClear();
+                        }
+                        jclass nextWalk = (jclass)env->CallObjectMethod(walk, mGetSuper);
+                        if (walk != pClass) env->DeleteLocalRef(walk);
+                        walk = nextWalk;
+                        depth++;
+                    }
+                    if (walk && walk != pClass) env->DeleteLocalRef(walk);
+                    if (pClass) env->DeleteLocalRef(pClass);
+                }
+            }
+            if (env->ExceptionCheck()) env->ExceptionClear();
+            env->DeleteLocalRef(player);
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+    }
+
+    // Late-resolve getCurrentItem method (only if we now have inventoryField)
+    if (!g_getCurrentItemMethod && g_mcInstance && g_thePlayerField && g_inventoryField) {
+        jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+        if (!env->ExceptionCheck() && player) {
+            jobject inventory = env->GetObjectField(player, g_inventoryField);
+            if (!env->ExceptionCheck() && inventory) {
+                jclass invClass = env->GetObjectClass(inventory);
+                if (invClass) {
+                    g_getCurrentItemMethod = env->GetMethodID(invClass, "getCurrentItem", "()Lnet/minecraft/item/ItemStack;");
+                    if (!g_getCurrentItemMethod) {
+                        env->ExceptionClear();
+                        g_getCurrentItemMethod = env->GetMethodID(invClass, "func_70448_g", "()Lnet/minecraft/item/ItemStack;");
+                    }
+                    if (!g_getCurrentItemMethod) env->ExceptionClear();
+                    else Log("Late-bound InventoryPlayer.getCurrentItem");
+                    env->DeleteLocalRef(invClass);
+                } else if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                }
+                env->DeleteLocalRef(inventory);
+            } else if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+            env->DeleteLocalRef(player);
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+    }
+}
+
+static bool NeedsInWorldCriticalRefresh() {
+    return !g_thePlayerField
+        || !g_getHealthMethod
+        || !g_posXField
+        || !g_posYField
+        || !g_posZField
+        || !g_currentScreenField
+        || !g_rotationYawField
+        || !g_rotationPitchField
+        || !g_getNameMethod
+        || (!g_objectMouseOverField && !g_pointedEntityField)
+        || !g_typeOfHitField
+        || !g_enumNameMethod
+        || !g_inventoryField
+        || !g_getHeldItemMethod;
+}
+
+static bool HasLiveWorld(JNIEnv* env) {
+    if (!env || !g_mcInstance || !g_theWorldField) return false;
+    jobject world = env->GetObjectField(g_mcInstance, g_theWorldField);
+    bool hasWorld = (world != nullptr);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        hasWorld = false;
+    }
+    if (world) env->DeleteLocalRef(world);
+    return hasWorld;
+}
+
+static bool HasLivePlayer(JNIEnv* env) {
+    if (!env || !g_mcInstance || !g_thePlayerField) return false;
+    jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+    bool hasPlayer = (player != nullptr);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        hasPlayer = false;
+    }
+    if (player) env->DeleteLocalRef(player);
+    return hasPlayer;
+}
+
 void MaybeRefreshMappings(JNIEnv* env) {
     if (!env || !g_jvm) return;
-
-    bool needRefresh = !g_mapped
-        || !g_mcInstance
-        || !g_theWorldField
-        || !g_playerEntitiesField
-        || !g_loadedTileEntityListField
-        || !g_activeRenderInfoClass
-        || !g_modelViewField
-        || !g_projectionField
-        || !g_renderManagerField
-        || !g_viewerPosXField
-        || !g_viewerPosYField
-        || !g_viewerPosZField;
-
-    if (!needRefresh) return;
+    TryResolveScreenFieldDirect(env);
+    TryResolveHoldingBlockMappings(env);
 
     static DWORD nextRetryAt = 0;
+    static DWORD retryDelayMs = 4000;
+    static bool hadWorld = false;
+    static bool hadReadyPlayer = false;
+    static int inWorldBootstrapAttempts = 0;
+    static const int kMaxInWorldBootstrapAttempts = 3;
+
+    bool hasWorld = HasLiveWorld(env);
+    bool hasReadyPlayer = hasWorld && HasLivePlayer(env);
+    bool worldBecameAvailable = hasWorld && !hadWorld;
+    bool worldBecameUnavailable = !hasWorld && hadWorld;
+    bool playerReadyBecameAvailable = hasReadyPlayer && !hadReadyPlayer;
+    bool playerReadyBecameUnavailable = !hasReadyPlayer && hadReadyPlayer;
+    hadWorld = hasWorld;
+    hadReadyPlayer = hasReadyPlayer;
+
+    if (worldBecameUnavailable || playerReadyBecameUnavailable) {
+        inWorldBootstrapAttempts = 0;
+        retryDelayMs = 4000;
+        nextRetryAt = 0;
+    }
+    if (worldBecameAvailable) {
+        inWorldBootstrapAttempts = 0;
+        retryDelayMs = 4000;
+        nextRetryAt = 0;
+        Log("World detected; forcing immediate mapping bootstrap.");
+    }
+    if (playerReadyBecameAvailable) {
+        inWorldBootstrapAttempts = 0;
+        retryDelayMs = 4000;
+        nextRetryAt = 0;
+        Log("Local player ready; enabling in-world mapping recovery retries.");
+    }
+
+    bool needCoreRefresh = NeedsCoreMappingRefresh();
+    bool needInWorldBootstrap = hasReadyPlayer
+        && NeedsInWorldCriticalRefresh()
+        && inWorldBootstrapAttempts < kMaxInWorldBootstrapAttempts;
+    if (!needCoreRefresh && !needInWorldBootstrap) return;
+
     DWORD now = GetTickCount();
     if (now < nextRetryAt) return;
-    nextRetryAt = now + 4000;
 
-    Log("Mappings incomplete, retrying discovery...");
+    if (needInWorldBootstrap) {
+        inWorldBootstrapAttempts++;
+    }
+
+    Log(needCoreRefresh
+        ? "Core mappings incomplete, retrying discovery..."
+        : "In-world critical mappings incomplete, retrying discovery...");
     bool ok = DiscoverMappings(env);
-    Log(ok ? "Mapping refresh complete" : "Mapping refresh failed");
+    TryResolveScreenFieldDirect(env);
+    TryResolveHoldingBlockMappings(env);
+
+    bool hasWorldNow = HasLiveWorld(env);
+    bool hasReadyPlayerNow = hasWorldNow && HasLivePlayer(env);
+    bool stillNeedCore = NeedsCoreMappingRefresh();
+    bool stillNeedInWorld = hasReadyPlayerNow && NeedsInWorldCriticalRefresh();
+    if (stillNeedCore || stillNeedInWorld) {
+        if (!stillNeedCore && stillNeedInWorld && inWorldBootstrapAttempts >= kMaxInWorldBootstrapAttempts) {
+            Log("In-world bootstrap attempts exhausted; waiting for player/world transition to retry.");
+            return;
+        }
+        retryDelayMs = (std::min)(retryDelayMs * 2, (DWORD)60000);
+        Log((ok ? "Mapping refresh partial" : "Mapping refresh failed")
+            + std::string("; pending=")
+            + std::string(stillNeedCore ? "core" : "in-world")
+            + std::string("; next retry in ")
+            + std::to_string(retryDelayMs) + "ms");
+    } else {
+        retryDelayMs = 4000;
+        Log("Mapping refresh complete");
+    }
+    nextRetryAt = now + retryDelayMs;
 }
 
 static void EnsureVelocityMappings(JNIEnv* env, jobject playerObj) {
@@ -2265,14 +2510,11 @@ static void UpdateReach(JNIEnv* env, const Config& cfg, const GameState& state, 
 }
 
 GameState ReadGameState(JNIEnv* env) {
-    GameState s = {}; s.mapped = g_mapped;
-    if (!g_mapped || !g_mcInstance) {
-        MaybeRefreshMappings(env);
-        s.mapped = g_mapped;
-        if (!g_mapped || !g_mcInstance) return s;
-    }
-
+    GameState s = {};
     MaybeRefreshMappings(env);
+    s.mapped = g_mapped;
+    if (!g_mapped || !g_mcInstance) return s;
+
     TryResolveWorldMappings(env);
 
     bool gtbHelperEnabled = false;
@@ -2281,6 +2523,7 @@ GameState ReadGameState(JNIEnv* env) {
         gtbHelperEnabled = g_config.gtbHelper;
     }
     TryResolveRenderMappings(env, gtbHelperEnabled);
+    TryResolveHoldingBlockMappings(env);
 
     if (g_currentScreenField) {
         jobject scr = env->GetObjectField(g_mcInstance, g_currentScreenField);
@@ -2322,11 +2565,18 @@ GameState ReadGameState(JNIEnv* env) {
                 if (inventory) {
                     if (!g_getCurrentItemMethod) {
                         jclass invClass = env->GetObjectClass(inventory);
-                        g_getCurrentItemMethod = env->GetMethodID(invClass, "getCurrentItem", "()Lnet/minecraft/item/ItemStack;");
-                        if (!g_getCurrentItemMethod) g_getCurrentItemMethod = env->GetMethodID(invClass, "func_70448_g", "()Lnet/minecraft/item/ItemStack;");
-                        if (!g_getCurrentItemMethod) {
-                            // Try to find by signature if name fails
-                             // Not implemented for now
+                        if (invClass) {
+                            g_getCurrentItemMethod = env->GetMethodID(invClass, "getCurrentItem", "()Lnet/minecraft/item/ItemStack;");
+                            if (!g_getCurrentItemMethod) {
+                                env->ExceptionClear();
+                                g_getCurrentItemMethod = env->GetMethodID(invClass, "func_70448_g", "()Lnet/minecraft/item/ItemStack;");
+                            }
+                            if (!g_getCurrentItemMethod) {
+                                env->ExceptionClear();
+                            }
+                            env->DeleteLocalRef(invClass);
+                        } else if (env->ExceptionCheck()) {
+                            env->ExceptionClear();
                         }
                     }
                     
@@ -3773,8 +4023,6 @@ void RenderNametags(int w, int h) {
         LockGuard lk(g_jsonMutex);
         g_pendingJson = "[]";
     }
-   static unsigned int dbgTick = 0;
-
    if (!g_mapped || !g_mcInstance) return;
    if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
        !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) {
@@ -3788,22 +4036,8 @@ void RenderNametags(int w, int h) {
     ScopedJNIEnv env(g_jvm);
     if (!env) return;
 
-    MaybeRefreshMappings(env);
     TryResolveWorldMappings(env);
     TryResolveRenderMappings(env, false);
-
-    unsigned int now = GetTickCount();
-    if (now - dbgTick > 2500) {
-        dbgTick = now;
-        Log("Nametags tick: mapped=" + std::string(g_mapped ? "1" : "0")
-            + " worldField=" + std::string(g_theWorldField ? "1" : "0")
-            + " playersField=" + std::string(g_playerEntitiesField ? "1" : "0")
-            + " ari=" + std::string(g_activeRenderInfoClass ? "1" : "0")
-            + " mv=" + std::string(g_modelViewField ? "1" : "0")
-            + " pr=" + std::string(g_projectionField ? "1" : "0")
-            + " nametagsCfg=" + std::string(nametagsEnabled ? "1" : "0")
-            + " telemetry=" + std::string(entityTelemetryNeeded ? "1" : "0"));
-    }
 
     if (!g_playerEntitiesField) {
         if (!warnedMissingMappings) {
