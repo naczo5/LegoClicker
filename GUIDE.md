@@ -39,10 +39,6 @@ Use the provided batch scripts in the root directory:
 *   `build_release.bat`: Full pipeline build.
 
 ### Running
-Lunar Client must be launched with the following custom JVM arguments to allow injection:
-```text
--XX:+EnableDynamicAgentLoading -XX:-DisableAttachMechanism
-```
 Run `LegoClicker.exe` (or `dotnet run` in `LegoClickerCS`), select the version, and click "Inject".
 
 ---

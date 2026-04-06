@@ -33,14 +33,6 @@ LegoClicker is a Windows utility client for Lunar Client.
 - .NET 8 SDK (build only)
 - MinGW-w64 + JDK 17 headers (native build only)
 
-### Required Lunar JVM flags
-
-Add this to Lunar Client custom JVM arguments:
-
-```text
--XX:+EnableDynamicAgentLoading -XX:-DisableAttachMechanism
-```
-
 ## Quick start
 
 1. Start Lunar Client.

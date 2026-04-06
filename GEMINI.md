@@ -22,12 +22,6 @@ The project consists of two main components communicating over TCP on port `2559
 - .NET 8 SDK
 - MinGW-w64 + JDK 17 headers
 
-### Required Lunar JVM Flags
-To allow the DLL injection and agent loading, the following must be added to Lunar Client's custom JVM arguments:
-```text
--XX:+EnableDynamicAgentLoading -XX:-DisableAttachMechanism
-```
-
 ### Build Commands
 
 Run these from the repository root unless noted otherwise:

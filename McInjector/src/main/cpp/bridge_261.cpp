@@ -6980,8 +6980,29 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
                         if (!projected) continue;
 
-                        // No smoothing here — C# Clicker.cs handles its own smoothing for Aim Assist.
-                        // Smoothing here causes "double smoothing" which leads to wobble/lag.
+                        // Overlay-only smoothing for visual nametags.
+                        // Keep telemetry JSON coordinates raw (server loop path) so Aim Assist behavior is unchanged.
+                        std::string nametagKey = it.name;
+                        if (nametagKey.empty()) {
+                            char fallbackKey[96];
+                            snprintf(fallbackKey, sizeof(fallbackKey), "p_%.1f_%.1f_%.1f", it.ex, it.ey, it.ez);
+                            nametagKey = fallbackKey;
+                        }
+                        bool tagSmoothFound = false;
+                        for (auto& sm : s_nametagSmooth) {
+                            if (sm.key == nametagKey) {
+                                sm.sx += (sx - sm.sx) * overlaySmoothAlpha;
+                                sm.sy += (sy - sm.sy) * overlaySmoothAlpha;
+                                sm.lastSeenMs = overlayNowMs;
+                                sx = sm.sx;
+                                sy = sm.sy;
+                                tagSmoothFound = true;
+                                break;
+                            }
+                        }
+                        if (!tagSmoothFound) {
+                            s_nametagSmooth.push_back({ nametagKey, sx, sy, overlayNowMs });
+                        }
 
                         // Scale text down with distance, keep readable minimum
                         float val       = 1.0f - (float)(it.dist / 64.0f);
@@ -7208,12 +7229,6 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                         lines.push_back(clean);
                     }
                     if (lines.empty()) lines.push_back(preview);
-                }
-
-                const int maxLines = 8;
-                if ((int)lines.size() > maxLines) {
-                    lines.resize(maxLines);
-                    if (!lines.empty()) lines.back() += " ...";
                 }
 
                 const float panelW = (std::min)(360.0f, io.DisplaySize.x - 20.0f);
