@@ -22,6 +22,7 @@ public class Profile
     public float RightMinCPS { get; set; } = 10.0f;
     public float RightMaxCPS { get; set; } = 14.0f;
     public bool RightClickOnlyBlock { get; set; } = false;
+    public bool BreakBlocksEnabled { get; set; } = false;
     
     public bool JitterEnabled { get; set; } = true;
     public bool ClickInChests { get; set; } = false;
@@ -163,6 +164,7 @@ public static class ProfileManager
             RightMinCPS = clicker.RightMinCPS,
             RightMaxCPS = clicker.RightMaxCPS,
             RightClickOnlyBlock = clicker.RightClickOnlyBlock,
+            BreakBlocksEnabled = clicker.BreakBlocksEnabled,
             
             JitterEnabled = clicker.JitterEnabled,
             ClickInChests = clicker.ClickInChests,
@@ -227,6 +229,7 @@ public static class ProfileManager
         clicker.RightMinCPS = profile.RightMinCPS;
         clicker.RightMaxCPS = profile.RightMaxCPS;
         clicker.RightClickOnlyBlock = profile.RightClickOnlyBlock;
+        clicker.BreakBlocksEnabled = profile.BreakBlocksEnabled;
         
         clicker.JitterEnabled = profile.JitterEnabled;
         clicker.ClickInChests = profile.ClickInChests;

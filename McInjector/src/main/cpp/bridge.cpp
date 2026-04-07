@@ -259,6 +259,9 @@ static jmethodID g_floatBufferGet = nullptr; // FloatBuffer.get(I)F
 struct Matrix4x4 {
     float m[16];
 };
+static Matrix4x4 g_lastCapturedModelView = {0};
+static Matrix4x4 g_lastCapturedProjection = {0};
+static bool g_hasCapturedRenderMatrices = false;
 
 // RenderManager Globals
 static jfieldID g_renderManagerField = nullptr; // Minecraft.renderManager
@@ -1414,6 +1417,49 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
 
     jobject gcl = EnsureGameClassLoader(env);
 
+    // Prefer canonical ActiveRenderInfo by exact class name when it becomes loadable.
+    {
+        jclass canonicalAri = nullptr;
+        if (gcl) {
+            canonicalAri = LoadClassWithLoader(env, gcl, "net.minecraft.client.renderer.ActiveRenderInfo");
+        }
+        if (!canonicalAri) {
+            canonicalAri = env->FindClass("net/minecraft/client/renderer/ActiveRenderInfo");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+
+        if (canonicalAri) {
+            bool replaceAri = (g_activeRenderInfoClass == nullptr)
+                || (env->IsSameObject(g_activeRenderInfoClass, canonicalAri) != JNI_TRUE);
+            if (replaceAri) {
+                std::string oldName = g_activeRenderInfoClass ? GetClassNameFromClass(env, g_activeRenderInfoClass) : "";
+                std::string newName = GetClassNameFromClass(env, canonicalAri);
+                if (g_activeRenderInfoClass) {
+                    env->DeleteGlobalRef(g_activeRenderInfoClass);
+                    g_activeRenderInfoClass = nullptr;
+                }
+                g_activeRenderInfoClass = (jclass)env->NewGlobalRef(canonicalAri);
+                g_modelViewField = nullptr;
+                g_projectionField = nullptr;
+                if (!newName.empty()) {
+                    Log(oldName.empty()
+                        ? ("Late-bound ActiveRenderInfo class: " + newName)
+                        : ("Rebound ActiveRenderInfo class: " + oldName + " -> " + newName));
+                } else {
+                    Log("Rebound ActiveRenderInfo class");
+                }
+            }
+            env->DeleteLocalRef(canonicalAri);
+        } else if (g_activeRenderInfoClass) {
+            std::string boundName = GetClassNameFromClass(env, g_activeRenderInfoClass);
+            if (boundName.find("net.optifine.shaders.Shaders") != std::string::npos) {
+                if (!g_modelViewField || !g_projectionField) {
+                    Log("WARNING: ActiveRenderInfo still bound to Shaders fallback; waiting for canonical class.");
+                }
+            }
+        }
+    }
+
     if (!g_activeRenderInfoClass) {
         jclass ariLocal = nullptr;
         if (gcl) {
@@ -1737,18 +1783,70 @@ static bool NeedsCoreMappingRefresh() {
         || !g_theWorldField;
 }
 
-static void TryResolveScreenFieldDirect(JNIEnv* env) {
-    if (!env || !g_mcClass || g_currentScreenField) return;
+static void TryResolveHoldingBlockMappings(JNIEnv* env);
+static void TryResolvePlayerCoreMappings(JNIEnv* env);
+static void TryResolveChestEspMappings(JNIEnv* env);
 
-    g_currentScreenField = env->GetFieldID(g_mcClass, "currentScreen", "Lnet/minecraft/client/gui/GuiScreen;");
-    if (!g_currentScreenField) {
+static void TryResolveScreenFieldDirect(JNIEnv* env) {
+    if (!env || !g_mcClass) return;
+
+    jfieldID direct = env->GetFieldID(g_mcClass, "currentScreen", "Lnet/minecraft/client/gui/GuiScreen;");
+    if (!direct) {
         env->ExceptionClear();
-        g_currentScreenField = env->GetFieldID(g_mcClass, "field_71462_r", "Lnet/minecraft/client/gui/GuiScreen;");
+        direct = env->GetFieldID(g_mcClass, "field_71462_r", "Lnet/minecraft/client/gui/GuiScreen;");
     }
-    if (!g_currentScreenField) {
+    if (!direct) {
         env->ExceptionClear();
+        return;
+    }
+
+    if (g_currentScreenField != direct) {
+        bool hadPrevious = (g_currentScreenField != nullptr);
+        g_currentScreenField = direct;
+        Log(hadPrevious ? "Rebound currentScreen field" : "Late-bound currentScreen field");
+    }
+}
+
+static bool NeedsRenderRecoveryMappings() {
+    return !g_playerEntitiesField
+        || !g_loadedTileEntityListField
+        || !g_activeRenderInfoClass
+        || !g_modelViewField
+        || !g_projectionField
+        || !g_renderManagerField
+        || !g_viewerPosXField
+        || !g_viewerPosYField
+        || !g_viewerPosZField
+        || !g_tileEntityPosField
+        || !g_blockPosGetX
+        || !g_blockPosGetY
+        || !g_blockPosGetZ;
+}
+
+static void TryFallbackRenderRecovery(JNIEnv* env, bool hasReadyPlayer) {
+    if (!env || !hasReadyPlayer) return;
+    if (!NeedsRenderRecoveryMappings()) return;
+
+    static DWORD nextRenderFallbackAt = 0;
+    DWORD now = GetTickCount();
+    if (now < nextRenderFallbackAt) return;
+
+    Log("Render mappings incomplete, running slow fallback discovery...");
+    bool ok = DiscoverMappings(env);
+    TryResolveScreenFieldDirect(env);
+    TryResolveHoldingBlockMappings(env);
+    TryResolvePlayerCoreMappings(env);
+    TryResolveChestEspMappings(env);
+    TryResolveWorldMappings(env);
+    TryResolveRenderMappings(env, false);
+
+    bool stillMissing = NeedsRenderRecoveryMappings();
+    if (stillMissing) {
+        nextRenderFallbackAt = now + 15000;
+        Log((ok ? "Render fallback partial" : "Render fallback failed") + std::string("; next retry in 15000ms"));
     } else {
-        Log("Late-bound currentScreen field");
+        nextRenderFallbackAt = now + 15000;
+        Log("Render fallback recovery complete");
     }
 }
 
@@ -1860,6 +1958,225 @@ static void TryResolveHoldingBlockMappings(JNIEnv* env) {
     }
 }
 
+static void TryResolvePlayerCoreMappings(JNIEnv* env) {
+    if (!env || !g_mcInstance || !g_thePlayerField) return;
+
+    const bool needPlayerCore =
+        !g_getHealthMethod ||
+        !g_posXField || !g_posYField || !g_posZField ||
+        !g_rotationYawField || !g_rotationPitchField ||
+        !g_getNameMethod || !g_getHeldItemMethod || !g_getTotalArmorValueMethod ||
+        !g_lastTickPosXField || !g_lastTickPosYField || !g_lastTickPosZField;
+    if (!needPlayerCore) return;
+
+    jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+    if (!player) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return;
+    }
+
+    jclass startClass = env->GetObjectClass(player);
+    jclass walk = startClass;
+    jclass classClass = env->FindClass("java/lang/Class");
+    jmethodID mGetSuper = classClass ? env->GetMethodID(classClass, "getSuperclass", "()Ljava/lang/Class;") : nullptr;
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        mGetSuper = nullptr;
+    }
+    int depth = 0;
+    while (walk && depth < 10 && mGetSuper) {
+        if (!g_getHealthMethod) {
+            g_getHealthMethod = env->GetMethodID(walk, "getHealth", "()F");
+            if (!g_getHealthMethod) {
+                env->ExceptionClear();
+                g_getHealthMethod = env->GetMethodID(walk, "func_110143_aJ", "()F");
+            }
+            if (!g_getHealthMethod) env->ExceptionClear();
+        }
+        if (!g_posXField) {
+            g_posXField = env->GetFieldID(walk, "posX", "D");
+            if (!g_posXField) {
+                env->ExceptionClear();
+                g_posXField = env->GetFieldID(walk, "field_70165_t", "D");
+            }
+            if (!g_posXField) env->ExceptionClear();
+        }
+        if (!g_posYField) {
+            g_posYField = env->GetFieldID(walk, "posY", "D");
+            if (!g_posYField) {
+                env->ExceptionClear();
+                g_posYField = env->GetFieldID(walk, "field_70163_u", "D");
+            }
+            if (!g_posYField) env->ExceptionClear();
+        }
+        if (!g_posZField) {
+            g_posZField = env->GetFieldID(walk, "posZ", "D");
+            if (!g_posZField) {
+                env->ExceptionClear();
+                g_posZField = env->GetFieldID(walk, "field_70161_v", "D");
+            }
+            if (!g_posZField) env->ExceptionClear();
+        }
+        if (!g_rotationYawField) {
+            g_rotationYawField = env->GetFieldID(walk, "rotationYaw", "F");
+            if (!g_rotationYawField) {
+                env->ExceptionClear();
+                g_rotationYawField = env->GetFieldID(walk, "field_70177_z", "F");
+            }
+            if (!g_rotationYawField) env->ExceptionClear();
+        }
+        if (!g_rotationPitchField) {
+            g_rotationPitchField = env->GetFieldID(walk, "rotationPitch", "F");
+            if (!g_rotationPitchField) {
+                env->ExceptionClear();
+                g_rotationPitchField = env->GetFieldID(walk, "field_70125_A", "F");
+            }
+            if (!g_rotationPitchField) env->ExceptionClear();
+        }
+        if (!g_getNameMethod) {
+            g_getNameMethod = env->GetMethodID(walk, "getName", "()Ljava/lang/String;");
+            if (!g_getNameMethod) {
+                env->ExceptionClear();
+                g_getNameMethod = env->GetMethodID(walk, "func_70005_c_", "()Ljava/lang/String;");
+            }
+            if (!g_getNameMethod) env->ExceptionClear();
+        }
+        if (!g_getHeldItemMethod) {
+            g_getHeldItemMethod = env->GetMethodID(walk, "getHeldItem", "()Lnet/minecraft/item/ItemStack;");
+            if (!g_getHeldItemMethod) {
+                env->ExceptionClear();
+                g_getHeldItemMethod = env->GetMethodID(walk, "func_70694_bm", "()Lnet/minecraft/item/ItemStack;");
+            }
+            if (!g_getHeldItemMethod) env->ExceptionClear();
+        }
+        if (!g_getTotalArmorValueMethod) {
+            g_getTotalArmorValueMethod = env->GetMethodID(walk, "getTotalArmorValue", "()I");
+            if (!g_getTotalArmorValueMethod) {
+                env->ExceptionClear();
+                g_getTotalArmorValueMethod = env->GetMethodID(walk, "func_70658_aO", "()I");
+            }
+            if (!g_getTotalArmorValueMethod) env->ExceptionClear();
+        }
+        if (!g_lastTickPosXField) {
+            g_lastTickPosXField = env->GetFieldID(walk, "lastTickPosX", "D");
+            if (!g_lastTickPosXField) {
+                env->ExceptionClear();
+                g_lastTickPosXField = env->GetFieldID(walk, "field_70142_S", "D");
+            }
+            if (!g_lastTickPosXField) {
+                env->ExceptionClear();
+                g_lastTickPosXField = env->GetFieldID(walk, "prevPosX", "D");
+            }
+            if (!g_lastTickPosXField) env->ExceptionClear();
+        }
+        if (!g_lastTickPosYField) {
+            g_lastTickPosYField = env->GetFieldID(walk, "lastTickPosY", "D");
+            if (!g_lastTickPosYField) {
+                env->ExceptionClear();
+                g_lastTickPosYField = env->GetFieldID(walk, "field_70137_T", "D");
+            }
+            if (!g_lastTickPosYField) {
+                env->ExceptionClear();
+                g_lastTickPosYField = env->GetFieldID(walk, "prevPosY", "D");
+            }
+            if (!g_lastTickPosYField) env->ExceptionClear();
+        }
+        if (!g_lastTickPosZField) {
+            g_lastTickPosZField = env->GetFieldID(walk, "lastTickPosZ", "D");
+            if (!g_lastTickPosZField) {
+                env->ExceptionClear();
+                g_lastTickPosZField = env->GetFieldID(walk, "field_70136_U", "D");
+            }
+            if (!g_lastTickPosZField) {
+                env->ExceptionClear();
+                g_lastTickPosZField = env->GetFieldID(walk, "prevPosZ", "D");
+            }
+            if (!g_lastTickPosZField) env->ExceptionClear();
+        }
+
+        if (g_getHealthMethod &&
+            g_posXField && g_posYField && g_posZField &&
+            g_rotationYawField && g_rotationPitchField &&
+            g_getNameMethod && g_getHeldItemMethod && g_getTotalArmorValueMethod &&
+            g_lastTickPosXField && g_lastTickPosYField && g_lastTickPosZField) {
+            break;
+        }
+
+        jclass nextWalk = (jclass)env->CallObjectMethod(walk, mGetSuper);
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+            break;
+        }
+        if (walk != startClass) env->DeleteLocalRef(walk);
+        walk = nextWalk;
+        depth++;
+    }
+    if (classClass) env->DeleteLocalRef(classClass);
+    if (walk && walk != startClass) env->DeleteLocalRef(walk);
+    if (startClass) env->DeleteLocalRef(startClass);
+    env->DeleteLocalRef(player);
+}
+
+static void TryResolveChestEspMappings(JNIEnv* env) {
+    if (!env) return;
+
+    if (g_tileEntityPosField && g_blockPosGetX && g_blockPosGetY && g_blockPosGetZ) return;
+
+    jobject gcl = EnsureGameClassLoader(env);
+
+    if (!g_tileEntityPosField) {
+        jclass teClass = nullptr;
+        if (gcl) teClass = LoadClassWithLoader(env, gcl, "net.minecraft.tileentity.TileEntity");
+        if (!teClass) {
+            teClass = env->FindClass("net/minecraft/tileentity/TileEntity");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+        if (teClass) {
+            g_tileEntityPosField = env->GetFieldID(teClass, "pos", "Lnet/minecraft/util/BlockPos;");
+            if (!g_tileEntityPosField) {
+                env->ExceptionClear();
+                g_tileEntityPosField = env->GetFieldID(teClass, "field_174879_c", "Lnet/minecraft/util/BlockPos;");
+            }
+            if (!g_tileEntityPosField) env->ExceptionClear();
+        }
+    }
+
+    if (!g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) {
+        jclass bpClass = nullptr;
+        if (gcl) bpClass = LoadClassWithLoader(env, gcl, "net.minecraft.util.BlockPos");
+        if (!bpClass) {
+            bpClass = env->FindClass("net/minecraft/util/BlockPos");
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+        if (bpClass) {
+            if (!g_blockPosGetX) {
+                g_blockPosGetX = env->GetMethodID(bpClass, "getX", "()I");
+                if (!g_blockPosGetX) {
+                    env->ExceptionClear();
+                    g_blockPosGetX = env->GetMethodID(bpClass, "func_177958_n", "()I");
+                }
+                if (!g_blockPosGetX) env->ExceptionClear();
+            }
+            if (!g_blockPosGetY) {
+                g_blockPosGetY = env->GetMethodID(bpClass, "getY", "()I");
+                if (!g_blockPosGetY) {
+                    env->ExceptionClear();
+                    g_blockPosGetY = env->GetMethodID(bpClass, "func_177956_o", "()I");
+                }
+                if (!g_blockPosGetY) env->ExceptionClear();
+            }
+            if (!g_blockPosGetZ) {
+                g_blockPosGetZ = env->GetMethodID(bpClass, "getZ", "()I");
+                if (!g_blockPosGetZ) {
+                    env->ExceptionClear();
+                    g_blockPosGetZ = env->GetMethodID(bpClass, "func_177952_p", "()I");
+                }
+                if (!g_blockPosGetZ) env->ExceptionClear();
+            }
+        }
+    }
+}
+
 static bool NeedsInWorldCriticalRefresh() {
     return !g_thePlayerField
         || !g_getHealthMethod
@@ -1905,6 +2222,8 @@ void MaybeRefreshMappings(JNIEnv* env) {
     if (!env || !g_jvm) return;
     TryResolveScreenFieldDirect(env);
     TryResolveHoldingBlockMappings(env);
+    TryResolvePlayerCoreMappings(env);
+    TryResolveChestEspMappings(env);
 
     static DWORD nextRetryAt = 0;
     static DWORD retryDelayMs = 4000;
@@ -1944,7 +2263,13 @@ void MaybeRefreshMappings(JNIEnv* env) {
     bool needInWorldBootstrap = hasReadyPlayer
         && NeedsInWorldCriticalRefresh()
         && inWorldBootstrapAttempts < kMaxInWorldBootstrapAttempts;
-    if (!needCoreRefresh && !needInWorldBootstrap) return;
+    bool needRenderFallback = hasReadyPlayer && NeedsRenderRecoveryMappings();
+    if (!needCoreRefresh && !needInWorldBootstrap) {
+        if (needRenderFallback) {
+            TryFallbackRenderRecovery(env, hasReadyPlayer);
+        }
+        return;
+    }
 
     DWORD now = GetTickCount();
     if (now < nextRetryAt) return;
@@ -1980,6 +2305,10 @@ void MaybeRefreshMappings(JNIEnv* env) {
         Log("Mapping refresh complete");
     }
     nextRetryAt = now + retryDelayMs;
+
+    if (!stillNeedCore && !stillNeedInWorld) {
+        TryFallbackRenderRecovery(env, hasReadyPlayerNow);
+    }
 }
 
 static void EnsureVelocityMappings(JNIEnv* env, jobject playerObj) {
@@ -3069,8 +3398,29 @@ static std::string GetStablePlayerName(JNIEnv* env, jobject playerObj) {
     if (!env || !playerObj) return "";
 
     std::string name;
-    if (g_getNameMethod) {
-        jstring js = (jstring)env->CallObjectMethod(playerObj, g_getNameMethod);
+    jmethodID getNameMethod = g_getNameMethod;
+    if (!getNameMethod) {
+        jclass pCls = env->GetObjectClass(playerObj);
+        if (pCls && !env->ExceptionCheck()) {
+            getNameMethod = env->GetMethodID(pCls, "getName", "()Ljava/lang/String;");
+            if (!getNameMethod) {
+                env->ExceptionClear();
+                getNameMethod = env->GetMethodID(pCls, "func_70005_c_", "()Ljava/lang/String;");
+            }
+            if (!getNameMethod) {
+                env->ExceptionClear();
+            } else {
+                g_getNameMethod = getNameMethod;
+                Log("Late-bound player getName method");
+            }
+            env->DeleteLocalRef(pCls);
+        } else if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+    }
+
+    if (getNameMethod) {
+        jstring js = (jstring)env->CallObjectMethod(playerObj, getNameMethod);
         if (!env->ExceptionCheck() && js) {
             const char* cs = env->GetStringUTFChars(js, nullptr);
             if (cs) {
@@ -3952,6 +4302,54 @@ struct ScopedJNIEnv {
     JNIEnv* operator->() const { return env; }
 };
 
+static float MatrixMagnitude(const Matrix4x4& m) {
+    float sum = 0.0f;
+    for (int i = 0; i < 16; i++) sum += std::fabs(m.m[i]);
+    return sum;
+}
+
+static bool MatrixProjectionUsable(const Matrix4x4& view, const Matrix4x4& proj) {
+    return MatrixMagnitude(view) > 0.0001f && MatrixMagnitude(proj) > 0.0001f;
+}
+
+static bool IsLikelyUiOrthoMatrix(const Matrix4x4& view, const Matrix4x4& proj) {
+    // Typical UI ortho signatures:
+    // - view stays identity-ish
+    // - projection has tiny scale terms (~2/w and ~2/h), m[15] ~= 1, m[11] ~= 0
+    bool identityView =
+        std::fabs(view.m[0] - 1.0f) < 0.02f &&
+        std::fabs(view.m[5] - 1.0f) < 0.02f &&
+        std::fabs(view.m[10] - 1.0f) < 0.02f &&
+        std::fabs(view.m[15] - 1.0f) < 0.02f;
+    bool orthoProjection =
+        std::fabs(proj.m[15] - 1.0f) < 0.02f &&
+        std::fabs(proj.m[11]) < 0.02f &&
+        std::fabs(proj.m[0]) > 0.0001f && std::fabs(proj.m[0]) < 0.02f &&
+        std::fabs(proj.m[5]) > 0.0001f && std::fabs(proj.m[5]) < 0.02f;
+    return identityView && orthoProjection;
+}
+
+static void CaptureCurrentRenderMatrices() {
+    Matrix4x4 model = {0};
+    Matrix4x4 proj = {0};
+    glGetFloatv(GL_MODELVIEW_MATRIX, model.m);
+    glGetFloatv(GL_PROJECTION_MATRIX, proj.m);
+
+    if (MatrixProjectionUsable(model, proj)) {
+        g_lastCapturedModelView = model;
+        g_lastCapturedProjection = proj;
+        g_hasCapturedRenderMatrices = true;
+    }
+}
+
+static bool TryUseCapturedRenderMatrices(Matrix4x4& view, Matrix4x4& proj) {
+    if (!g_hasCapturedRenderMatrices) return false;
+    if (!MatrixProjectionUsable(g_lastCapturedModelView, g_lastCapturedProjection)) return false;
+    view = g_lastCapturedModelView;
+    proj = g_lastCapturedProjection;
+    return true;
+}
+
 Matrix4x4 GetMatrix(JNIEnv* env, jfieldID field) {
     Matrix4x4 m = {0};
     if (!env || !g_activeRenderInfoClass || !field) return m;
@@ -4024,20 +4422,23 @@ void RenderNametags(int w, int h) {
         g_pendingJson = "[]";
     }
    if (!g_mapped || !g_mcInstance) return;
-   if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
-       !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) {
-       if (!warnedMissingMappings) {
-           warnedMissingMappings = true;
-           Log("Nametags missing core JNI mappings.");
-       }
-       return;
-   }
 
     ScopedJNIEnv env(g_jvm);
     if (!env) return;
 
+    TryResolveScreenFieldDirect(env);
+    TryResolvePlayerCoreMappings(env);
     TryResolveWorldMappings(env);
     TryResolveRenderMappings(env, false);
+
+    if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
+        !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) {
+        if (!warnedMissingMappings) {
+            warnedMissingMappings = true;
+            Log("Nametags missing core/player mappings.");
+        }
+        return;
+    }
 
     if (!g_playerEntitiesField) {
         if (!warnedMissingMappings) {
@@ -4073,19 +4474,42 @@ void RenderNametags(int w, int h) {
     // 1. Get Matrices
     Matrix4x4 view = GetMatrix(env, g_modelViewField);
     Matrix4x4 proj = GetMatrix(env, g_projectionField);
-
-    auto MatrixMagnitude = [](const Matrix4x4& m) {
-        float sum = 0.0f;
-        for (int i = 0; i < 16; i++) sum += std::fabs(m.m[i]);
-        return sum;
-    };
-
-    bool matrixProjectionUsable = MatrixMagnitude(view) > 0.0001f && MatrixMagnitude(proj) > 0.0001f;
+    bool matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+    bool usedCapturedMatrices = false;
+    if (!matrixProjectionUsable) {
+        usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
+        matrixProjectionUsable = usedCapturedMatrices;
+    }
 
     static int logctr = 0;
+    static bool loggedCapturedMatrixFallback = false;
+    static bool loggedUiMatrixReject = false;
     if (logctr++ % 600 == 0) {
          Log("Matrix Debug - View[0]: " + std::to_string(view.m[0]) + " Proj[0]: " + std::to_string(proj.m[0]));
-         if (!matrixProjectionUsable) Log("WARNING: Matrix projection unavailable, using angle fallback.");
+         if (!matrixProjectionUsable) Log("WARNING: Matrix projection unavailable.");
+         if (usedCapturedMatrices && !loggedCapturedMatrixFallback) {
+             loggedCapturedMatrixFallback = true;
+             Log("Nametags using captured GL matrix fallback.");
+         }
+    }
+
+    if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+        TryResolveRenderMappings(env, false);
+        view = GetMatrix(env, g_modelViewField);
+        proj = GetMatrix(env, g_projectionField);
+        matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+        usedCapturedMatrices = false;
+        if (!matrixProjectionUsable) {
+            usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
+            matrixProjectionUsable = usedCapturedMatrices;
+        }
+        if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+            matrixProjectionUsable = false;
+            if (!loggedUiMatrixReject) {
+                loggedUiMatrixReject = true;
+                Log("Nametags rejected UI-space matrix projection after rebind attempt.");
+            }
+        }
     }
 
     // 2. Get Partial Ticks
@@ -4736,15 +5160,25 @@ void RenderChestESP(int w, int h) {
         chestEspMaxCount = (std::max)(1, (std::min)(20, g_config.chestEspMaxCount));
     }
     if (!g_mapped || !g_mcInstance) return;
-    if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod) return;
-    if (!g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) return;
-    if (!g_tileEntityPosField || !g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) return;
 
     ScopedJNIEnv env(g_jvm);
     if (!env) return;
 
+    TryResolveScreenFieldDirect(env);
+    TryResolvePlayerCoreMappings(env);
+    TryResolveChestEspMappings(env);
     TryResolveWorldMappings(env);
     TryResolveRenderMappings(env, false);
+
+    if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
+        !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField ||
+        !g_tileEntityPosField || !g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) {
+        if (!warnedChestMappings) {
+            warnedChestMappings = true;
+            Log("ChestESP waiting for core/player/chest mappings.");
+        }
+        return;
+    }
 
     if (!g_loadedTileEntityListField) {
         if (!warnedChestMappings) {
@@ -4768,6 +5202,45 @@ void RenderChestESP(int w, int h) {
 
     Matrix4x4 view = GetMatrix(env, g_modelViewField);
     Matrix4x4 proj = GetMatrix(env, g_projectionField);
+    bool matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+    bool usedCapturedMatrices = false;
+    if (!matrixProjectionUsable) {
+        usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
+        matrixProjectionUsable = usedCapturedMatrices;
+    }
+    static bool loggedChestCapturedMatrixFallback = false;
+    static bool loggedChestUiMatrixReject = false;
+    if (usedCapturedMatrices && !loggedChestCapturedMatrixFallback) {
+        loggedChestCapturedMatrixFallback = true;
+        Log("ChestESP using captured GL matrix fallback.");
+    }
+    if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+        TryResolveRenderMappings(env, false);
+        view = GetMatrix(env, g_modelViewField);
+        proj = GetMatrix(env, g_projectionField);
+        matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+        usedCapturedMatrices = false;
+        if (!matrixProjectionUsable) {
+            usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
+            matrixProjectionUsable = usedCapturedMatrices;
+        }
+        if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+            matrixProjectionUsable = false;
+            if (!loggedChestUiMatrixReject) {
+                loggedChestUiMatrixReject = true;
+                Log("ChestESP rejected UI-space matrix projection after rebind attempt.");
+            }
+        }
+    }
+    if (!matrixProjectionUsable) {
+        static bool warnedChestMatrixUnavailable = false;
+        if (!warnedChestMatrixUnavailable) {
+            warnedChestMatrixUnavailable = true;
+            Log("ChestESP waiting for usable projection matrices.");
+        }
+        env->PopLocalFrame(nullptr);
+        return;
+    }
 
     double vX = 0.0, vY = 0.0, vZ = 0.0;
     if (g_renderManagerField && g_viewerPosXField && g_viewerPosYField && g_viewerPosZField) {
@@ -5557,6 +6030,9 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
         int w = rect.right, h = rect.bottom;
 
         if (w > 0 && h > 0) {
+            // Capture game-space matrices before overlay code overrides projection/modelview.
+            CaptureCurrentRenderMatrices();
+
             // Save GL state
             glPushAttrib(GL_ALL_ATTRIB_BITS);
             glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
