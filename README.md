@@ -2,6 +2,10 @@
 
 LegoClicker is a Windows utility client for Lunar Client.
 
+# Showcase
+[![Showcase](https://www.youtube.com/watch?v=eR7QKAWw8D4)](https://www.youtube.com/watch?v=eR7QKAWw8D4)
+
+
 ## Current status
 
 - Supported versions: **26.1**, **1.21.x**, and **1.8.9**.

@@ -21,6 +21,7 @@ public:
     Mutex() { InitializeCriticalSection(&cs); }
     ~Mutex() { DeleteCriticalSection(&cs); }
     void lock() { EnterCriticalSection(&cs); }
+    bool try_lock() { return TryEnterCriticalSection(&cs) != 0; }
     void unlock() { LeaveCriticalSection(&cs); }
 };
 
@@ -31,12 +32,22 @@ public:
     ~LockGuard() { m.unlock(); }
 };
 
+class TryLockGuard {
+    Mutex& m;
+    bool owns;
+public:
+    TryLockGuard(Mutex& m) : m(m), owns(m.try_lock()) {}
+    ~TryLockGuard() { if (owns) m.unlock(); }
+    bool owns_lock() const { return owns; }
+};
+
 // ===================== GLOBALS =====================
 JavaVM* g_jvm = nullptr;
 bool g_running = true;
 static Mutex g_jniMutex; // prevents concurrent JNI between Client thread (SwapBuffers) and LegoBridge thread
 SOCKET g_serverSocket = INVALID_SOCKET;
 SOCKET g_clientSocket = INVALID_SOCKET;
+static volatile LONG g_heavyDiscoveryInProgress = 0;
 
 // Rendering
 static GLuint g_fontTexture = 0;
@@ -1783,6 +1794,20 @@ static bool NeedsCoreMappingRefresh() {
         || !g_theWorldField;
 }
 
+static bool RunHeavyDiscovery(JNIEnv* env, const char* reason) {
+    if (!env) return false;
+    DWORD startedAt = GetTickCount();
+    InterlockedExchange(&g_heavyDiscoveryInProgress, 1);
+    Log(std::string("Heavy mapping discovery start: ") + (reason ? reason : "unspecified"));
+    bool ok = DiscoverMappings(env);
+    DWORD elapsedMs = GetTickCount() - startedAt;
+    InterlockedExchange(&g_heavyDiscoveryInProgress, 0);
+    Log(std::string("Heavy mapping discovery ")
+        + (ok ? "complete" : "failed")
+        + " in " + std::to_string(elapsedMs) + "ms");
+    return ok;
+}
+
 static void TryResolveHoldingBlockMappings(JNIEnv* env);
 static void TryResolvePlayerCoreMappings(JNIEnv* env);
 static void TryResolveChestEspMappings(JNIEnv* env);
@@ -1831,8 +1856,7 @@ static void TryFallbackRenderRecovery(JNIEnv* env, bool hasReadyPlayer) {
     DWORD now = GetTickCount();
     if (now < nextRenderFallbackAt) return;
 
-    Log("Render mappings incomplete, running slow fallback discovery...");
-    bool ok = DiscoverMappings(env);
+    Log("Render mappings incomplete, running lightweight fallback recovery...");
     TryResolveScreenFieldDirect(env);
     TryResolveHoldingBlockMappings(env);
     TryResolvePlayerCoreMappings(env);
@@ -1842,10 +1866,10 @@ static void TryFallbackRenderRecovery(JNIEnv* env, bool hasReadyPlayer) {
 
     bool stillMissing = NeedsRenderRecoveryMappings();
     if (stillMissing) {
-        nextRenderFallbackAt = now + 15000;
-        Log((ok ? "Render fallback partial" : "Render fallback failed") + std::string("; next retry in 15000ms"));
+        nextRenderFallbackAt = now + 60000;
+        Log("Render fallback partial; heavy discovery disabled by core-only policy; next retry in 60000ms");
     } else {
-        nextRenderFallbackAt = now + 15000;
+        nextRenderFallbackAt = now + 60000;
         Log("Render fallback recovery complete");
     }
 }
@@ -2225,46 +2249,38 @@ void MaybeRefreshMappings(JNIEnv* env) {
     TryResolvePlayerCoreMappings(env);
     TryResolveChestEspMappings(env);
 
-    static DWORD nextRetryAt = 0;
-    static DWORD retryDelayMs = 4000;
+    static DWORD nextCoreRetryAt = 0;
+    static DWORD coreRetryDelayMs = 10000;
+    static DWORD nextInWorldWarnAt = 0;
     static bool hadWorld = false;
     static bool hadReadyPlayer = false;
-    static int inWorldBootstrapAttempts = 0;
-    static const int kMaxInWorldBootstrapAttempts = 3;
 
     bool hasWorld = HasLiveWorld(env);
     bool hasReadyPlayer = hasWorld && HasLivePlayer(env);
     bool worldBecameAvailable = hasWorld && !hadWorld;
-    bool worldBecameUnavailable = !hasWorld && hadWorld;
     bool playerReadyBecameAvailable = hasReadyPlayer && !hadReadyPlayer;
-    bool playerReadyBecameUnavailable = !hasReadyPlayer && hadReadyPlayer;
     hadWorld = hasWorld;
     hadReadyPlayer = hasReadyPlayer;
 
-    if (worldBecameUnavailable || playerReadyBecameUnavailable) {
-        inWorldBootstrapAttempts = 0;
-        retryDelayMs = 4000;
-        nextRetryAt = 0;
-    }
     if (worldBecameAvailable) {
-        inWorldBootstrapAttempts = 0;
-        retryDelayMs = 4000;
-        nextRetryAt = 0;
-        Log("World detected; forcing immediate mapping bootstrap.");
+        Log("World detected; running lightweight mapping recovery.");
     }
     if (playerReadyBecameAvailable) {
-        inWorldBootstrapAttempts = 0;
-        retryDelayMs = 4000;
-        nextRetryAt = 0;
-        Log("Local player ready; enabling in-world mapping recovery retries.");
+        Log("Local player ready; running lightweight mapping recovery.");
     }
 
     bool needCoreRefresh = NeedsCoreMappingRefresh();
-    bool needInWorldBootstrap = hasReadyPlayer
-        && NeedsInWorldCriticalRefresh()
-        && inWorldBootstrapAttempts < kMaxInWorldBootstrapAttempts;
     bool needRenderFallback = hasReadyPlayer && NeedsRenderRecoveryMappings();
-    if (!needCoreRefresh && !needInWorldBootstrap) {
+    bool needInWorldRecovery = hasReadyPlayer && NeedsInWorldCriticalRefresh();
+
+    if (!needCoreRefresh) {
+        if (needInWorldRecovery) {
+            DWORD now = GetTickCount();
+            if (now >= nextInWorldWarnAt) {
+                nextInWorldWarnAt = now + 30000;
+                Log("In-world mappings incomplete; using lightweight recovery only.");
+            }
+        }
         if (needRenderFallback) {
             TryFallbackRenderRecovery(env, hasReadyPlayer);
         }
@@ -2272,43 +2288,31 @@ void MaybeRefreshMappings(JNIEnv* env) {
     }
 
     DWORD now = GetTickCount();
-    if (now < nextRetryAt) return;
+    if (now < nextCoreRetryAt) return;
 
-    if (needInWorldBootstrap) {
-        inWorldBootstrapAttempts++;
-    }
-
-    Log(needCoreRefresh
-        ? "Core mappings incomplete, retrying discovery..."
-        : "In-world critical mappings incomplete, retrying discovery...");
-    bool ok = DiscoverMappings(env);
+    Log("Core mappings incomplete, retrying heavy discovery...");
+    bool ok = RunHeavyDiscovery(env, "core-refresh");
     TryResolveScreenFieldDirect(env);
     TryResolveHoldingBlockMappings(env);
+    TryResolvePlayerCoreMappings(env);
+    TryResolveChestEspMappings(env);
+    TryResolveWorldMappings(env);
+    TryResolveRenderMappings(env, false);
 
-    bool hasWorldNow = HasLiveWorld(env);
-    bool hasReadyPlayerNow = hasWorldNow && HasLivePlayer(env);
     bool stillNeedCore = NeedsCoreMappingRefresh();
-    bool stillNeedInWorld = hasReadyPlayerNow && NeedsInWorldCriticalRefresh();
-    if (stillNeedCore || stillNeedInWorld) {
-        if (!stillNeedCore && stillNeedInWorld && inWorldBootstrapAttempts >= kMaxInWorldBootstrapAttempts) {
-            Log("In-world bootstrap attempts exhausted; waiting for player/world transition to retry.");
-            return;
-        }
-        retryDelayMs = (std::min)(retryDelayMs * 2, (DWORD)60000);
+    if (stillNeedCore) {
+        coreRetryDelayMs = (std::min)(coreRetryDelayMs * 2, (DWORD)120000);
         Log((ok ? "Mapping refresh partial" : "Mapping refresh failed")
-            + std::string("; pending=")
-            + std::string(stillNeedCore ? "core" : "in-world")
             + std::string("; next retry in ")
-            + std::to_string(retryDelayMs) + "ms");
+            + std::to_string(coreRetryDelayMs) + "ms");
     } else {
-        retryDelayMs = 4000;
+        coreRetryDelayMs = 10000;
         Log("Mapping refresh complete");
+        if (needRenderFallback) {
+            TryFallbackRenderRecovery(env, hasReadyPlayer);
+        }
     }
-    nextRetryAt = now + retryDelayMs;
-
-    if (!stillNeedCore && !stillNeedInWorld) {
-        TryFallbackRenderRecovery(env, hasReadyPlayerNow);
-    }
+    nextCoreRetryAt = now + coreRetryDelayMs;
 }
 
 static void EnsureVelocityMappings(JNIEnv* env, jobject playerObj) {
@@ -5932,8 +5936,10 @@ LRESULT CALLBACK HookedWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
             }
             if (env) {
-                LockGuard jniLk(g_jniMutex);
-                UpdateReach(env, cfgSnapshot, stateSnapshot, true);
+                TryLockGuard jniTry(g_jniMutex);
+                if (jniTry.owns_lock()) {
+                    UpdateReach(env, cfgSnapshot, stateSnapshot, true);
+                }
             }
             if (attached && g_jvm) g_jvm->DetachCurrentThread();
         }
@@ -6046,10 +6052,21 @@ BOOL WINAPI HookedSwapBuffers(HDC hdc) {
             GameState state;
             { LockGuard lk(g_stateMutex); state = g_gameState; }
             if (!ShouldHideWorldRenderModules(state)) {
-                LockGuard jniLk(g_jniMutex);
-                RenderNametags(w, h);
-                RenderClosestPlayerInfo(w, h);
-                RenderChestESP(w, h);
+                TryLockGuard jniTry(g_jniMutex);
+                if (jniTry.owns_lock()) {
+                    RenderNametags(w, h);
+                    RenderClosestPlayerInfo(w, h);
+                    RenderChestESP(w, h);
+                } else {
+                    static DWORD nextJniBusyLogAt = 0;
+                    DWORD now = GetTickCount();
+                    if (now >= nextJniBusyLogAt) {
+                        nextJniBusyLogAt = now + 3000;
+                        bool heavy = (InterlockedCompareExchange(&g_heavyDiscoveryInProgress, 0, 0) != 0);
+                        Log(std::string("Skipped world overlay frame: JNI busy")
+                            + (heavy ? " (heavy discovery active)" : ""));
+                    }
+                }
             }
 
             // Restore GL state
