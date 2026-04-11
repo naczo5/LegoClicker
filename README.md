@@ -3,8 +3,7 @@
 LegoClicker is a Windows utility client for Lunar Client.
 
 # Showcase
-[![Showcase](https://www.youtube.com/watch?v=eR7QKAWw8D4)](https://www.youtube.com/watch?v=eR7QKAWw8D4)
-
+[![Watch the showcase video](https://img.youtube.com/vi/eR7QKAWw8D4/hqdefault.jpg)](https://www.youtube.com/watch?v=eR7QKAWw8D4)
 
 ## Current status
 
