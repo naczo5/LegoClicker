@@ -71,6 +71,7 @@ struct Config {
     bool closestPlayerInfo = false;
     bool nametagShowHealth = true;
     bool nametagShowArmor = true;
+    bool nametagHideVanilla = false;
     int nametagMaxCount = 8;
     bool chestEsp = false;
     int chestEspMaxCount = 5;
@@ -197,6 +198,23 @@ static jmethodID g_getNameMethod = nullptr;
 static jmethodID g_getGameProfileMethod = nullptr;
 static jclass g_gameProfileClass = nullptr;
 static jmethodID g_gameProfileGetNameMethod = nullptr;
+static jmethodID g_worldGetScoreboardMethod = nullptr;
+static jclass g_scoreboardClassLegacy = nullptr;
+static jclass g_scorePlayerTeamClassLegacy = nullptr;
+static jclass g_teamEnumVisibleClassLegacy = nullptr;
+static jmethodID g_scoreboardGetTeamMethodLegacy = nullptr;
+static jmethodID g_scoreboardCreateTeamMethodLegacy = nullptr;
+static jmethodID g_scoreboardRemoveTeamMethodLegacy = nullptr;
+static jmethodID g_scoreboardAddPlayerToTeamMethodLegacy = nullptr;
+static jmethodID g_scoreboardGetPlayersTeamMethodLegacy = nullptr;
+static jmethodID g_scoreboardRemovePlayerFromTeamsMethodLegacy = nullptr;
+static jmethodID g_scorePlayerTeamGetRegisteredNameMethodLegacy = nullptr;
+static jmethodID g_scorePlayerTeamSetNameTagVisibilityMethodLegacy = nullptr;
+static jobject g_teamEnumVisibleNeverLegacy = nullptr;
+static bool g_legacyNametagSuppressionActive = false;
+static bool g_loggedLegacyNametagSuppressionUnavailable = false;
+static std::unordered_map<std::string, std::string> g_hiddenNametagOriginalTeamByPlayerLegacy;
+static jobject g_lastLegacyNametagSuppressionWorld = nullptr;
 static jmethodID g_objectHashCodeMethod = nullptr;
 static jfieldID g_rotationYawField = nullptr;
 static jfieldID g_rotationPitchField = nullptr;
@@ -298,6 +316,7 @@ static Mutex g_cmdMutex;
 static std::string g_logPath = "bridge_debug.log";
 static bool g_privateMinecraftiaLoaded = false;
 static std::string g_privateMinecraftiaPath;
+static bool g_traceEnabled = false;
 
 // Forward declarations for player-name filtering helpers used by reach/telemetry paths.
 static bool LooksLikeFakePlayerLine(const std::string& rawName);
@@ -316,12 +335,40 @@ void InitLogPath(HMODULE hModule) {
         return;
     }
     g_logPath = path.substr(0, sep + 1) + "bridge_debug.log";
+
+    char traceEnv[16] = {};
+    DWORD traceLen = GetEnvironmentVariableA("LC_BRIDGE_TRACE", traceEnv, sizeof(traceEnv));
+    if (traceLen > 0) {
+        g_traceEnabled = (traceEnv[0] == '1'
+            || traceEnv[0] == 'y' || traceEnv[0] == 'Y'
+            || traceEnv[0] == 't' || traceEnv[0] == 'T');
+    }
 }
 
 void Log(const std::string& msg) {
     std::ofstream f(g_logPath.c_str(), std::ios_base::app);
     f << "[Bridge] " << msg << std::endl;
 }
+
+static void TraceValue(const char* fn, const char* key, const std::string& value) {
+    if (!g_traceEnabled) return;
+    Log(std::string("TRACE|") + (fn ? fn : "?") + "|" + (key ? key : "?") + "|" + value);
+}
+
+static void TraceBranch(const char* fn, const char* branch, bool taken) {
+    if (!g_traceEnabled) return;
+    Log(std::string("TRACE|") + (fn ? fn : "?") + "|" + (branch ? branch : "?") + "|" + (taken ? "1" : "0"));
+}
+
+static bool TraceDecision(const char* fn, const char* branch, bool decision) {
+    TraceBranch(fn, branch, decision);
+    return decision;
+}
+
+#define TRACE_PATH(pathValue) TraceValue(__FUNCTION__, "path", (pathValue))
+#define TRACE_VALUE(key, value) TraceValue(__FUNCTION__, (key), (value))
+#define TRACE_BRANCH(branch, taken) TraceBranch(__FUNCTION__, (branch), (taken))
+#define TRACE_IF(branch, expr) TraceDecision(__FUNCTION__, (branch), (expr))
 
 static std::string GetBridgeDir() {
     size_t sep = g_logPath.find_last_of("\\/");
@@ -472,9 +519,11 @@ jclass LoadClassWithLoader(JNIEnv* env, jobject cl, const char* name) {
 
 // ===================== CLASS DISCOVERY =====================
 bool DiscoverMappings(JNIEnv* env) {
+    TRACE_PATH("enter");
     Log("Starting dynamic class discovery...");
     jvmtiEnv* jvmti = nullptr;
-    if (g_jvm->GetEnv((void**)&jvmti, JVMTI_VERSION_1_2) != JNI_OK || !jvmti) {
+    bool jvmtiReady = TRACE_IF("jvmtiReady", (g_jvm->GetEnv((void**)&jvmti, JVMTI_VERSION_1_2) == JNI_OK && jvmti));
+    if (!jvmtiReady) {
         Log("ERROR: Failed to get JVMTI"); return false;
     }
     jint classCount = 0; jclass* classes = nullptr;
@@ -482,6 +531,7 @@ bool DiscoverMappings(JNIEnv* env) {
     Log("Loaded classes: " + std::to_string(classCount));
 
     jobject gcl = EnsureGameClassLoader(env);
+    TRACE_BRANCH("gameClassLoaderAvailable", gcl != nullptr);
     if (!gcl) { Log("ERROR: No game classloader"); return false; }
 
     jclass cClass = env->FindClass("java/lang/Class");
@@ -510,11 +560,14 @@ bool DiscoverMappings(JNIEnv* env) {
     const char* known[] = {"net.minecraft.client.Minecraft", nullptr};
     for (int i = 0; known[i]; i++) {
         jclass c = LoadClassWithLoader(env, gcl, known[i]);
-        if (c) { mcClass = c; mcName = known[i]; Log("Found MC by name: " + mcName); break; }
+        TRACE_BRANCH("mcLookupKnownNameHit", c != nullptr);
+        if (c) { mcClass = c; mcName = known[i]; TRACE_VALUE("mcClassSource", "known-name"); Log("Found MC by name: " + mcName); break; }
     }
 
     // Scan for singleton pattern
+    TRACE_BRANCH("needSingletonScanForMcClass", mcClass == nullptr);
     if (!mcClass) {
+        TRACE_PATH("scan-for-mc-singleton");
         for (int i = 0; i < classCount; i++) {
             jclass cls = classes[i];
             if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
@@ -544,6 +597,7 @@ bool DiscoverMappings(JNIEnv* env) {
             if (hasSelf && objCount > 15) {
                 mcClass = (jclass)env->NewGlobalRef(cls);
                 mcName = name;
+                TRACE_VALUE("mcClassSource", "singleton-scan");
                 Log("Found MC class: " + name + " fields=" + std::to_string(objCount));
                 break;
             }
@@ -576,9 +630,11 @@ bool DiscoverMappings(JNIEnv* env) {
             Log("Singleton: " + fn);
         }
     }
+    TRACE_BRANCH("singletonFieldResolved", singletonField != nullptr);
     if (!singletonField) { Log("ERROR: No singleton"); jvmti->Deallocate((unsigned char*)classes); return false; }
 
     jobject mcInst = env->GetStaticObjectField(mcClass, singletonField);
+    TRACE_BRANCH("mcInstanceAvailable", mcInst != nullptr);
     if (!mcInst) { Log("ERROR: MC null"); jvmti->Deallocate((unsigned char*)classes); return false; }
     Log("Got MC instance");
 
@@ -635,6 +691,7 @@ bool DiscoverMappings(JNIEnv* env) {
 
     // Find getHealth and position fields on player hierarchy
     if (g_thePlayerField && !playerType.empty()) {
+        TRACE_VALUE("playerType", playerType);
         jclass pc = LoadClassWithLoader(env, gcl, playerType.c_str());
         if (!pc) { std::string sn = playerType; std::replace(sn.begin(), sn.end(), '.', '/');
             pc = env->FindClass(sn.c_str()); if (env->ExceptionCheck()) env->ExceptionClear(); }
@@ -668,27 +725,33 @@ bool DiscoverMappings(JNIEnv* env) {
                 // Prefer canonical field names (including inherited Entity fields) over reflection-order fallbacks.
                 if (!g_posXField) {
                     g_posXField = env->GetFieldID(wc, "posX", "D");
+                    TRACE_BRANCH("posXDirectCanonicalHit", g_posXField != nullptr);
                     if (!g_posXField) {
                         env->ExceptionClear();
                         g_posXField = env->GetFieldID(wc, "field_70165_t", "D");
+                        TRACE_BRANCH("posXDirectObfHit", g_posXField != nullptr);
                     }
                     if (!g_posXField) env->ExceptionClear();
                     else Log("posX: resolved by direct lookup");
                 }
                 if (!g_posYField) {
                     g_posYField = env->GetFieldID(wc, "posY", "D");
+                    TRACE_BRANCH("posYDirectCanonicalHit", g_posYField != nullptr);
                     if (!g_posYField) {
                         env->ExceptionClear();
                         g_posYField = env->GetFieldID(wc, "field_70163_u", "D");
+                        TRACE_BRANCH("posYDirectObfHit", g_posYField != nullptr);
                     }
                     if (!g_posYField) env->ExceptionClear();
                     else Log("posY: resolved by direct lookup");
                 }
                 if (!g_posZField) {
                     g_posZField = env->GetFieldID(wc, "posZ", "D");
+                    TRACE_BRANCH("posZDirectCanonicalHit", g_posZField != nullptr);
                     if (!g_posZField) {
                         env->ExceptionClear();
                         g_posZField = env->GetFieldID(wc, "field_70161_v", "D");
+                        TRACE_BRANCH("posZDirectObfHit", g_posZField != nullptr);
                     }
                     if (!g_posZField) env->ExceptionClear();
                     else Log("posZ: resolved by direct lookup");
@@ -817,10 +880,8 @@ bool DiscoverMappings(JNIEnv* env) {
         if (world) {
              jclass worldClass = env->GetObjectClass(world);
              g_playerEntitiesField = env->GetFieldID(worldClass, "playerEntities", "Ljava/util/List;");
-             if(!g_playerEntitiesField) g_playerEntitiesField = env->GetFieldID(worldClass, "field_73010_i", "Ljava/util/List;");
              g_loadedTileEntityListField = env->GetFieldID(worldClass, "loadedTileEntityList", "Ljava/util/List;");
-             if(!g_loadedTileEntityListField) g_loadedTileEntityListField = env->GetFieldID(worldClass, "field_147482_g", "Ljava/util/List;");
-             
+              
              if (g_playerEntitiesField) Log("Found playerEntities field");
              if (g_loadedTileEntityListField) Log("Found loadedTileEntityList field");
              env->DeleteLocalRef(worldClass);
@@ -835,10 +896,6 @@ bool DiscoverMappings(JNIEnv* env) {
     }
     if (tileEntityClass) {
         g_tileEntityPosField = env->GetFieldID(tileEntityClass, "pos", "Lnet/minecraft/util/BlockPos;");
-        if (!g_tileEntityPosField) {
-            env->ExceptionClear();
-            g_tileEntityPosField = env->GetFieldID(tileEntityClass, "field_174879_c", "Lnet/minecraft/util/BlockPos;");
-        }
         if (!g_tileEntityPosField) env->ExceptionClear();
     }
 
@@ -1230,9 +1287,11 @@ bool DiscoverMappings(JNIEnv* env) {
 
     // ActiveRenderInfo Discovery (Dynamic)
     g_activeRenderInfoClass = env->FindClass("net/minecraft/client/renderer/ActiveRenderInfo");
+    TRACE_BRANCH("activeRenderInfoCanonicalFindClassHit", g_activeRenderInfoClass != nullptr);
     if (!g_activeRenderInfoClass) {
         env->ExceptionClear();
         Log("ActiveRenderInfo not found by name, scanning classes...");
+        TRACE_PATH("scan-for-active-render-info");
         for (int i = 0; i < classCount; i++) {
             jclass cls = classes[i];
             if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
@@ -1272,12 +1331,15 @@ bool DiscoverMappings(JNIEnv* env) {
 
     if (g_activeRenderInfoClass) {
         g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "MODELVIEW", "Ljava/nio/FloatBuffer;");
-        if (!g_modelViewField) { env->ExceptionClear(); g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178812_b", "Ljava/nio/FloatBuffer;"); }
+        TRACE_BRANCH("modelViewCanonicalHit", g_modelViewField != nullptr);
+        if (!g_modelViewField) env->ExceptionClear();
         
         g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "PROJECTION", "Ljava/nio/FloatBuffer;");
-        if (!g_projectionField) { env->ExceptionClear(); g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178813_c", "Ljava/nio/FloatBuffer;"); }
+        TRACE_BRANCH("projectionCanonicalHit", g_projectionField != nullptr);
+        if (!g_projectionField) env->ExceptionClear();
         
         if (!g_modelViewField || !g_projectionField) {
+             TRACE_PATH("scan-for-model-projection-fallback");
              Log("Scanning fields for ModelView/Projection fallback...");
              jobjectArray fs = (jobjectArray)env->CallObjectMethod(g_activeRenderInfoClass, mGetFields);
              jsize fc = env->GetArrayLength(fs);
@@ -1363,6 +1425,7 @@ bool DiscoverMappings(JNIEnv* env) {
     }
 
     g_mapped = (g_thePlayerField != nullptr);
+    TRACE_BRANCH("mappedReady", g_mapped);
     Log("=== Mapping Report ===");
     Log("Player: " + std::string(g_thePlayerField ? "YES" : "NO"));
     Log("World: " + std::string(g_theWorldField ? "YES" : "NO"));
@@ -1381,10 +1444,16 @@ bool DiscoverMappings(JNIEnv* env) {
 }
 
 void TryResolveWorldMappings(JNIEnv* env) {
-    if (!env || !g_mcInstance || !g_theWorldField) return;
-    if (g_playerEntitiesField && g_loadedTileEntityListField) return;
+    TRACE_PATH("enter");
+    bool prerequisites = (env && g_mcInstance && g_theWorldField);
+    TRACE_BRANCH("prerequisitesMet", prerequisites);
+    if (!prerequisites) return;
+    bool alreadyResolved = (g_playerEntitiesField && g_loadedTileEntityListField);
+    TRACE_BRANCH("alreadyResolved", alreadyResolved);
+    if (alreadyResolved) return;
 
     jobject world = env->GetObjectField(g_mcInstance, g_theWorldField);
+    TRACE_BRANCH("worldInstanceAvailable", world != nullptr);
     if (!world) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         return;
@@ -1394,10 +1463,7 @@ void TryResolveWorldMappings(JNIEnv* env) {
     if (worldClass) {
         if (!g_playerEntitiesField) {
             g_playerEntitiesField = env->GetFieldID(worldClass, "playerEntities", "Ljava/util/List;");
-            if (!g_playerEntitiesField) {
-                env->ExceptionClear();
-                g_playerEntitiesField = env->GetFieldID(worldClass, "field_73010_i", "Ljava/util/List;");
-            }
+            TRACE_BRANCH("playerEntitiesCanonicalHit", g_playerEntitiesField != nullptr);
             if (!g_playerEntitiesField) {
                 env->ExceptionClear();
             } else {
@@ -1407,10 +1473,7 @@ void TryResolveWorldMappings(JNIEnv* env) {
 
         if (!g_loadedTileEntityListField) {
             g_loadedTileEntityListField = env->GetFieldID(worldClass, "loadedTileEntityList", "Ljava/util/List;");
-            if (!g_loadedTileEntityListField) {
-                env->ExceptionClear();
-                g_loadedTileEntityListField = env->GetFieldID(worldClass, "field_147482_g", "Ljava/util/List;");
-            }
+            TRACE_BRANCH("loadedTileEntityListCanonicalHit", g_loadedTileEntityListField != nullptr);
             if (!g_loadedTileEntityListField) {
                 env->ExceptionClear();
             } else {
@@ -1424,7 +1487,11 @@ void TryResolveWorldMappings(JNIEnv* env) {
 }
 
 void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false) {
-    if (!env || !g_mcInstance) return;
+    TRACE_PATH("enter");
+    TRACE_BRANCH("includeActionBarMappings", includeActionBarMappings);
+    bool prerequisites = (env && g_mcInstance);
+    TRACE_BRANCH("prerequisitesMet", prerequisites);
+    if (!prerequisites) return;
 
     jobject gcl = EnsureGameClassLoader(env);
 
@@ -1433,15 +1500,18 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
         jclass canonicalAri = nullptr;
         if (gcl) {
             canonicalAri = LoadClassWithLoader(env, gcl, "net.minecraft.client.renderer.ActiveRenderInfo");
+            TRACE_BRANCH("canonicalAriLoadClassHit", canonicalAri != nullptr);
         }
         if (!canonicalAri) {
             canonicalAri = env->FindClass("net/minecraft/client/renderer/ActiveRenderInfo");
+            TRACE_BRANCH("canonicalAriFindClassHit", canonicalAri != nullptr);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
 
         if (canonicalAri) {
             bool replaceAri = (g_activeRenderInfoClass == nullptr)
                 || (env->IsSameObject(g_activeRenderInfoClass, canonicalAri) != JNI_TRUE);
+            TRACE_BRANCH("replaceActiveRenderInfoBinding", replaceAri);
             if (replaceAri) {
                 std::string oldName = g_activeRenderInfoClass ? GetClassNameFromClass(env, g_activeRenderInfoClass) : "";
                 std::string newName = GetClassNameFromClass(env, canonicalAri);
@@ -1472,12 +1542,15 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
     }
 
     if (!g_activeRenderInfoClass) {
+        TRACE_PATH("late-bind-active-render-info");
         jclass ariLocal = nullptr;
         if (gcl) {
             ariLocal = LoadClassWithLoader(env, gcl, "net.minecraft.client.renderer.ActiveRenderInfo");
+            TRACE_BRANCH("lateBindAriLoadClassHit", ariLocal != nullptr);
         }
         if (!ariLocal) {
             ariLocal = env->FindClass("net/minecraft/client/renderer/ActiveRenderInfo");
+            TRACE_BRANCH("lateBindAriFindClassHit", ariLocal != nullptr);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
         if (!ariLocal) {
@@ -1492,10 +1565,7 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
     if (g_activeRenderInfoClass) {
         if (!g_modelViewField) {
             g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "MODELVIEW", "Ljava/nio/FloatBuffer;");
-            if (!g_modelViewField) {
-                env->ExceptionClear();
-                g_modelViewField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178812_b", "Ljava/nio/FloatBuffer;");
-            }
+            TRACE_BRANCH("lateBindModelViewCanonicalHit", g_modelViewField != nullptr);
             if (!g_modelViewField) {
                 env->ExceptionClear();
             } else {
@@ -1505,10 +1575,7 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
 
         if (!g_projectionField) {
             g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "PROJECTION", "Ljava/nio/FloatBuffer;");
-            if (!g_projectionField) {
-                env->ExceptionClear();
-                g_projectionField = env->GetStaticFieldID(g_activeRenderInfoClass, "field_178813_c", "Ljava/nio/FloatBuffer;");
-            }
+            TRACE_BRANCH("lateBindProjectionCanonicalHit", g_projectionField != nullptr);
             if (!g_projectionField) {
                 env->ExceptionClear();
             } else {
@@ -1517,13 +1584,11 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
         }
 
         if (includeActionBarMappings) {
+            TRACE_PATH("resolve-actionbar-mappings");
             // Ingame GUI / action-bar text mappings (for GTB on 1.8.9)
             if (!g_ingameGuiField) {
                 g_ingameGuiField = env->GetFieldID(g_mcClass, "ingameGUI", "Lnet/minecraft/client/gui/GuiIngame;");
-                if (!g_ingameGuiField) {
-                    env->ExceptionClear();
-                    g_ingameGuiField = env->GetFieldID(g_mcClass, "field_71456_v", "Lnet/minecraft/client/gui/GuiIngame;");
-                }
+                TRACE_BRANCH("ingameGuiCanonicalHit", g_ingameGuiField != nullptr);
                 if (!g_ingameGuiField) env->ExceptionClear();
                 else Log("Found ingameGUI field");
             }
@@ -1531,6 +1596,7 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
             if (g_ingameGuiField) {
                 DWORD nowMs = GetTickCount();
                 bool shouldProbe = g_actionBarFields.empty() || (nowMs - g_lastActionBarProbeMs) > 4000;
+                TRACE_BRANCH("actionBarProbeDue", shouldProbe);
                 if (shouldProbe) {
                     g_lastActionBarProbeMs = nowMs;
                     jobject ingameGui = env->GetObjectField(g_mcInstance, g_ingameGuiField);
@@ -1689,6 +1755,7 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
                             } else if (g_lastActionBarFieldCountLogged != 0) {
                                 Log("WARNING: no actionbar-like fields found on GuiIngame");
                                 g_lastActionBarFieldCountLogged = 0;
+                                TRACE_PATH("actionbar-discovery-empty");
                             }
                         }
                         if (hudClass) env->DeleteLocalRef(hudClass);
@@ -1701,15 +1768,19 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
 
             if (!g_chatComponentGetTextMethod) {
                 jclass chatCompClass = LoadClassWithLoader(env, gcl, "net.minecraft.util.IChatComponent");
+                TRACE_BRANCH("chatComponentLoadClassHit", chatCompClass != nullptr);
                 if (!chatCompClass) {
                     chatCompClass = env->FindClass("net/minecraft/util/IChatComponent");
+                    TRACE_BRANCH("chatComponentFindClassHit", chatCompClass != nullptr);
                     if (env->ExceptionCheck()) env->ExceptionClear();
                 }
                 if (chatCompClass) {
                     g_chatComponentGetTextMethod = env->GetMethodID(chatCompClass, "getUnformattedText", "()Ljava/lang/String;");
+                    TRACE_BRANCH("chatGetTextCanonicalHit", g_chatComponentGetTextMethod != nullptr);
                     if (!g_chatComponentGetTextMethod) {
                         env->ExceptionClear();
                         g_chatComponentGetTextMethod = env->GetMethodID(chatCompClass, "func_150260_c", "()Ljava/lang/String;");
+                        TRACE_BRANCH("chatGetTextObfHit", g_chatComponentGetTextMethod != nullptr);
                     }
                     if (!g_chatComponentGetTextMethod) env->ExceptionClear();
                     else Log("Found IChatComponent#getUnformattedText method");
@@ -1789,12 +1860,15 @@ void TryResolveRenderMappings(JNIEnv* env, bool includeActionBarMappings = false
 }
 
 static bool NeedsCoreMappingRefresh() {
-    return !g_mapped
+    bool need = !g_mapped
         || !g_mcInstance
         || !g_theWorldField;
+    TRACE_BRANCH("needsCoreRefresh", need);
+    return need;
 }
 
 static bool RunHeavyDiscovery(JNIEnv* env, const char* reason) {
+    TRACE_PATH("enter");
     if (!env) return false;
     DWORD startedAt = GetTickCount();
     InterlockedExchange(&g_heavyDiscoveryInProgress, 1);
@@ -1813,13 +1887,13 @@ static void TryResolvePlayerCoreMappings(JNIEnv* env);
 static void TryResolveChestEspMappings(JNIEnv* env);
 
 static void TryResolveScreenFieldDirect(JNIEnv* env) {
-    if (!env || !g_mcClass) return;
+    TRACE_PATH("enter");
+    bool prerequisites = (env && g_mcClass);
+    TRACE_BRANCH("prerequisitesMet", prerequisites);
+    if (!prerequisites) return;
 
     jfieldID direct = env->GetFieldID(g_mcClass, "currentScreen", "Lnet/minecraft/client/gui/GuiScreen;");
-    if (!direct) {
-        env->ExceptionClear();
-        direct = env->GetFieldID(g_mcClass, "field_71462_r", "Lnet/minecraft/client/gui/GuiScreen;");
-    }
+    TRACE_BRANCH("currentScreenCanonicalHit", direct != nullptr);
     if (!direct) {
         env->ExceptionClear();
         return;
@@ -1833,7 +1907,7 @@ static void TryResolveScreenFieldDirect(JNIEnv* env) {
 }
 
 static bool NeedsRenderRecoveryMappings() {
-    return !g_playerEntitiesField
+    bool need = !g_playerEntitiesField
         || !g_loadedTileEntityListField
         || !g_activeRenderInfoClass
         || !g_modelViewField
@@ -1846,15 +1920,23 @@ static bool NeedsRenderRecoveryMappings() {
         || !g_blockPosGetX
         || !g_blockPosGetY
         || !g_blockPosGetZ;
+    TRACE_BRANCH("needsRenderRecovery", need);
+    return need;
 }
 
 static void TryFallbackRenderRecovery(JNIEnv* env, bool hasReadyPlayer) {
+    TRACE_PATH("enter");
+    TRACE_BRANCH("hasReadyPlayer", hasReadyPlayer);
     if (!env || !hasReadyPlayer) return;
-    if (!NeedsRenderRecoveryMappings()) return;
+    bool needRecovery = NeedsRenderRecoveryMappings();
+    TRACE_BRANCH("needRecovery", needRecovery);
+    if (!needRecovery) return;
 
     static DWORD nextRenderFallbackAt = 0;
     DWORD now = GetTickCount();
-    if (now < nextRenderFallbackAt) return;
+    bool cooldownElapsed = now >= nextRenderFallbackAt;
+    TRACE_BRANCH("fallbackCooldownElapsed", cooldownElapsed);
+    if (!cooldownElapsed) return;
 
     Log("Render mappings incomplete, running lightweight fallback recovery...");
     TryResolveScreenFieldDirect(env);
@@ -1875,6 +1957,8 @@ static void TryFallbackRenderRecovery(JNIEnv* env, bool hasReadyPlayer) {
 }
 
 static void TryResolveHoldingBlockMappings(JNIEnv* env) {
+    TRACE_PATH("enter");
+    TRACE_BRANCH("envAvailable", env != nullptr);
     if (!env) return;
 
     // Late-resolve ItemBlock class
@@ -1883,9 +1967,11 @@ static void TryResolveHoldingBlockMappings(JNIEnv* env) {
         jclass ibClass = nullptr;
         if (gcl) {
             ibClass = LoadClassWithLoader(env, gcl, "net.minecraft.item.ItemBlock");
+            TRACE_BRANCH("itemBlockLoadClassHit", ibClass != nullptr);
         }
         if (!ibClass) {
             ibClass = env->FindClass("net/minecraft/item/ItemBlock");
+            TRACE_BRANCH("itemBlockFindClassHit", ibClass != nullptr);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
         if (ibClass && !env->ExceptionCheck()) {
@@ -1954,6 +2040,7 @@ static void TryResolveHoldingBlockMappings(JNIEnv* env) {
 
     // Late-resolve getCurrentItem method (only if we now have inventoryField)
     if (!g_getCurrentItemMethod && g_mcInstance && g_thePlayerField && g_inventoryField) {
+        TRACE_PATH("resolve-getCurrentItem");
         jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
         if (!env->ExceptionCheck() && player) {
             jobject inventory = env->GetObjectField(player, g_inventoryField);
@@ -1961,9 +2048,11 @@ static void TryResolveHoldingBlockMappings(JNIEnv* env) {
                 jclass invClass = env->GetObjectClass(inventory);
                 if (invClass) {
                     g_getCurrentItemMethod = env->GetMethodID(invClass, "getCurrentItem", "()Lnet/minecraft/item/ItemStack;");
+                    TRACE_BRANCH("getCurrentItemCanonicalHit", g_getCurrentItemMethod != nullptr);
                     if (!g_getCurrentItemMethod) {
                         env->ExceptionClear();
                         g_getCurrentItemMethod = env->GetMethodID(invClass, "func_70448_g", "()Lnet/minecraft/item/ItemStack;");
+                        TRACE_BRANCH("getCurrentItemObfHit", g_getCurrentItemMethod != nullptr);
                     }
                     if (!g_getCurrentItemMethod) env->ExceptionClear();
                     else Log("Late-bound InventoryPlayer.getCurrentItem");
@@ -1983,7 +2072,10 @@ static void TryResolveHoldingBlockMappings(JNIEnv* env) {
 }
 
 static void TryResolvePlayerCoreMappings(JNIEnv* env) {
-    if (!env || !g_mcInstance || !g_thePlayerField) return;
+    TRACE_PATH("enter");
+    bool prerequisites = (env && g_mcInstance && g_thePlayerField);
+    TRACE_BRANCH("prerequisitesMet", prerequisites);
+    if (!prerequisites) return;
 
     const bool needPlayerCore =
         !g_getHealthMethod ||
@@ -1991,6 +2083,7 @@ static void TryResolvePlayerCoreMappings(JNIEnv* env) {
         !g_rotationYawField || !g_rotationPitchField ||
         !g_getNameMethod || !g_getHeldItemMethod || !g_getTotalArmorValueMethod ||
         !g_lastTickPosXField || !g_lastTickPosYField || !g_lastTickPosZField;
+    TRACE_BRANCH("needPlayerCore", needPlayerCore);
     if (!needPlayerCore) return;
 
     jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
@@ -2011,33 +2104,41 @@ static void TryResolvePlayerCoreMappings(JNIEnv* env) {
     while (walk && depth < 10 && mGetSuper) {
         if (!g_getHealthMethod) {
             g_getHealthMethod = env->GetMethodID(walk, "getHealth", "()F");
+            TRACE_BRANCH("playerCoreGetHealthCanonicalHit", g_getHealthMethod != nullptr);
             if (!g_getHealthMethod) {
                 env->ExceptionClear();
                 g_getHealthMethod = env->GetMethodID(walk, "func_110143_aJ", "()F");
+                TRACE_BRANCH("playerCoreGetHealthObfHit", g_getHealthMethod != nullptr);
             }
             if (!g_getHealthMethod) env->ExceptionClear();
         }
         if (!g_posXField) {
             g_posXField = env->GetFieldID(walk, "posX", "D");
+            TRACE_BRANCH("playerCorePosXCanonicalHit", g_posXField != nullptr);
             if (!g_posXField) {
                 env->ExceptionClear();
                 g_posXField = env->GetFieldID(walk, "field_70165_t", "D");
+                TRACE_BRANCH("playerCorePosXObfHit", g_posXField != nullptr);
             }
             if (!g_posXField) env->ExceptionClear();
         }
         if (!g_posYField) {
             g_posYField = env->GetFieldID(walk, "posY", "D");
+            TRACE_BRANCH("playerCorePosYCanonicalHit", g_posYField != nullptr);
             if (!g_posYField) {
                 env->ExceptionClear();
                 g_posYField = env->GetFieldID(walk, "field_70163_u", "D");
+                TRACE_BRANCH("playerCorePosYObfHit", g_posYField != nullptr);
             }
             if (!g_posYField) env->ExceptionClear();
         }
         if (!g_posZField) {
             g_posZField = env->GetFieldID(walk, "posZ", "D");
+            TRACE_BRANCH("playerCorePosZCanonicalHit", g_posZField != nullptr);
             if (!g_posZField) {
                 env->ExceptionClear();
                 g_posZField = env->GetFieldID(walk, "field_70161_v", "D");
+                TRACE_BRANCH("playerCorePosZObfHit", g_posZField != nullptr);
             }
             if (!g_posZField) env->ExceptionClear();
         }
@@ -2141,26 +2242,355 @@ static void TryResolvePlayerCoreMappings(JNIEnv* env) {
     env->DeleteLocalRef(player);
 }
 
+static std::string Utf8FromJStringLegacy(JNIEnv* env, jstring js) {
+    if (!env || !js) return "";
+    const char* c = env->GetStringUTFChars(js, nullptr);
+    std::string out = c ? c : "";
+    if (c) env->ReleaseStringUTFChars(js, c);
+    return out;
+}
+
+static void ResetLegacyNametagSuppressionState(JNIEnv* env, const char* reason) {
+    if (g_lastLegacyNametagSuppressionWorld && env) {
+        env->DeleteGlobalRef(g_lastLegacyNametagSuppressionWorld);
+        g_lastLegacyNametagSuppressionWorld = nullptr;
+    }
+    g_hiddenNametagOriginalTeamByPlayerLegacy.clear();
+    g_legacyNametagSuppressionActive = false;
+    g_loggedLegacyNametagSuppressionUnavailable = false;
+    if (reason && *reason) {
+        Log(std::string("NametagHideVanilla: legacy suppression state reset (") + reason + ").");
+    }
+}
+
+static void TrackLegacySuppressionWorldContext(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj) return;
+    if (!g_lastLegacyNametagSuppressionWorld) {
+        g_lastLegacyNametagSuppressionWorld = env->NewGlobalRef(worldObj);
+        return;
+    }
+
+    bool changed = (env->IsSameObject(worldObj, g_lastLegacyNametagSuppressionWorld) == JNI_FALSE);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        changed = false;
+    }
+    if (changed) {
+        if (g_lastLegacyNametagSuppressionWorld) {
+            env->DeleteGlobalRef(g_lastLegacyNametagSuppressionWorld);
+            g_lastLegacyNametagSuppressionWorld = nullptr;
+        }
+        g_lastLegacyNametagSuppressionWorld = env->NewGlobalRef(worldObj);
+        if (g_legacyNametagSuppressionActive || !g_hiddenNametagOriginalTeamByPlayerLegacy.empty()) {
+            g_hiddenNametagOriginalTeamByPlayerLegacy.clear();
+            g_legacyNametagSuppressionActive = false;
+            g_loggedLegacyNametagSuppressionUnavailable = false;
+            Log("NametagHideVanilla: legacy world context changed; dropped suppression cache to avoid cross-world scoreboard mutations.");
+        }
+    }
+}
+
+static bool EnsureLegacyNametagTeamMappings(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj) return false;
+
+    if (!g_scoreboardClassLegacy) {
+        jclass c = nullptr;
+        jobject gcl = EnsureGameClassLoader(env);
+        if (gcl) c = LoadClassWithLoader(env, gcl, "net.minecraft.scoreboard.Scoreboard");
+        if (!c) {
+            c = env->FindClass("net/minecraft/scoreboard/Scoreboard");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+        }
+        if (c) {
+            g_scoreboardClassLegacy = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+    if (!g_scorePlayerTeamClassLegacy) {
+        jclass c = nullptr;
+        jobject gcl = EnsureGameClassLoader(env);
+        if (gcl) c = LoadClassWithLoader(env, gcl, "net.minecraft.scoreboard.ScorePlayerTeam");
+        if (!c) {
+            c = env->FindClass("net/minecraft/scoreboard/ScorePlayerTeam");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+        }
+        if (c) {
+            g_scorePlayerTeamClassLegacy = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+    if (!g_teamEnumVisibleClassLegacy) {
+        jclass c = nullptr;
+        jobject gcl = EnsureGameClassLoader(env);
+        if (gcl) c = LoadClassWithLoader(env, gcl, "net.minecraft.scoreboard.Team$EnumVisible");
+        if (!c) {
+            c = env->FindClass("net/minecraft/scoreboard/Team$EnumVisible");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+        }
+        if (c) {
+            g_teamEnumVisibleClassLegacy = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+
+    if (!g_worldGetScoreboardMethod) {
+        jclass worldCls = env->GetObjectClass(worldObj);
+        if (worldCls && !env->ExceptionCheck()) {
+            const char* names[] = { "getScoreboard", "func_96441_U", nullptr };
+            const char* sigs[] = { "()Lnet/minecraft/scoreboard/Scoreboard;", nullptr };
+            for (int ni = 0; names[ni] && !g_worldGetScoreboardMethod; ni++) {
+                for (int si = 0; sigs[si] && !g_worldGetScoreboardMethod; si++) {
+                    g_worldGetScoreboardMethod = env->GetMethodID(worldCls, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_worldGetScoreboardMethod = nullptr; }
+                }
+            }
+            env->DeleteLocalRef(worldCls);
+        } else {
+            env->ExceptionClear();
+        }
+    }
+
+    if (g_scoreboardClassLegacy) {
+        if (!g_scoreboardGetTeamMethodLegacy) {
+            const char* names[] = { "getTeam", "func_96508_e", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardGetTeamMethodLegacy; i++) {
+                g_scoreboardGetTeamMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Ljava/lang/String;)Lnet/minecraft/scoreboard/ScorePlayerTeam;");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardGetTeamMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scoreboardCreateTeamMethodLegacy) {
+            const char* names[] = { "createTeam", "func_96527_f", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardCreateTeamMethodLegacy; i++) {
+                g_scoreboardCreateTeamMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Ljava/lang/String;)Lnet/minecraft/scoreboard/ScorePlayerTeam;");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardCreateTeamMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scoreboardRemoveTeamMethodLegacy) {
+            const char* names[] = { "removeTeam", "func_96511_d", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardRemoveTeamMethodLegacy; i++) {
+                g_scoreboardRemoveTeamMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Lnet/minecraft/scoreboard/ScorePlayerTeam;)V");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardRemoveTeamMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scoreboardAddPlayerToTeamMethodLegacy) {
+            const char* names[] = { "addPlayerToTeam", "func_151392_a", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardAddPlayerToTeamMethodLegacy; i++) {
+                g_scoreboardAddPlayerToTeamMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Ljava/lang/String;Ljava/lang/String;)Z");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardAddPlayerToTeamMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scoreboardGetPlayersTeamMethodLegacy) {
+            const char* names[] = { "getPlayersTeam", "func_96509_i", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardGetPlayersTeamMethodLegacy; i++) {
+                g_scoreboardGetPlayersTeamMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Ljava/lang/String;)Lnet/minecraft/scoreboard/ScorePlayerTeam;");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardGetPlayersTeamMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scoreboardRemovePlayerFromTeamsMethodLegacy) {
+            const char* names[] = { "removePlayerFromTeams", "func_96524_g", nullptr };
+            for (int i = 0; names[i] && !g_scoreboardRemovePlayerFromTeamsMethodLegacy; i++) {
+                g_scoreboardRemovePlayerFromTeamsMethodLegacy = env->GetMethodID(g_scoreboardClassLegacy, names[i], "(Ljava/lang/String;)Z");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardRemovePlayerFromTeamsMethodLegacy = nullptr; }
+            }
+        }
+    }
+
+    if (g_scorePlayerTeamClassLegacy) {
+        if (!g_scorePlayerTeamGetRegisteredNameMethodLegacy) {
+            const char* names[] = { "getRegisteredName", "func_96661_b", nullptr };
+            for (int i = 0; names[i] && !g_scorePlayerTeamGetRegisteredNameMethodLegacy; i++) {
+                g_scorePlayerTeamGetRegisteredNameMethodLegacy = env->GetMethodID(g_scorePlayerTeamClassLegacy, names[i], "()Ljava/lang/String;");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scorePlayerTeamGetRegisteredNameMethodLegacy = nullptr; }
+            }
+        }
+        if (!g_scorePlayerTeamSetNameTagVisibilityMethodLegacy) {
+            const char* names[] = { "setNameTagVisibility", "func_178772_a", nullptr };
+            for (int i = 0; names[i] && !g_scorePlayerTeamSetNameTagVisibilityMethodLegacy; i++) {
+                g_scorePlayerTeamSetNameTagVisibilityMethodLegacy = env->GetMethodID(g_scorePlayerTeamClassLegacy, names[i], "(Lnet/minecraft/scoreboard/Team$EnumVisible;)V");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_scorePlayerTeamSetNameTagVisibilityMethodLegacy = nullptr; }
+            }
+        }
+    }
+
+    if (g_teamEnumVisibleClassLegacy && !g_teamEnumVisibleNeverLegacy) {
+        jfieldID neverField = env->GetStaticFieldID(g_teamEnumVisibleClassLegacy, "NEVER", "Lnet/minecraft/scoreboard/Team$EnumVisible;");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); neverField = nullptr; }
+        if (neverField) {
+            jobject neverObj = env->GetStaticObjectField(g_teamEnumVisibleClassLegacy, neverField);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); neverObj = nullptr; }
+            if (neverObj) {
+                g_teamEnumVisibleNeverLegacy = env->NewGlobalRef(neverObj);
+                env->DeleteLocalRef(neverObj);
+            }
+        }
+        if (!g_teamEnumVisibleNeverLegacy) {
+            jmethodID valuesMid = env->GetStaticMethodID(g_teamEnumVisibleClassLegacy, "values", "()[Lnet/minecraft/scoreboard/Team$EnumVisible;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); valuesMid = nullptr; }
+            if (valuesMid) {
+                jobjectArray vals = (jobjectArray)env->CallStaticObjectMethod(g_teamEnumVisibleClassLegacy, valuesMid);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); vals = nullptr; }
+                if (vals) {
+                    jsize len = env->GetArrayLength(vals);
+                    if (len > 1) {
+                        jobject neverObj = env->GetObjectArrayElement(vals, 1);
+                        if (neverObj) {
+                            g_teamEnumVisibleNeverLegacy = env->NewGlobalRef(neverObj);
+                            env->DeleteLocalRef(neverObj);
+                        }
+                    }
+                    env->DeleteLocalRef(vals);
+                }
+            }
+        }
+    }
+
+    return g_worldGetScoreboardMethod
+        && g_scoreboardGetTeamMethodLegacy
+        && g_scoreboardCreateTeamMethodLegacy
+        && g_scoreboardRemoveTeamMethodLegacy
+        && g_scoreboardAddPlayerToTeamMethodLegacy
+        && g_scoreboardGetPlayersTeamMethodLegacy
+        && g_scoreboardRemovePlayerFromTeamsMethodLegacy
+        && g_scorePlayerTeamGetRegisteredNameMethodLegacy
+        && g_scorePlayerTeamSetNameTagVisibilityMethodLegacy
+        && g_teamEnumVisibleNeverLegacy;
+}
+
+static jobject GetLegacyScoreboard(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj || !g_worldGetScoreboardMethod) return nullptr;
+    jobject scoreboardObj = env->CallObjectMethod(worldObj, g_worldGetScoreboardMethod);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); scoreboardObj = nullptr; }
+    return scoreboardObj;
+}
+
+static jobject EnsureLegacyHideTeam(JNIEnv* env, jobject scoreboardObj) {
+    if (!env || !scoreboardObj || !g_scoreboardGetTeamMethodLegacy || !g_scoreboardCreateTeamMethodLegacy) return nullptr;
+    static const char* kHideTeamName = "lc_hide_tags";
+
+    jstring jTeamName = env->NewStringUTF(kHideTeamName);
+    if (!jTeamName) return nullptr;
+
+    jobject teamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardGetTeamMethodLegacy, jTeamName);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); teamObj = nullptr; }
+    if (!teamObj) {
+        teamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardCreateTeamMethodLegacy, jTeamName);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); teamObj = nullptr; }
+    }
+
+    if (teamObj && g_scorePlayerTeamSetNameTagVisibilityMethodLegacy && g_teamEnumVisibleNeverLegacy) {
+        env->CallVoidMethod(teamObj, g_scorePlayerTeamSetNameTagVisibilityMethodLegacy, g_teamEnumVisibleNeverLegacy);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    }
+
+    env->DeleteLocalRef(jTeamName);
+    return teamObj;
+}
+
+static bool ApplyLegacyVanillaNametagSuppression(JNIEnv* env, jobject scoreboardObj, jobject hideTeamObj, const std::string& playerName) {
+    if (!env || !scoreboardObj || !hideTeamObj || playerName.empty()) return false;
+    static const char* kHideTeamName = "lc_hide_tags";
+
+    jstring jPlayerName = env->NewStringUTF(playerName.c_str());
+    if (!jPlayerName) return false;
+
+    if (g_hiddenNametagOriginalTeamByPlayerLegacy.find(playerName) == g_hiddenNametagOriginalTeamByPlayerLegacy.end()) {
+        std::string originalTeamName;
+        if (g_scoreboardGetPlayersTeamMethodLegacy && g_scorePlayerTeamGetRegisteredNameMethodLegacy) {
+            jobject oldTeam = env->CallObjectMethod(scoreboardObj, g_scoreboardGetPlayersTeamMethodLegacy, jPlayerName);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); oldTeam = nullptr; }
+            if (oldTeam) {
+                jstring jOldTeamName = (jstring)env->CallObjectMethod(oldTeam, g_scorePlayerTeamGetRegisteredNameMethodLegacy);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); jOldTeamName = nullptr; }
+                if (jOldTeamName) {
+                    originalTeamName = Utf8FromJStringLegacy(env, jOldTeamName);
+                    env->DeleteLocalRef(jOldTeamName);
+                }
+                env->DeleteLocalRef(oldTeam);
+            }
+        }
+        g_hiddenNametagOriginalTeamByPlayerLegacy[playerName] = originalTeamName;
+    }
+
+    jstring jHideTeamName = env->NewStringUTF(kHideTeamName);
+    if (!jHideTeamName) {
+        env->DeleteLocalRef(jPlayerName);
+        return false;
+    }
+    jboolean applied = env->CallBooleanMethod(scoreboardObj, g_scoreboardAddPlayerToTeamMethodLegacy, jPlayerName, jHideTeamName);
+    bool ok = !env->ExceptionCheck();
+    if (!ok) env->ExceptionClear();
+
+    env->DeleteLocalRef(jHideTeamName);
+    env->DeleteLocalRef(jPlayerName);
+    return ok && (applied == JNI_TRUE || applied == JNI_FALSE);
+}
+
+static void RestoreLegacyVanillaNametagSuppression(JNIEnv* env, jobject scoreboardObj) {
+    if (!env || !scoreboardObj || !g_scoreboardRemovePlayerFromTeamsMethodLegacy) {
+        g_hiddenNametagOriginalTeamByPlayerLegacy.clear();
+        return;
+    }
+    for (const auto& entry : g_hiddenNametagOriginalTeamByPlayerLegacy) {
+        const std::string& playerName = entry.first;
+        const std::string& originalTeamName = entry.second;
+        if (playerName.empty()) continue;
+
+        jstring jPlayerName = env->NewStringUTF(playerName.c_str());
+        if (!jPlayerName) continue;
+
+        env->CallBooleanMethod(scoreboardObj, g_scoreboardRemovePlayerFromTeamsMethodLegacy, jPlayerName);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+
+        if (!originalTeamName.empty() && g_scoreboardAddPlayerToTeamMethodLegacy) {
+            jstring jOriginalTeamName = env->NewStringUTF(originalTeamName.c_str());
+            if (jOriginalTeamName) {
+                env->CallBooleanMethod(scoreboardObj, g_scoreboardAddPlayerToTeamMethodLegacy, jPlayerName, jOriginalTeamName);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(jOriginalTeamName);
+            }
+        }
+        env->DeleteLocalRef(jPlayerName);
+    }
+    g_hiddenNametagOriginalTeamByPlayerLegacy.clear();
+
+    if (g_scoreboardGetTeamMethodLegacy && g_scoreboardRemoveTeamMethodLegacy) {
+        jstring jHideTeamName = env->NewStringUTF("lc_hide_tags");
+        if (jHideTeamName) {
+            jobject hideTeam = env->CallObjectMethod(scoreboardObj, g_scoreboardGetTeamMethodLegacy, jHideTeamName);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); hideTeam = nullptr; }
+            if (hideTeam) {
+                env->CallVoidMethod(scoreboardObj, g_scoreboardRemoveTeamMethodLegacy, hideTeam);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(hideTeam);
+            }
+            env->DeleteLocalRef(jHideTeamName);
+        }
+    }
+}
+
 static void TryResolveChestEspMappings(JNIEnv* env) {
+    TRACE_PATH("enter");
+    TRACE_BRANCH("envAvailable", env != nullptr);
     if (!env) return;
 
-    if (g_tileEntityPosField && g_blockPosGetX && g_blockPosGetY && g_blockPosGetZ) return;
+    bool alreadyResolved = (g_tileEntityPosField && g_blockPosGetX && g_blockPosGetY && g_blockPosGetZ);
+    TRACE_BRANCH("alreadyResolved", alreadyResolved);
+    if (alreadyResolved) return;
 
     jobject gcl = EnsureGameClassLoader(env);
 
     if (!g_tileEntityPosField) {
         jclass teClass = nullptr;
         if (gcl) teClass = LoadClassWithLoader(env, gcl, "net.minecraft.tileentity.TileEntity");
+        TRACE_BRANCH("tileEntityLoadClassHit", teClass != nullptr);
         if (!teClass) {
             teClass = env->FindClass("net/minecraft/tileentity/TileEntity");
+            TRACE_BRANCH("tileEntityFindClassHit", teClass != nullptr);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
         if (teClass) {
             g_tileEntityPosField = env->GetFieldID(teClass, "pos", "Lnet/minecraft/util/BlockPos;");
-            if (!g_tileEntityPosField) {
-                env->ExceptionClear();
-                g_tileEntityPosField = env->GetFieldID(teClass, "field_174879_c", "Lnet/minecraft/util/BlockPos;");
-            }
+            TRACE_BRANCH("tileEntityPosCanonicalHit", g_tileEntityPosField != nullptr);
             if (!g_tileEntityPosField) env->ExceptionClear();
         }
     }
@@ -2168,8 +2598,10 @@ static void TryResolveChestEspMappings(JNIEnv* env) {
     if (!g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) {
         jclass bpClass = nullptr;
         if (gcl) bpClass = LoadClassWithLoader(env, gcl, "net.minecraft.util.BlockPos");
+        TRACE_BRANCH("blockPosLoadClassHit", bpClass != nullptr);
         if (!bpClass) {
             bpClass = env->FindClass("net/minecraft/util/BlockPos");
+            TRACE_BRANCH("blockPosFindClassHit", bpClass != nullptr);
             if (env->ExceptionCheck()) env->ExceptionClear();
         }
         if (bpClass) {
@@ -2202,7 +2634,7 @@ static void TryResolveChestEspMappings(JNIEnv* env) {
 }
 
 static bool NeedsInWorldCriticalRefresh() {
-    return !g_thePlayerField
+    bool need = !g_thePlayerField
         || !g_getHealthMethod
         || !g_posXField
         || !g_posYField
@@ -2216,6 +2648,8 @@ static bool NeedsInWorldCriticalRefresh() {
         || !g_enumNameMethod
         || !g_inventoryField
         || !g_getHeldItemMethod;
+    TRACE_BRANCH("needsInWorldCriticalRefresh", need);
+    return need;
 }
 
 static bool HasLiveWorld(JNIEnv* env) {
@@ -2243,7 +2677,9 @@ static bool HasLivePlayer(JNIEnv* env) {
 }
 
 void MaybeRefreshMappings(JNIEnv* env) {
-    if (!env || !g_jvm) return;
+    TRACE_PATH("enter");
+    bool prerequisites = TRACE_IF("prerequisitesMet", (env && g_jvm));
+    if (!prerequisites) return;
     TryResolveScreenFieldDirect(env);
     TryResolveHoldingBlockMappings(env);
     TryResolvePlayerCoreMappings(env);
@@ -2257,6 +2693,8 @@ void MaybeRefreshMappings(JNIEnv* env) {
 
     bool hasWorld = HasLiveWorld(env);
     bool hasReadyPlayer = hasWorld && HasLivePlayer(env);
+    TRACE_BRANCH("hasWorld", hasWorld);
+    TRACE_BRANCH("hasReadyPlayer", hasReadyPlayer);
     bool worldBecameAvailable = hasWorld && !hadWorld;
     bool playerReadyBecameAvailable = hasReadyPlayer && !hadReadyPlayer;
     hadWorld = hasWorld;
@@ -2272,6 +2710,9 @@ void MaybeRefreshMappings(JNIEnv* env) {
     bool needCoreRefresh = NeedsCoreMappingRefresh();
     bool needRenderFallback = hasReadyPlayer && NeedsRenderRecoveryMappings();
     bool needInWorldRecovery = hasReadyPlayer && NeedsInWorldCriticalRefresh();
+    TRACE_BRANCH("needCoreRefresh", needCoreRefresh);
+    TRACE_BRANCH("needRenderFallback", needRenderFallback);
+    TRACE_BRANCH("needInWorldRecovery", needInWorldRecovery);
 
     if (!needCoreRefresh) {
         if (needInWorldRecovery) {
@@ -2288,7 +2729,9 @@ void MaybeRefreshMappings(JNIEnv* env) {
     }
 
     DWORD now = GetTickCount();
-    if (now < nextCoreRetryAt) return;
+    bool coreRetryDue = now >= nextCoreRetryAt;
+    TRACE_BRANCH("coreRetryDue", coreRetryDue);
+    if (!coreRetryDue) return;
 
     Log("Core mappings incomplete, retrying heavy discovery...");
     bool ok = RunHeavyDiscovery(env, "core-refresh");
@@ -4404,19 +4847,23 @@ bool WorldToScreen(const double x, const double y, const double z, const Matrix4
     return true;
 }
 void RenderNametags(int w, int h) {
+    TRACE_PATH("enter");
    static bool warnedMissingMappings = false;
     bool showHealth = true;
     bool showArmor = true;
+    bool hideVanillaTags = false;
     bool nametagsEnabled = false;
     bool entityTelemetryNeeded = false;
     int nametagMaxCount = 8;
     {
          LockGuard lk(g_configMutex);
          nametagsEnabled = g_config.nametags;
-         entityTelemetryNeeded = g_config.nametags || g_config.closestPlayerInfo || g_config.aimAssist;
-         if (!entityTelemetryNeeded) return;
+         entityTelemetryNeeded = g_config.nametags || g_config.closestPlayerInfo || g_config.aimAssist || g_config.nametagHideVanilla || g_legacyNametagSuppressionActive;
+         TRACE_BRANCH("entityTelemetryNeeded", entityTelemetryNeeded);
+          if (!entityTelemetryNeeded) return;
          showHealth = g_config.nametagShowHealth;
          showArmor = g_config.nametagShowArmor;
+         hideVanillaTags = g_config.nametagHideVanilla;
          nametagMaxCount = (std::max)(1, (std::min)(20, g_config.nametagMaxCount));
     }
 
@@ -4425,9 +4872,12 @@ void RenderNametags(int w, int h) {
         LockGuard lk(g_jsonMutex);
         g_pendingJson = "[]";
     }
-   if (!g_mapped || !g_mcInstance) return;
+   bool mappedReady = (g_mapped && g_mcInstance);
+   TRACE_BRANCH("mappedReady", mappedReady);
+   if (!mappedReady) return;
 
     ScopedJNIEnv env(g_jvm);
+    TRACE_BRANCH("jniEnvAvailable", env != nullptr);
     if (!env) return;
 
     TryResolveScreenFieldDirect(env);
@@ -4437,6 +4887,7 @@ void RenderNametags(int w, int h) {
 
     if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
         !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField) {
+        TRACE_PATH("missing-core-player-mappings");
         if (!warnedMissingMappings) {
             warnedMissingMappings = true;
             Log("Nametags missing core/player mappings.");
@@ -4445,6 +4896,7 @@ void RenderNametags(int w, int h) {
     }
 
     if (!g_playerEntitiesField) {
+        TRACE_PATH("missing-world-entity-mappings");
         if (!warnedMissingMappings) {
             warnedMissingMappings = true;
             Log("Nametags waiting for JNI world mappings.");
@@ -4453,6 +4905,7 @@ void RenderNametags(int w, int h) {
     }
 
     if (!g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) {
+        TRACE_PATH("missing-render-mappings");
         if (!warnedMissingMappings) {
             warnedMissingMappings = true;
             Log("Nametags waiting for render mappings.");
@@ -4479,11 +4932,14 @@ void RenderNametags(int w, int h) {
     Matrix4x4 view = GetMatrix(env, g_modelViewField);
     Matrix4x4 proj = GetMatrix(env, g_projectionField);
     bool matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+    TRACE_BRANCH("matrixProjectionUsableInitial", matrixProjectionUsable);
     bool usedCapturedMatrices = false;
     if (!matrixProjectionUsable) {
+        TRACE_PATH("matrix-fallback-captured");
         usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
         matrixProjectionUsable = usedCapturedMatrices;
     }
+    TRACE_BRANCH("matrixProjectionUsableAfterFallback", matrixProjectionUsable);
 
     static int logctr = 0;
     static bool loggedCapturedMatrixFallback = false;
@@ -4498,12 +4954,14 @@ void RenderNametags(int w, int h) {
     }
 
     if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+        TRACE_PATH("matrix-ui-ortho-rebind-attempt");
         TryResolveRenderMappings(env, false);
         view = GetMatrix(env, g_modelViewField);
         proj = GetMatrix(env, g_projectionField);
         matrixProjectionUsable = MatrixProjectionUsable(view, proj);
         usedCapturedMatrices = false;
         if (!matrixProjectionUsable) {
+            TRACE_PATH("matrix-ui-ortho-second-fallback");
             usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
             matrixProjectionUsable = usedCapturedMatrices;
         }
@@ -4541,10 +4999,14 @@ void RenderNametags(int w, int h) {
     // 4. Iterate Entities
     jobject world = env->GetObjectField(g_mcInstance, g_theWorldField);
     if (!world) {
+        if (g_legacyNametagSuppressionActive || !g_hiddenNametagOriginalTeamByPlayerLegacy.empty() || g_lastLegacyNametagSuppressionWorld) {
+            ResetLegacyNametagSuppressionState(env, "world-null");
+        }
         if (logctr % 600 == 0) Log("WARNING: World is null");
         env->PopLocalFrame(nullptr);
         return;
     }
+    TrackLegacySuppressionWorldContext(env, world);
     
     jobject startList = env->GetObjectField(world, g_playerEntitiesField);
     if (!startList) {
@@ -4598,12 +5060,45 @@ void RenderNametags(int w, int h) {
     std::stringstream ss;
     ss << "[";
     constexpr int kEntityJsonCap = 20;
-    const int entityProcessCap = nametagsEnabled
-        ? (std::max)(1, (std::min)(20, nametagMaxCount))
-        : kEntityJsonCap;
+    const int entityProcessCap = (hideVanillaTags || g_legacyNametagSuppressionActive)
+        ? (std::max)(1, size)
+        : nametagsEnabled
+            ? (std::max)(1, (std::min)(20, nametagMaxCount))
+            : kEntityJsonCap;
+    bool suppressionAppliedThisPass = false;
+    bool suppressionAttemptedThisPass = false;
     
     // Get Local Player for distance & health debug
     jobject player = env->GetObjectField(g_mcInstance, g_thePlayerField);
+    jobject hideScoreboardObj = nullptr;
+    jobject hideTeamObj = nullptr;
+    if ((hideVanillaTags || g_legacyNametagSuppressionActive) && !EnsureLegacyNametagTeamMappings(env, world) && !g_loggedLegacyNametagSuppressionUnavailable) {
+        g_loggedLegacyNametagSuppressionUnavailable = true;
+        Log("NametagHideVanilla: legacy team-visibility mappings unresolved; fail-open (vanilla nametags remain visible).");
+    }
+    if (!hideVanillaTags && g_legacyNametagSuppressionActive) {
+        jobject restoreScoreboard = GetLegacyScoreboard(env, world);
+        if (restoreScoreboard) {
+            RestoreLegacyVanillaNametagSuppression(env, restoreScoreboard);
+            env->DeleteLocalRef(restoreScoreboard);
+        } else {
+            g_hiddenNametagOriginalTeamByPlayerLegacy.clear();
+        }
+        g_legacyNametagSuppressionActive = false;
+    }
+    if (hideVanillaTags) {
+        hideScoreboardObj = GetLegacyScoreboard(env, world);
+        if (hideScoreboardObj) {
+            hideTeamObj = EnsureLegacyHideTeam(env, hideScoreboardObj);
+            if (!hideTeamObj && !g_loggedLegacyNametagSuppressionUnavailable) {
+                g_loggedLegacyNametagSuppressionUnavailable = true;
+                Log("NametagHideVanilla: legacy hide team unavailable; fail-open (vanilla nametags remain visible).");
+            }
+        } else if (!g_loggedLegacyNametagSuppressionUnavailable) {
+            g_loggedLegacyNametagSuppressionUnavailable = true;
+            Log("NametagHideVanilla: legacy scoreboard unavailable; fail-open (vanilla nametags remain visible).");
+        }
+    }
     float fallbackYaw = 0.0f;
     float fallbackPitch = 0.0f;
     float fallbackFov = 70.0f;
@@ -4680,6 +5175,12 @@ void RenderNametags(int w, int h) {
         if (displayName.empty() || LooksLikeFakePlayerLine(displayName)) {
             env->DeleteLocalRef(entity);
             continue;
+        }
+        if (hideVanillaTags && hideScoreboardObj && hideTeamObj) {
+            suppressionAttemptedThisPass = true;
+            if (ApplyLegacyVanillaNametagSuppression(env, hideScoreboardObj, hideTeamObj, displayName)) {
+                suppressionAppliedThisPass = true;
+            }
         }
         
         // Health
@@ -4961,6 +5462,14 @@ void RenderNametags(int w, int h) {
 
         env->DeleteLocalRef(entity);
     }
+    if (hideTeamObj) env->DeleteLocalRef(hideTeamObj);
+    if (hideScoreboardObj) env->DeleteLocalRef(hideScoreboardObj);
+    if (hideVanillaTags && suppressionAppliedThisPass) {
+        g_legacyNametagSuppressionActive = true;
+    } else if (hideVanillaTags && suppressionAttemptedThisPass && !suppressionAppliedThisPass && !g_loggedLegacyNametagSuppressionUnavailable) {
+        g_loggedLegacyNametagSuppressionUnavailable = true;
+        Log("NametagHideVanilla: legacy player->hide-team assignment failed; fail-open on this runtime.");
+    }
     
     // Cleanup stale smoothing state
     for (auto it = g_tagSmoothing.begin(); it != g_tagSmoothing.end(); ) {
@@ -5156,16 +5665,21 @@ void RenderClosestPlayerInfo(int w, int h) {
 }
 
 void RenderChestESP(int w, int h) {
+    TRACE_PATH("enter");
     static bool warnedChestMappings = false;
     int chestEspMaxCount = 5;
     {
         LockGuard lk(g_configMutex);
+        TRACE_BRANCH("chestEspEnabled", g_config.chestEsp);
         if (!g_config.chestEsp) return;
         chestEspMaxCount = (std::max)(1, (std::min)(20, g_config.chestEspMaxCount));
     }
-    if (!g_mapped || !g_mcInstance) return;
+    bool mappedReady = (g_mapped && g_mcInstance);
+    TRACE_BRANCH("mappedReady", mappedReady);
+    if (!mappedReady) return;
 
     ScopedJNIEnv env(g_jvm);
+    TRACE_BRANCH("jniEnvAvailable", env != nullptr);
     if (!env) return;
 
     TryResolveScreenFieldDirect(env);
@@ -5177,6 +5691,7 @@ void RenderChestESP(int w, int h) {
     if (!g_theWorldField || !g_listSizeMethod || !g_listGetMethod ||
         !g_thePlayerField || !g_posXField || !g_posYField || !g_posZField ||
         !g_tileEntityPosField || !g_blockPosGetX || !g_blockPosGetY || !g_blockPosGetZ) {
+        TRACE_PATH("missing-core-player-chest-mappings");
         if (!warnedChestMappings) {
             warnedChestMappings = true;
             Log("ChestESP waiting for core/player/chest mappings.");
@@ -5185,6 +5700,7 @@ void RenderChestESP(int w, int h) {
     }
 
     if (!g_loadedTileEntityListField) {
+        TRACE_PATH("missing-world-tile-list");
         if (!warnedChestMappings) {
             warnedChestMappings = true;
             Log("ChestESP waiting for JNI world mappings.");
@@ -5192,6 +5708,7 @@ void RenderChestESP(int w, int h) {
         return;
     }
     if (!g_activeRenderInfoClass || !g_modelViewField || !g_projectionField) {
+        TRACE_PATH("missing-render-mappings");
         if (!warnedChestMappings) {
             warnedChestMappings = true;
             Log("ChestESP waiting for render mappings.");
@@ -5207,11 +5724,14 @@ void RenderChestESP(int w, int h) {
     Matrix4x4 view = GetMatrix(env, g_modelViewField);
     Matrix4x4 proj = GetMatrix(env, g_projectionField);
     bool matrixProjectionUsable = MatrixProjectionUsable(view, proj);
+    TRACE_BRANCH("matrixProjectionUsableInitial", matrixProjectionUsable);
     bool usedCapturedMatrices = false;
     if (!matrixProjectionUsable) {
+        TRACE_PATH("matrix-fallback-captured");
         usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
         matrixProjectionUsable = usedCapturedMatrices;
     }
+    TRACE_BRANCH("matrixProjectionUsableAfterFallback", matrixProjectionUsable);
     static bool loggedChestCapturedMatrixFallback = false;
     static bool loggedChestUiMatrixReject = false;
     if (usedCapturedMatrices && !loggedChestCapturedMatrixFallback) {
@@ -5219,12 +5739,14 @@ void RenderChestESP(int w, int h) {
         Log("ChestESP using captured GL matrix fallback.");
     }
     if (matrixProjectionUsable && IsLikelyUiOrthoMatrix(view, proj)) {
+        TRACE_PATH("matrix-ui-ortho-rebind-attempt");
         TryResolveRenderMappings(env, false);
         view = GetMatrix(env, g_modelViewField);
         proj = GetMatrix(env, g_projectionField);
         matrixProjectionUsable = MatrixProjectionUsable(view, proj);
         usedCapturedMatrices = false;
         if (!matrixProjectionUsable) {
+            TRACE_PATH("matrix-ui-ortho-second-fallback");
             usedCapturedMatrices = TryUseCapturedRenderMatrices(view, proj);
             matrixProjectionUsable = usedCapturedMatrices;
         }
@@ -5877,6 +6399,8 @@ void RenderClickGUI(int winW, int winH) {
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Show Health", cfg.nametagShowHealth, scale * 0.88f)) queueToggle("toggleNametagHealth");
         sy += 30.0f;
         if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Show Armor", cfg.nametagShowArmor, scale * 0.88f)) queueToggle("toggleNametagArmor");
+        sy += 30.0f;
+        if (GuiSettingToggle(settingsX + 8.0f, sy, settingsW - 16.0f, "Hide Vanilla Tags", cfg.nametagHideVanilla, scale * 0.88f)) queueToggle("toggleNametagHideVanilla");
         sy += 34.0f;
         DrawText2D(settingsX + 9.0f, sy, "Armor is displayed as points.", 0.54f, 0.56f, 0.61f, 1.0f, scale * 0.72f);
         sy += 18.0f;
@@ -6226,6 +6750,7 @@ void ParseConfig(const std::string& line) {
         g_config.closestPlayerInfo = getBool("closestPlayerInfo");
         g_config.nametagShowHealth = getBool("nametagShowHealth");
         g_config.nametagShowArmor = getBool("nametagShowArmor");
+        g_config.nametagHideVanilla = getBool("nametagHideVanilla");
         g_config.chestEsp = getBool("chestEsp");
         g_config.reachEnabled = getBool("reachEnabled");
         g_config.velocityEnabled = getBool("velocityEnabled");
@@ -6244,6 +6769,7 @@ void ParseConfig(const std::string& line) {
 
         g_config.nametagShowHealth = getBool("nametagShowHealth");
         g_config.nametagShowArmor = getBool("nametagShowArmor");
+        g_config.nametagHideVanilla = getBool("nametagHideVanilla");
 
         int nametagMaxCount = getInt("nametagMaxCount");
         if (nametagMaxCount < 1) nametagMaxCount = g_config.nametagMaxCount;
@@ -6316,7 +6842,7 @@ bool TrySendCapabilities(SOCKET sock) {
     static const char* kCapabilitiesJson =
         "{\"type\":\"capabilities\","
         "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"aimassist\",\"gtbhelper\",\"nametags\",\"closestplayer\",\"chestesp\",\"reach\",\"velocity\"],"
-        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"aimassistfov\",\"aimassistrange\",\"aimassiststrength\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
+        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"aimassistfov\",\"aimassistrange\",\"aimassiststrength\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametaghidevanilla\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\",\"keybindautoclicker\",\"keybindnametags\",\"keybindclosestplayer\",\"keybindchestesp\"],"
         "\"state\":[\"actionbar\",\"holdingblock\",\"lookingatblock\",\"lookingatentity\",\"lookingatentitylatched\",\"breakingblock\",\"attackcooldown\",\"attackcooldownpertick\",\"statems\"]}\n";
 
     int sent = send(sock, kCapabilitiesJson, (int)strlen(kCapabilitiesJson), 0);
