@@ -5,6 +5,11 @@
 This file is the operating guide for coding agents working in `legoclickerC`.
 It documents build/test/lint commands, repository conventions, and safety rules.
 
+## Primary technical reference
+
+- Read `GUIDE.md` first for project architecture, version-specific mapping behavior, and implementation guardrails.
+- When this file and `GUIDE.md` overlap, keep behavior decisions aligned with `GUIDE.md`.
+
 ## Repository Overview
 
 - `LegoClickerCS/`: .NET 8 WPF loader + external GUI (`LegoClicker` executable).
@@ -158,6 +163,6 @@ The project intentionally behaves like an external input/overlay tool.
 
 - `.cursor/rules/`: not found in this repository.
 - `.cursorrules`: not found in this repository.
-- `.github/copilot-instructions.md`: not found in this repository.
+- `.github/copilot-instructions.md`: present and should be treated as higher-priority assistant guidance.
 
-If any of these files are later added, treat them as higher-priority agent instructions and update this file accordingly.
+If additional higher-priority instruction files are added later, treat them as authoritative and update this file accordingly.

@@ -22,7 +22,7 @@
  * Command API (bridge -> C#): action names match GameStateClient.HandleBridgeCommand
  *  toggleArmed, setMinCPS, setMaxCPS, toggleJitter, toggleClickInChests,
  *  toggleNametags, toggleChestEsp, toggleClosestPlayerInfo,
- *  toggleNametagHealth, toggleNametagArmor, toggleRight, toggleBreakBlocks
+ *  toggleNametagHealth, toggleNametagArmor, toggleNametagHideVanilla, toggleRight, toggleBreakBlocks
  */
 #include <winsock2.h>
 #include <windows.h>
@@ -32,6 +32,7 @@
 #include <vector>
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
 #include <cmath>
@@ -83,6 +84,28 @@ static jclass LoadClassWithLoader(JNIEnv* env, jobject cl, const char* name);
 static std::string GetClassNameFromClass(JNIEnv* env, jclass cls);
 static std::string CallTextToString(JNIEnv* env, jobject textObj);
 
+static bool g_trace261Enabled = false;
+
+static void TraceValue261(const char* fn, const char* key, const std::string& value) {
+    if (!g_trace261Enabled) return;
+    Log(std::string("TRACE|") + (fn ? fn : "?") + "|" + (key ? key : "?") + "|" + value);
+}
+
+static void TraceBranch261(const char* fn, const char* branch, bool taken) {
+    if (!g_trace261Enabled) return;
+    Log(std::string("TRACE|") + (fn ? fn : "?") + "|" + (branch ? branch : "?") + "|" + (taken ? "1" : "0"));
+}
+
+static bool TraceDecision261(const char* fn, const char* branch, bool decision) {
+    TraceBranch261(fn, branch, decision);
+    return decision;
+}
+
+#define TRACE261_PATH(pathValue) TraceValue261(__FUNCTION__, "path", (pathValue))
+#define TRACE261_VALUE(key, value) TraceValue261(__FUNCTION__, (key), (value))
+#define TRACE261_BRANCH(branch, taken) TraceBranch261(__FUNCTION__, (branch), (taken))
+#define TRACE261_IF(branch, expr) TraceDecision261(__FUNCTION__, (branch), (expr))
+
 // ===================== MUTEX =====================
 class Mutex {
     CRITICAL_SECTION cs;
@@ -115,6 +138,7 @@ struct Config {
     bool  closestPlayer  = false;
     bool  nametagHealth  = true;
     bool  nametagArmor   = true;
+    bool  nametagHideVanilla = false;
     int   nametagMaxCount = 8;
     int   chestEspMaxCount = 5;
     bool  rightClick     = false;
@@ -137,9 +161,11 @@ struct Config {
     int   velocityHorizontal = 100;
     int   velocityVertical = 100;
     int   velocityChance = 100;
+    int   reloadMappingsNonce = 0;
 };
 static Config g_config;
 static Mutex  g_configMutex;
+static volatile LONG g_forceGlobalJniRemap_121 = 0;
 
 // ===================== PENDING COMMANDS (bridge -> C#) =====================
 static std::vector<std::string> g_pendingCmds;
@@ -160,6 +186,7 @@ static void SendCmdFloat(const char* action, float val) {
 
 // ===================== CONFIG PARSER =====================
 static void ParseConfig(const std::string& line) {
+    TRACE261_PATH("enter");
     auto getStr = [&](const char* key) -> std::string {
         std::string k = std::string("\"") + key + "\":";
         size_t p = line.find(k);
@@ -188,9 +215,11 @@ static void ParseConfig(const std::string& line) {
         try { return std::stoi(v); } catch(...) { return def; }
     };
 
-    if (getStr("type") != "config") return;
+    bool isConfig = TRACE261_IF("isConfigPacket", getStr("type") == "config");
+    if (!isConfig) return;
 
     LockGuard lk(g_configMutex);
+    int prevReloadNonce = g_config.reloadMappingsNonce;
     g_config.armed         = getBool("armed");
     g_config.clicking      = getBool("clicking");
     g_config.minCPS        = getFloat("minCPS");
@@ -206,6 +235,7 @@ static void ParseConfig(const std::string& line) {
     g_config.closestPlayer = getBool("closestPlayerInfo");
     g_config.nametagHealth = getBool("nametagShowHealth");
     g_config.nametagArmor  = getBool("nametagShowArmor");
+    g_config.nametagHideVanilla = getBool("nametagHideVanilla");
     g_config.nametagMaxCount = (std::max)(1, (std::min)(20, getInt("nametagMaxCount", g_config.nametagMaxCount)));
     g_config.chestEspMaxCount = (std::max)(1, (std::min)(20, getInt("chestEspMaxCount", g_config.chestEspMaxCount)));
     g_config.rightClick    = getBool("right");
@@ -230,6 +260,13 @@ static void ParseConfig(const std::string& line) {
     g_config.velocityHorizontal = (std::max)(1, (std::min)(100, getInt("velocityHorizontal", 100)));
     g_config.velocityVertical = (std::max)(1, (std::min)(100, getInt("velocityVertical", 100)));
     g_config.velocityChance = (std::max)(1, (std::min)(100, getInt("velocityChance", 100)));
+    g_config.reloadMappingsNonce = getInt("reloadMappingsNonce", g_config.reloadMappingsNonce);
+    bool reloadPulse = (g_config.reloadMappingsNonce != prevReloadNonce);
+    TRACE261_BRANCH("reloadMappingsPulse", reloadPulse);
+    if (reloadPulse) {
+        InterlockedExchange(&g_forceGlobalJniRemap_121, 1);
+        Log("ReloadMappings: received loader pulse; scheduling full JNI remap across modules.");
+    }
 }
 
 static bool TrySendCapabilities(SOCKET sock) {
@@ -238,7 +275,7 @@ static bool TrySendCapabilities(SOCKET sock) {
     static const std::string kCapabilitiesJson =
         "{\"type\":\"capabilities\","
         "\"modules\":[\"autoclicker\",\"rightclick\",\"jitter\",\"clickinchests\",\"breakblocks\",\"aimassist\",\"triggerbot\",\"gtbhelper\",\"nametags\",\"closestplayer\",\"chestesp\",\"reach\",\"velocity\"],"
-        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"triggerbot\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\"],"
+        "\"settings\":[\"mincps\",\"maxcps\",\"left\",\"right\",\"rightmincps\",\"rightmaxcps\",\"rightblock\",\"breakblocks\",\"jitter\",\"clickinchests\",\"triggerbot\",\"gtbhint\",\"gtbcount\",\"gtbpreview\",\"nametags\",\"closestplayerinfo\",\"nametagshowhealth\",\"nametagshowarmor\",\"nametaghidevanilla\",\"nametagmaxcount\",\"chestesp\",\"chestespmaxcount\",\"reachenabled\",\"reachmin\",\"reachmax\",\"reachchance\",\"velocityenabled\",\"velocityhorizontal\",\"velocityvertical\",\"velocitychance\",\"reloadmappingsnonce\",\"showmodulelist\",\"moduleliststyle\",\"showlogo\",\"guitheme\"],"
         "\"state\":[\"actionbar\",\"holdingblock\",\"lookingatblock\",\"lookingatentity\",\"lookingatentitylatched\",\"breakingblock\",\"attackcooldown\",\"attackcooldownpertick\",\"statems\"]}\n";
 
     int sent = send(sock, kCapabilitiesJson.c_str(), (int)kCapabilitiesJson.size(), 0);
@@ -517,6 +554,7 @@ static unsigned long long g_lastCooldownProgressFallbackLogMs = 0;
 static unsigned long long g_lastCooldownPerTickFallbackLogMs = 0;
 static unsigned long long g_lastCooldownSampleLogMs = 0;
 static Mutex       g_jniStateMtx;
+static Mutex       g_jniRemapMtx;
 static std::string g_lastLoggedScreen;
 static jfieldID    g_inGameHudField_121 = nullptr; // MinecraftClient.inGameHud
 static std::vector<jfieldID> g_hudTextFields_121;  // InGameHud Text fields
@@ -812,6 +850,30 @@ static jmethodID g_getYaw_121 = nullptr;
 static jmethodID g_getPitch_121 = nullptr;
 static jmethodID g_getHealth_121 = nullptr;
 static jmethodID g_getName_121 = nullptr;      // Entity.getName() -> Text
+static jmethodID g_setCustomNameVisible_121 = nullptr; // Entity.setCustomNameVisible(bool)
+static jmethodID g_isCustomNameVisible_121 = nullptr;  // Entity.isCustomNameVisible()
+static jmethodID g_shouldRenderName_121 = nullptr;      // Entity.shouldRenderName()
+static jmethodID g_worldGetScoreboard_121 = nullptr;    // World.getScoreboard() -> Scoreboard
+static jclass    g_scoreboardClass_121 = nullptr;
+static jclass    g_teamClass_121 = nullptr;
+static jclass    g_abstractTeamClass_121 = nullptr;
+static jclass    g_visibilityRuleClass_121 = nullptr;
+static jmethodID g_scoreboardGetTeam_121 = nullptr;            // Scoreboard.getTeam(String) -> Team
+static jmethodID g_scoreboardAddTeam_121 = nullptr;            // Scoreboard.addTeam(String) -> Team
+static jmethodID g_scoreboardRemoveTeam_121 = nullptr;         // Scoreboard.removeTeam(Team)
+static jmethodID g_scoreboardAddHolderToTeam_121 = nullptr;    // Scoreboard.addScoreHolderToTeam(String, Team)
+static jmethodID g_scoreboardGetHolderTeam_121 = nullptr;      // Scoreboard.getScoreHolderTeam(String) -> Team
+static jmethodID g_scoreboardClearTeam_121 = nullptr;          // Scoreboard.clearTeam(String)
+static jmethodID g_abstractTeamGetName_121 = nullptr;          // AbstractTeam.getName() -> String
+static jmethodID g_teamSetNameTagVisibilityRule_121 = nullptr; // Team.setNameTagVisibilityRule(VisibilityRule)
+static jobject   g_visibilityRuleNever_121 = nullptr;          // AbstractTeam.VisibilityRule.NEVER
+static bool g_nametagSuppressionActive_121 = false;
+static bool g_loggedNametagSuppressionUnavailable_121 = false;
+static bool g_loggedNametagRestoreUnavailable_121 = false;
+static std::unordered_map<std::string, std::string> g_hiddenNametagOriginalTeamByPlayer_121;
+static jobject g_lastNametagSuppressionWorld_121 = nullptr;
+static DWORD g_nextNametagSuppressionResolveRetryMs_121 = 0;
+static int g_nametagSuppressionResolveRetryCount_121 = 0;
 static jmethodID g_textGetString_121 = nullptr; // Text.getString() -> String
 static jmethodID g_getArmor_121 = nullptr;      // LivingEntity.getArmor() -> I
 static jmethodID g_getMainHandStack_121 = nullptr; // LivingEntity.getMainHandStack() -> ItemStack
@@ -1035,8 +1097,11 @@ static jclass   g_hitResultClass_121 = nullptr;       // net.minecraft.class_239
 static jclass   g_blockHitResultClass_121 = nullptr;  // net.minecraft.class_3965
 
 static void EnsureHitResultCaches(JNIEnv* env) {
-    if (!env || !g_gameClassLoader) return;
+    TRACE261_PATH("enter");
+    bool ready = TRACE261_IF("prerequisitesMet", (env && g_gameClassLoader));
+    if (!ready) return;
     if (!g_hitResultClass_121) {
+        TRACE261_PATH("resolve-hitresult-class");
         const char* names[] = {
             "net.minecraft.class_239",
             "net.minecraft.world.phys.HitResult",
@@ -1046,10 +1111,16 @@ static void EnsureHitResultCaches(JNIEnv* env) {
         for (int i = 0; names[i] && !g_hitResultClass_121; i++) {
             jclass c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
             if (env->ExceptionCheck()) env->ExceptionClear();
-            if (c) { g_hitResultClass_121 = (jclass)env->NewGlobalRef(c); env->DeleteLocalRef(c); }
+            TRACE261_BRANCH("hitResultClassCandidateHit", c != nullptr);
+            if (c) {
+                g_hitResultClass_121 = (jclass)env->NewGlobalRef(c);
+                TRACE261_VALUE("hitResultClassSource", names[i]);
+                env->DeleteLocalRef(c);
+            }
         }
     }
     if (!g_blockHitResultClass_121) {
+        TRACE261_PATH("resolve-blockhitresult-class");
         // Yarn 1.21.x BlockHitResult is class_3965; deobf name included as fallback.
         const char* names[] = {
             "net.minecraft.class_3965",
@@ -1060,7 +1131,13 @@ static void EnsureHitResultCaches(JNIEnv* env) {
         for (int i = 0; names[i]; i++) {
             jclass c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
             if (env->ExceptionCheck()) env->ExceptionClear();
-            if (c) { g_blockHitResultClass_121 = (jclass)env->NewGlobalRef(c); env->DeleteLocalRef(c); break; }
+            TRACE261_BRANCH("blockHitResultClassCandidateHit", c != nullptr);
+            if (c) {
+                g_blockHitResultClass_121 = (jclass)env->NewGlobalRef(c);
+                TRACE261_VALUE("blockHitResultClassSource", names[i]);
+                env->DeleteLocalRef(c);
+                break;
+            }
         }
     }
 }
@@ -1093,72 +1170,6 @@ static jmethodID ResolveHitResultGetType(JNIEnv* env) {
     return nullptr;
 }
 
-static bool IsHitResultBlock(JNIEnv* env, jobject hitObj) {
-    if (!env || !hitObj) return false;
-
-    // Fast path removed: In 1.21, looking at air still returns a BlockHitResult but with type MISS.
-
-    // Robust path: HitResult.getType().name() == "BLOCK"
-    jmethodID mGetType = ResolveHitResultGetType(env);
-    if (!mGetType) return false;
-
-    jobject typeObj = env->CallObjectMethod(hitObj, mGetType);
-    if (env->ExceptionCheck()) { env->ExceptionClear(); typeObj = nullptr; }
-    if (!typeObj) return false;
-
-    jclass enumCls = env->GetObjectClass(typeObj);
-    jmethodID mName = enumCls ? env->GetMethodID(enumCls, "name", "()Ljava/lang/String;") : nullptr;
-    if (env->ExceptionCheck()) { env->ExceptionClear(); mName = nullptr; }
-    bool out = false;
-    if (enumCls && mName) {
-        jstring jn = (jstring)env->CallObjectMethod(typeObj, mName);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); jn = nullptr; }
-        if (jn) {
-            const char* cn = env->GetStringUTFChars(jn, nullptr);
-            if (cn) {
-                out = (std::string(cn) == "BLOCK");
-                env->ReleaseStringUTFChars(jn, cn);
-            }
-            env->DeleteLocalRef(jn);
-        }
-    }
-    if (enumCls) env->DeleteLocalRef(enumCls);
-    env->DeleteLocalRef(typeObj);
-    return out;
-}
-
-static std::string GetHitResultTypeName(JNIEnv* env, jobject hitObj) {
-    if (!env || !hitObj) return "";
-
-    jmethodID mGetType = ResolveHitResultGetType(env);
-    if (!mGetType) return "";
-
-    jobject typeObj = env->CallObjectMethod(hitObj, mGetType);
-    if (env->ExceptionCheck()) { env->ExceptionClear(); typeObj = nullptr; }
-    if (!typeObj) return "";
-
-    std::string out;
-    jclass enumCls = env->GetObjectClass(typeObj);
-    jmethodID mName = enumCls ? env->GetMethodID(enumCls, "name", "()Ljava/lang/String;") : nullptr;
-    if (env->ExceptionCheck()) { env->ExceptionClear(); mName = nullptr; }
-    if (enumCls && mName) {
-        jstring jn = (jstring)env->CallObjectMethod(typeObj, mName);
-        if (env->ExceptionCheck()) { env->ExceptionClear(); jn = nullptr; }
-        if (jn) {
-            const char* cn = env->GetStringUTFChars(jn, nullptr);
-            if (cn) {
-                out = cn;
-                env->ReleaseStringUTFChars(jn, cn);
-            }
-            env->DeleteLocalRef(jn);
-        }
-    }
-
-    if (enumCls) env->DeleteLocalRef(enumCls);
-    env->DeleteLocalRef(typeObj);
-    return out;
-}
-
 static int GetHitResultTypeOrdinal(JNIEnv* env, jobject hitObj) {
     if (!env || !hitObj) return -1;
 
@@ -1184,7 +1195,10 @@ static int GetHitResultTypeOrdinal(JNIEnv* env, jobject hitObj) {
 }
 
 static void EnsureCrosshairTargetField(JNIEnv* env, jclass mcCls) {
-    if (!env || !mcCls || g_crosshairTargetField_121) return;
+    TRACE261_PATH("enter");
+    bool prerequisites = TRACE261_IF("prerequisitesMet", (env && mcCls));
+    TRACE261_BRANCH("alreadyResolved", g_crosshairTargetField_121 != nullptr);
+    if (!prerequisites || g_crosshairTargetField_121) return;
     EnsureHitResultCaches(env);
 
     auto tryField = [&](const char* name, const char* sig) -> jfieldID {
@@ -1195,65 +1209,25 @@ static void EnsureCrosshairTargetField(JNIEnv* env, jclass mcCls) {
 
     // Fast path for common Yarn field name.
     jfieldID fid = tryField("field_1765", "Lnet/minecraft/class_239;");
+    TRACE261_BRANCH("crosshairFastYarnHit", fid != nullptr);
     if (!fid) fid = tryField("field_1765", "Lnet/minecraft/world/phys/HitResult;");
+    TRACE261_BRANCH("crosshairFastMojmapHit", fid != nullptr);
 
     // Some runtimes keep a readable name; the descriptor is still the obf HitResult type.
     if (!fid) {
+        TRACE261_PATH("crosshair-known-name-signature-scan");
         const char* names[] = { "hitResult", "crosshairTarget", "field_1765", nullptr };
         const char* sigs[]  = { "Lnet/minecraft/world/phys/HitResult;", "Lnet/minecraft/class_239;", nullptr };
         for (int ni = 0; names[ni] && !fid; ni++) {
             for (int si = 0; sigs[si] && !fid; si++) {
                 fid = tryField(names[ni], sigs[si]);
+                TRACE261_BRANCH("crosshairKnownComboHit", fid != nullptr);
             }
         }
-    }
-
-    // Reflection scan fallback: find any field of type HitResult.
-    if (!fid && g_hitResultClass_121) {
-        jclass cClass = env->FindClass("java/lang/Class");
-        jclass cField = env->FindClass("java/lang/reflect/Field");
-        jmethodID mGetFields = cClass ? env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;") : nullptr;
-        jmethodID mFType = cField ? env->GetMethodID(cField, "getType", "()Ljava/lang/Class;") : nullptr;
-        jmethodID mFName = cField ? env->GetMethodID(cField, "getName", "()Ljava/lang/String;") : nullptr;
-        if (env->ExceptionCheck()) { env->ExceptionClear(); mGetFields = nullptr; mFType = nullptr; mFName = nullptr; }
-
-        if (cClass && cField && mGetFields && mFType && mFName) {
-            jobjectArray fields = (jobjectArray)env->CallObjectMethod(mcCls, mGetFields);
-            if (env->ExceptionCheck()) { env->ExceptionClear(); fields = nullptr; }
-            if (fields) {
-                jsize fc = env->GetArrayLength(fields);
-                for (int i = 0; i < fc; i++) {
-                    jobject rf = env->GetObjectArrayElement(fields, i);
-                    if (!rf) continue;
-                    jclass ft = (jclass)env->CallObjectMethod(rf, mFType);
-                    if (env->ExceptionCheck()) { env->ExceptionClear(); ft = nullptr; }
-                    bool typeMatch = (ft && env->IsSameObject(ft, g_hitResultClass_121) == JNI_TRUE);
-                    if (ft) env->DeleteLocalRef(ft);
-                    if (!typeMatch) { env->DeleteLocalRef(rf); continue; }
-
-                    jstring jfn = (jstring)env->CallObjectMethod(rf, mFName);
-                    if (env->ExceptionCheck()) { env->ExceptionClear(); jfn = nullptr; }
-                    if (!jfn) { env->DeleteLocalRef(rf); continue; }
-                    const char* cfn = env->GetStringUTFChars(jfn, nullptr);
-                    std::string fn = cfn ? cfn : "";
-                    if (cfn) env->ReleaseStringUTFChars(jfn, cfn);
-                    env->DeleteLocalRef(jfn);
-
-                    jfieldID tryFid = tryField(fn.c_str(), "Lnet/minecraft/class_239;");
-                    if (!tryFid) tryFid = tryField(fn.c_str(), "Lnet/minecraft/world/phys/HitResult;");
-                    env->DeleteLocalRef(rf);
-                    if (tryFid) { fid = tryFid; Log("Discovered crosshairTarget field: " + fn); break; }
-                }
-                env->DeleteLocalRef(fields);
-            }
-        } else {
-            if (env->ExceptionCheck()) env->ExceptionClear();
-        }
-        if (cClass) env->DeleteLocalRef(cClass);
-        if (cField) env->DeleteLocalRef(cField);
     }
 
     if (fid) g_crosshairTargetField_121 = fid;
+    TRACE261_BRANCH("crosshairTargetResolved", g_crosshairTargetField_121 != nullptr);
 }
 
 
@@ -1726,6 +1700,17 @@ static jmethodID FindMethodBySignature(JNIEnv* env, jclass tgtCls, const std::st
 static void EnsureClosestPlayerCaches(JNIEnv* env);
 static void EnsureEntityMethods(JNIEnv* env, jobject entObj);
 static void DiscoverWorldPlayersListField(JNIEnv* env, jobject worldObj);
+static bool AreNametagSuppressionCoreMappingsReady121();
+static bool AreNametagSuppressionRestoreMappingsReady121();
+static void LogNametagSuppressionMissingMappings121(JNIEnv* env, jobject worldObj);
+static void ResetNametagSuppressionCaches121(JNIEnv* env, const char* reason);
+static void ResetModernJniRuntimeCaches121(JNIEnv* env, const char* reason);
+static bool TrackSuppressionWorldContext121(JNIEnv* env, jobject worldObj);
+static bool EnsureNametagSuppressionTeamMappings121(JNIEnv* env, jobject worldObj);
+static jobject GetScoreboard121(JNIEnv* env, jobject worldObj);
+static jobject EnsureNametagHideTeam121(JNIEnv* env, jobject scoreboardObj);
+static bool ApplyVanillaNametagSuppression121(JNIEnv* env, jobject scoreboardObj, jobject hideTeamObj, const std::string& playerName);
+static void RestoreVanillaNametagSuppression121(JNIEnv* env, jobject scoreboardObj);
 
 static std::string NormalizeReachKey(const std::string& raw) {
     std::string out;
@@ -2377,6 +2362,10 @@ static void UpdateVelocity(JNIEnv* env, const Config& cfg) {
 static void UpdatePlayerListOverlay(JNIEnv* env) {
     Config cfg;
     { LockGuard lk(g_configMutex); cfg = g_config; }
+    const bool hideVanillaTags = cfg.nametagHideVanilla;
+    const bool restoreVanillaTags = (!hideVanillaTags && g_nametagSuppressionActive_121);
+    bool suppressionAppliedThisPass = false;
+    bool suppressionAttemptedThisPass = false;
 
     DWORD now = GetTickCount();
     DWORD throttle = (cfg.aimAssist || cfg.triggerbot) ? 8 : 100;
@@ -2388,9 +2377,61 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     jobject worldObj = env->GetObjectField(g_mcInstance, g_worldField_121);
     jobject selfObj = env->GetObjectField(g_mcInstance, g_playerField_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); worldObj = nullptr; selfObj = nullptr; }
-    if (!worldObj || !selfObj) { if (worldObj) env->DeleteLocalRef(worldObj); if (selfObj) env->DeleteLocalRef(selfObj); return; }
+    if (!worldObj || !selfObj) {
+        if (g_nametagSuppressionActive_121 || !g_hiddenNametagOriginalTeamByPlayer_121.empty()) {
+            ResetNametagSuppressionCaches121(env, "world-or-player-null");
+        }
+        if (worldObj) env->DeleteLocalRef(worldObj);
+        if (selfObj) env->DeleteLocalRef(selfObj);
+        return;
+    }
+
+    TrackSuppressionWorldContext121(env, worldObj);
 
     EnsureEntityMethods(env, selfObj);
+    bool suppressionMappingsReady = true;
+    bool suppressionRestoreReady = true;
+    if (hideVanillaTags || restoreVanillaTags || g_nametagSuppressionActive_121) {
+        bool shouldAttemptResolve = (g_nextNametagSuppressionResolveRetryMs_121 == 0) || (now >= g_nextNametagSuppressionResolveRetryMs_121);
+        if (shouldAttemptResolve) {
+            suppressionMappingsReady = EnsureNametagSuppressionTeamMappings121(env, worldObj);
+            if (suppressionMappingsReady) {
+                g_nametagSuppressionResolveRetryCount_121 = 0;
+                g_nextNametagSuppressionResolveRetryMs_121 = 0;
+            } else {
+                g_nametagSuppressionResolveRetryCount_121++;
+                DWORD backoffMs = (DWORD)(150 + (std::min)(3000, g_nametagSuppressionResolveRetryCount_121 * 250));
+                g_nextNametagSuppressionResolveRetryMs_121 = now + backoffMs;
+            }
+        } else {
+            suppressionMappingsReady = AreNametagSuppressionCoreMappingsReady121();
+        }
+        suppressionRestoreReady = AreNametagSuppressionRestoreMappingsReady121();
+    }
+
+    if ((hideVanillaTags || restoreVanillaTags) && !suppressionMappingsReady && !g_loggedNametagSuppressionUnavailable_121) {
+        g_loggedNametagSuppressionUnavailable_121 = true;
+        Log("NametagHideVanilla: modern team-visibility mappings unresolved; fail-open (vanilla nametags remain visible).");
+        LogNametagSuppressionMissingMappings121(env, worldObj);
+    }
+    if (hideVanillaTags && suppressionMappingsReady && !suppressionRestoreReady) {
+        suppressionMappingsReady = false;
+        if (!g_loggedNametagRestoreUnavailable_121) {
+            g_loggedNametagRestoreUnavailable_121 = true;
+            Log("NametagHideVanilla: restore mappings are incomplete; suppression disabled to avoid stuck hidden tags.");
+            LogNametagSuppressionMissingMappings121(env, worldObj);
+        }
+    }
+    if (restoreVanillaTags) {
+        jobject restoreScoreboard = GetScoreboard121(env, worldObj);
+        if (restoreScoreboard) {
+            RestoreVanillaNametagSuppression121(env, restoreScoreboard);
+            env->DeleteLocalRef(restoreScoreboard);
+        } else {
+            g_hiddenNametagOriginalTeamByPlayer_121.clear();
+        }
+        g_nametagSuppressionActive_121 = false;
+    }
 
     DiscoverWorldPlayersListField(env, worldObj);
     if (!g_worldPlayersListField_121) {
@@ -2417,6 +2458,22 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     int size = (int)env->GetArrayLength(entArr);
     int maxPlayersToProcess = size; // Process all players to avoid target flickering
     if (maxPlayersToProcess > 200) maxPlayersToProcess = 200; // safety sanity limit
+
+    jobject hideScoreboardObj = nullptr;
+    jobject hideTeamObj = nullptr;
+    if (hideVanillaTags && suppressionMappingsReady) {
+        hideScoreboardObj = GetScoreboard121(env, worldObj);
+        if (hideScoreboardObj) {
+            hideTeamObj = EnsureNametagHideTeam121(env, hideScoreboardObj);
+            if (!hideTeamObj && !g_loggedNametagSuppressionUnavailable_121) {
+                g_loggedNametagSuppressionUnavailable_121 = true;
+                Log("NametagHideVanilla: modern hide team unavailable; fail-open (vanilla nametags remain visible).");
+            }
+        } else if (!g_loggedNametagSuppressionUnavailable_121) {
+            g_loggedNametagSuppressionUnavailable_121 = true;
+            Log("NametagHideVanilla: modern scoreboard unavailable; fail-open (vanilla nametags remain visible).");
+        }
+    }
 
     // Accumulate in localList; atomically publish to g_playerList at scope exit.
     std::vector<PlayerData121> localList;
@@ -2451,6 +2508,14 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
         if (env->IsSameObject(entObj, selfObj)) { env->DeleteLocalRef(entObj); continue; }
 
         EnsureEntityMethods(env, entObj);
+        if (hideVanillaTags && hideScoreboardObj && hideTeamObj) {
+            std::string suppressionName = GetStablePlayerName(env, entObj);
+            if (!suppressionName.empty() && !LooksLikeFakePlayerLine(suppressionName)) {
+                suppressionAttemptedThisPass = true;
+                bool applied = ApplyVanillaNametagSuppression121(env, hideScoreboardObj, hideTeamObj, suppressionName);
+                if (applied) suppressionAppliedThisPass = true;
+            }
+        }
         double ex = 0, ey = 0, ez = 0;
         // Prefer direct Entity.pos field (zero CallDoubleMethod)
         if (g_entityPosField_121 && g_vec3dX_121 && g_vec3dY_121 && g_vec3dZ_121) {
@@ -2515,9 +2580,18 @@ static void UpdatePlayerListOverlay(JNIEnv* env) {
     }
 
     // Clean up local references exactly once.
+    if (hideTeamObj) env->DeleteLocalRef(hideTeamObj);
+    if (hideScoreboardObj) env->DeleteLocalRef(hideScoreboardObj);
     if (listObj) env->DeleteLocalRef(listObj);
     if (worldObj) env->DeleteLocalRef(worldObj);
     if (selfObj) env->DeleteLocalRef(selfObj);
+
+    if (hideVanillaTags && suppressionAppliedThisPass) {
+        g_nametagSuppressionActive_121 = true;
+    } else if (hideVanillaTags && suppressionAttemptedThisPass && !suppressionAppliedThisPass && !g_loggedNametagSuppressionUnavailable_121) {
+        g_loggedNametagSuppressionUnavailable_121 = true;
+        Log("NametagHideVanilla: unable to assign players to hide team; fail-open on this runtime.");
+    }
 }
 
 // --- Chunk-based block entity discovery helpers (replaces flat-list approach) ---
@@ -2685,18 +2759,10 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
     if (g_chunkBlockEntitiesMapField_121) return true;
     if (!chunkObj) return false;
 
-    // ---------- Step 1: Load WorldChunk class (class_2818) explicitly ----------
-    jclass worldChunkCls = nullptr;
-    if (g_gameClassLoader)
-        worldChunkCls = LoadClassWithLoader(env, g_gameClassLoader, "net.minecraft.class_2818");
-    if (!worldChunkCls) {
-        worldChunkCls = env->FindClass("net/minecraft/class_2818");
-        if (env->ExceptionCheck()) { env->ExceptionClear(); worldChunkCls = nullptr; }
-    }
-
-    bool isWorldChunk = worldChunkCls && (env->IsInstanceOf(chunkObj, worldChunkCls) == JNI_TRUE);
-    if (!isWorldChunk) {
-        if (worldChunkCls) env->DeleteLocalRef(worldChunkCls);
+    // Work from the runtime chunk class instead of hard-failing on a single mapped class name.
+    jclass chunkRootCls = env->GetObjectClass(chunkObj);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); chunkRootCls = nullptr; }
+    if (!chunkRootCls) {
         return false;
     }
 
@@ -2709,12 +2775,12 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
     {
         const char* knownNames[] = { "blockEntities", "field_12833", "field_34543", "f_187611_", nullptr };
         for (int i = 0; knownNames[i]; i++) {
-            jfieldID fid = env->GetFieldID(worldChunkCls, knownNames[i], "Ljava/util/Map;");
+            jfieldID fid = env->GetFieldID(chunkRootCls, knownNames[i], "Ljava/util/Map;");
             if (env->ExceptionCheck()) { env->ExceptionClear(); fid = nullptr; }
             if (fid) {
                 g_chunkBlockEntitiesMapField_121 = fid;
                 Log("EnsureChunkBEMap: fast-path found blockEntities map: " + std::string(knownNames[i]));
-                env->DeleteLocalRef(worldChunkCls);
+                env->DeleteLocalRef(chunkRootCls);
                 return true;
             }
         }
@@ -2746,7 +2812,7 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
 
     // ---------- Step 3: Walk the class hierarchy and find validated Map field ----------
     if (canReflect) {
-        jclass currentClass = (jclass)env->NewLocalRef(worldChunkCls);
+        jclass currentClass = (jclass)env->NewLocalRef(chunkRootCls);
         int depth = 0;
         while (currentClass && depth < 10) {
             std::string clsName = GetClassNameFromClass(env, currentClass);
@@ -2780,13 +2846,13 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
                         }
 
                         // Get fieldID — try Ljava/util/Map; first, then actual type
-                        jfieldID fid = env->GetFieldID(worldChunkCls, fn.c_str(), "Ljava/util/Map;");
+                        jfieldID fid = env->GetFieldID(chunkRootCls, fn.c_str(), "Ljava/util/Map;");
                         if (env->ExceptionCheck()) { env->ExceptionClear(); fid = nullptr; }
                         if (!fid) {
                             std::string tn = GetClassNameFromClass(env, ft);
                             std::string desc = "L" + tn + ";";
                             for (char& cc : desc) if (cc == '.') cc = '/';
-                            fid = env->GetFieldID(worldChunkCls, fn.c_str(), desc.c_str());
+                            fid = env->GetFieldID(chunkRootCls, fn.c_str(), desc.c_str());
                             if (env->ExceptionCheck()) { env->ExceptionClear(); fid = nullptr; }
                         }
 
@@ -2836,7 +2902,7 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
                                                         if (mapInterface) env->DeleteLocalRef(mapInterface);
                                                         if (colCls) env->DeleteLocalRef(colCls);
                                                         if (itCls) env->DeleteLocalRef(itCls);
-                                                        env->DeleteLocalRef(worldChunkCls);
+                                                        env->DeleteLocalRef(chunkRootCls);
                                                         return true;
                                                     }
                                                     env->DeleteLocalRef(val);
@@ -2877,7 +2943,7 @@ static bool EnsureChunkBEMap(JNIEnv* env, jobject chunkObj) {
     if (mapInterface) env->DeleteLocalRef(mapInterface);
     if (colCls) env->DeleteLocalRef(colCls);
     if (itCls) env->DeleteLocalRef(itCls);
-    env->DeleteLocalRef(worldChunkCls);
+    env->DeleteLocalRef(chunkRootCls);
     return false;
 }
 
@@ -3766,6 +3832,27 @@ static void EnsureEntityMethods(JNIEnv* env, jobject entObj) {
                 }
             }
         }
+        if (!g_setCustomNameVisible_121) {
+            const char* names[] = { "setCustomNameVisible", "method_5880", nullptr };
+            for (int i = 0; names[i] && !g_setCustomNameVisible_121; i++) {
+                g_setCustomNameVisible_121 = env->GetMethodID(entCls, names[i], "(Z)V");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_setCustomNameVisible_121 = nullptr; }
+            }
+        }
+        if (!g_isCustomNameVisible_121) {
+            const char* names[] = { "isCustomNameVisible", "method_5807", nullptr };
+            for (int i = 0; names[i] && !g_isCustomNameVisible_121; i++) {
+                g_isCustomNameVisible_121 = env->GetMethodID(entCls, names[i], "()Z");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_isCustomNameVisible_121 = nullptr; }
+            }
+        }
+        if (!g_shouldRenderName_121) {
+            const char* names[] = { "shouldRenderName", "method_5733", nullptr };
+            for (int i = 0; names[i] && !g_shouldRenderName_121; i++) {
+                g_shouldRenderName_121 = env->GetMethodID(entCls, names[i], "()Z");
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_shouldRenderName_121 = nullptr; }
+            }
+        }
         if (!g_getArmor_121) {
             const char* names[] = { "getArmorValue", "getArmor", "method_6096", nullptr };
             for (int i = 0; names[i] && !g_getArmor_121; i++) {
@@ -3837,6 +3924,536 @@ static void EnsureEntityMethods(JNIEnv* env, jobject entObj) {
         // Prep stable-name fallback caches (GameProfile) using this entity object.
         EnsureGameProfileCaches(env, entObj);
         env->DeleteLocalRef(entCls);
+    }
+}
+
+static bool AreNametagSuppressionCoreMappingsReady121() {
+    return g_worldGetScoreboard_121
+        && g_scoreboardGetTeam_121
+        && g_scoreboardAddTeam_121
+        && g_scoreboardAddHolderToTeam_121
+        && g_teamSetNameTagVisibilityRule_121
+        && g_visibilityRuleNever_121;
+}
+
+static bool AreNametagSuppressionRestoreMappingsReady121() {
+    return g_scoreboardGetTeam_121
+        && g_scoreboardRemoveTeam_121;
+}
+
+static void LogNametagSuppressionMissingMappings121(JNIEnv* env, jobject worldObj) {
+    DWORD now = GetTickCount();
+    static DWORD s_lastLogMs = 0;
+    if (now - s_lastLogMs < 8000) return;
+    s_lastLogMs = now;
+
+    std::vector<std::string> missingCore;
+    if (!g_worldGetScoreboard_121) missingCore.push_back("World.getScoreboard()");
+    if (!g_scoreboardGetTeam_121) missingCore.push_back("Scoreboard.getTeam(String)");
+    if (!g_scoreboardAddTeam_121) missingCore.push_back("Scoreboard.addTeam(String)");
+    if (!g_scoreboardAddHolderToTeam_121) missingCore.push_back("Scoreboard.addScoreHolderToTeam(String,Team)");
+    if (!g_teamSetNameTagVisibilityRule_121) missingCore.push_back("Team.setNameTagVisibilityRule(VisibilityRule)");
+    if (!g_visibilityRuleNever_121) missingCore.push_back("VisibilityRule.NEVER");
+
+    std::vector<std::string> missingRestore;
+    if (!g_scoreboardGetHolderTeam_121) missingRestore.push_back("Scoreboard.getScoreHolderTeam(String)");
+    if (!g_abstractTeamGetName_121) missingRestore.push_back("AbstractTeam.getName()");
+    if (!g_scoreboardClearTeam_121) missingRestore.push_back("Scoreboard.clearTeam(String)");
+    if (!g_scoreboardRemoveTeam_121) missingRestore.push_back("Scoreboard.removeTeam(Team)");
+
+    auto Join = [](const std::vector<std::string>& parts) -> std::string {
+        if (parts.empty()) return "none";
+        std::string out = parts[0];
+        for (size_t i = 1; i < parts.size(); ++i) out += ", " + parts[i];
+        return out;
+    };
+
+    std::string worldClass = "?";
+    if (env && worldObj) {
+        jclass wc = env->GetObjectClass(worldObj);
+        if (!env->ExceptionCheck() && wc) {
+            worldClass = GetClassNameFromClass(env, wc);
+            env->DeleteLocalRef(wc);
+        } else {
+            env->ExceptionClear();
+        }
+    }
+    std::string scoreboardClass = g_scoreboardClass_121 ? GetClassNameFromClass(env, g_scoreboardClass_121) : "?";
+    std::string teamClass = g_teamClass_121 ? GetClassNameFromClass(env, g_teamClass_121) : "?";
+
+    Log("NametagHideVanilla unresolved mappings: core=[" + Join(missingCore)
+        + "] restore=[" + Join(missingRestore)
+        + "] worldClass=" + worldClass
+        + " scoreboardClass=" + scoreboardClass
+        + " teamClass=" + teamClass);
+}
+
+static void ResetNametagSuppressionCaches121(JNIEnv* env, const char* reason) {
+    if (g_lastNametagSuppressionWorld_121 && env) {
+        env->DeleteGlobalRef(g_lastNametagSuppressionWorld_121);
+        g_lastNametagSuppressionWorld_121 = nullptr;
+    }
+
+    if (g_visibilityRuleNever_121 && env) {
+        env->DeleteGlobalRef(g_visibilityRuleNever_121);
+        g_visibilityRuleNever_121 = nullptr;
+    }
+
+    if (g_scoreboardClass_121 && env) {
+        env->DeleteGlobalRef(g_scoreboardClass_121);
+        g_scoreboardClass_121 = nullptr;
+    }
+    if (g_teamClass_121 && env) {
+        env->DeleteGlobalRef(g_teamClass_121);
+        g_teamClass_121 = nullptr;
+    }
+    if (g_abstractTeamClass_121 && env) {
+        env->DeleteGlobalRef(g_abstractTeamClass_121);
+        g_abstractTeamClass_121 = nullptr;
+    }
+    if (g_visibilityRuleClass_121 && env) {
+        env->DeleteGlobalRef(g_visibilityRuleClass_121);
+        g_visibilityRuleClass_121 = nullptr;
+    }
+
+    g_worldGetScoreboard_121 = nullptr;
+    g_scoreboardGetTeam_121 = nullptr;
+    g_scoreboardAddTeam_121 = nullptr;
+    g_scoreboardRemoveTeam_121 = nullptr;
+    g_scoreboardAddHolderToTeam_121 = nullptr;
+    g_scoreboardGetHolderTeam_121 = nullptr;
+    g_scoreboardClearTeam_121 = nullptr;
+    g_abstractTeamGetName_121 = nullptr;
+    g_teamSetNameTagVisibilityRule_121 = nullptr;
+    g_worldPlayersListField_121 = nullptr;
+
+    g_hiddenNametagOriginalTeamByPlayer_121.clear();
+    g_nametagSuppressionActive_121 = false;
+    g_loggedNametagSuppressionUnavailable_121 = false;
+    g_loggedNametagRestoreUnavailable_121 = false;
+    g_nextNametagSuppressionResolveRetryMs_121 = 0;
+    g_nametagSuppressionResolveRetryCount_121 = 0;
+
+    if (reason && *reason) {
+        Log(std::string("NametagHideVanilla: reset suppression caches (") + reason + ").");
+    }
+}
+
+static bool TrackSuppressionWorldContext121(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj) return false;
+    if (!g_lastNametagSuppressionWorld_121) {
+        g_lastNametagSuppressionWorld_121 = env->NewGlobalRef(worldObj);
+        return false;
+    }
+
+    bool changed = (env->IsSameObject(worldObj, g_lastNametagSuppressionWorld_121) == JNI_FALSE);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        changed = false;
+    }
+    if (changed) {
+        ResetNametagSuppressionCaches121(env, "world-context-changed");
+        g_lastNametagSuppressionWorld_121 = env->NewGlobalRef(worldObj);
+    }
+    return changed;
+}
+
+static std::string Utf8FromJString(JNIEnv* env, jstring js) {
+    if (!env || !js) return "";
+    const char* c = env->GetStringUTFChars(js, nullptr);
+    std::string out = c ? c : "";
+    if (c) env->ReleaseStringUTFChars(js, c);
+    return out;
+}
+
+static bool EnsureNametagSuppressionTeamMappings121(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj) return false;
+
+    if (!g_scoreboardClass_121) {
+        const char* names[] = { "net.minecraft.world.scores.Scoreboard", "net.minecraft.scoreboard.Scoreboard", "net.minecraft.class_269", "eyg", nullptr };
+        jclass c = nullptr;
+        for (int i = 0; names[i] && !c; i++) {
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
+            if (!c) {
+                std::string alt = names[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+        }
+        if (c) {
+            g_scoreboardClass_121 = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+    if (!g_teamClass_121) {
+        const char* names[] = { "net.minecraft.world.scores.PlayerTeam", "net.minecraft.world.scores.Team", "net.minecraft.scoreboard.Team", "net.minecraft.class_268", "eyb", nullptr };
+        jclass c = nullptr;
+        for (int i = 0; names[i] && !c; i++) {
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
+            if (!c) {
+                std::string alt = names[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+        }
+        if (c) {
+            g_teamClass_121 = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+    if (!g_abstractTeamClass_121) {
+        const char* names[] = { "net.minecraft.world.scores.Team", "net.minecraft.scoreboard.AbstractTeam", "net.minecraft.class_270", "eyi", nullptr };
+        jclass c = nullptr;
+        for (int i = 0; names[i] && !c; i++) {
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
+            if (!c) {
+                std::string alt = names[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+        }
+        if (c) {
+            g_abstractTeamClass_121 = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+    if (!g_visibilityRuleClass_121) {
+        const char* names[] = {
+            "net.minecraft.world.scores.Team$Visibility",
+            "net.minecraft.scoreboard.AbstractTeam$VisibilityRule",
+            "net.minecraft.class_270$class_272",
+            "eyi$b",
+            nullptr
+        };
+        jclass c = nullptr;
+        for (int i = 0; names[i] && !c; i++) {
+            if (g_gameClassLoader) c = LoadClassWithLoader(env, g_gameClassLoader, names[i]);
+            if (!c) {
+                std::string alt = names[i];
+                std::replace(alt.begin(), alt.end(), '.', '/');
+                c = env->FindClass(alt.c_str());
+                if (env->ExceptionCheck()) { env->ExceptionClear(); c = nullptr; }
+            }
+        }
+        if (c) {
+            g_visibilityRuleClass_121 = (jclass)env->NewGlobalRef(c);
+            env->DeleteLocalRef(c);
+        }
+    }
+
+    if (!g_worldGetScoreboard_121) {
+        jclass worldCls = env->GetObjectClass(worldObj);
+        if (worldCls && !env->ExceptionCheck()) {
+            const char* names[] = { "getScoreboard", "method_8428", "M", nullptr };
+            const char* sigs[] = {
+                "()Lnet/minecraft/world/scores/Scoreboard;",
+                "()Lnet/minecraft/scoreboard/Scoreboard;",
+                "()Lnet/minecraft/class_269;",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_worldGetScoreboard_121; ni++) {
+                for (int si = 0; sigs[si] && !g_worldGetScoreboard_121; si++) {
+                    g_worldGetScoreboard_121 = env->GetMethodID(worldCls, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_worldGetScoreboard_121 = nullptr; }
+                }
+            }
+            env->DeleteLocalRef(worldCls);
+        } else {
+            env->ExceptionClear();
+        }
+    }
+
+    if (g_scoreboardClass_121) {
+        if (!g_scoreboardGetTeam_121) {
+            const char* names[] = { "getPlayerTeam", "getTeam", "method_1153", "b", nullptr };
+            const char* sigs[] = {
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/PlayerTeam;",
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/scoreboard/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/class_268;",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_scoreboardGetTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardGetTeam_121; si++) {
+                    g_scoreboardGetTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardGetTeam_121 = nullptr; }
+                }
+            }
+        }
+        if (!g_scoreboardAddTeam_121) {
+            const char* names[] = { "addPlayerTeam", "addTeam", "method_1171", "c", nullptr };
+            const char* sigs[] = {
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/PlayerTeam;",
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/scoreboard/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/class_268;",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_scoreboardAddTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardAddTeam_121; si++) {
+                    g_scoreboardAddTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardAddTeam_121 = nullptr; }
+                }
+            }
+        }
+        if (!g_scoreboardRemoveTeam_121) {
+            const char* names[] = { "removePlayerTeam", "removeTeam", "method_1191", "d", nullptr };
+            const char* sigs[] = {
+                "(Lnet/minecraft/world/scores/PlayerTeam;)V",
+                "(Lnet/minecraft/world/scores/Team;)V",
+                "(Lnet/minecraft/scoreboard/Team;)V",
+                "(Lnet/minecraft/class_268;)V",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_scoreboardRemoveTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardRemoveTeam_121; si++) {
+                    g_scoreboardRemoveTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardRemoveTeam_121 = nullptr; }
+                }
+            }
+        }
+        if (!g_scoreboardAddHolderToTeam_121) {
+            const char* names[] = { "addPlayerToTeam", "addScoreHolderToTeam", "method_1172", "a", nullptr };
+            const char* sigs[] = {
+                "(Ljava/lang/String;Lnet/minecraft/world/scores/PlayerTeam;)Z",
+                "(Ljava/lang/String;Lnet/minecraft/world/scores/Team;)Z",
+                "(Ljava/lang/String;Lnet/minecraft/scoreboard/Team;)Z",
+                "(Ljava/lang/String;Lnet/minecraft/class_268;)Z",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_scoreboardAddHolderToTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardAddHolderToTeam_121; si++) {
+                    g_scoreboardAddHolderToTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardAddHolderToTeam_121 = nullptr; }
+                }
+            }
+        }
+        if (!g_scoreboardGetHolderTeam_121) {
+            const char* names[] = { "getPlayersTeam", "getScoreHolderTeam", "method_1164", "e", nullptr };
+            const char* sigs[] = {
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/PlayerTeam;",
+                "(Ljava/lang/String;)Lnet/minecraft/world/scores/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/scoreboard/Team;",
+                "(Ljava/lang/String;)Lnet/minecraft/class_268;",
+                nullptr
+            };
+            for (int ni = 0; names[ni] && !g_scoreboardGetHolderTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardGetHolderTeam_121; si++) {
+                    g_scoreboardGetHolderTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardGetHolderTeam_121 = nullptr; }
+                }
+            }
+        }
+        if (!g_scoreboardClearTeam_121) {
+            const char* names[] = { "removePlayerFromTeam", "clearTeam", "method_1195", "d", nullptr };
+            const char* sigs[] = { "(Ljava/lang/String;)Z", nullptr };
+            for (int ni = 0; names[ni] && !g_scoreboardClearTeam_121; ni++) {
+                for (int si = 0; sigs[si] && !g_scoreboardClearTeam_121; si++) {
+                    g_scoreboardClearTeam_121 = env->GetMethodID(g_scoreboardClass_121, names[ni], sigs[si]);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_scoreboardClearTeam_121 = nullptr; }
+                }
+            }
+        }
+    }
+
+    if (g_abstractTeamClass_121 && !g_abstractTeamGetName_121) {
+        const char* names[] = { "getName", "method_1197", "b", nullptr };
+        for (int i = 0; names[i] && !g_abstractTeamGetName_121; i++) {
+            g_abstractTeamGetName_121 = env->GetMethodID(g_abstractTeamClass_121, names[i], "()Ljava/lang/String;");
+            if (env->ExceptionCheck()) { env->ExceptionClear(); g_abstractTeamGetName_121 = nullptr; }
+        }
+    }
+
+    if (g_teamClass_121 && !g_teamSetNameTagVisibilityRule_121) {
+        const char* names[] = { "setNameTagVisibility", "setNameTagVisibilityRule", "method_1149", "a", nullptr };
+        const char* sigs[] = {
+            "(Lnet/minecraft/world/scores/Team$Visibility;)V",
+            "(Lnet/minecraft/scoreboard/AbstractTeam$VisibilityRule;)V",
+            "(Lnet/minecraft/class_270$class_272;)V",
+            nullptr
+        };
+        for (int ni = 0; names[ni] && !g_teamSetNameTagVisibilityRule_121; ni++) {
+            for (int si = 0; sigs[si] && !g_teamSetNameTagVisibilityRule_121; si++) {
+                g_teamSetNameTagVisibilityRule_121 = env->GetMethodID(g_teamClass_121, names[ni], sigs[si]);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); g_teamSetNameTagVisibilityRule_121 = nullptr; }
+            }
+        }
+    }
+
+    if (g_visibilityRuleClass_121 && !g_visibilityRuleNever_121) {
+        const char* sigs[] = {
+            "Lnet/minecraft/world/scores/Team$Visibility;",
+            "Lnet/minecraft/scoreboard/AbstractTeam$VisibilityRule;",
+            "Lnet/minecraft/class_270$class_272;",
+            nullptr
+        };
+        jfieldID neverField = nullptr;
+        for (int si = 0; sigs[si] && !neverField; si++) {
+            neverField = env->GetStaticFieldID(g_visibilityRuleClass_121, "NEVER", sigs[si]);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); neverField = nullptr; }
+        }
+        if (neverField) {
+            jobject neverObj = env->GetStaticObjectField(g_visibilityRuleClass_121, neverField);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); neverObj = nullptr; }
+            if (neverObj) {
+                g_visibilityRuleNever_121 = env->NewGlobalRef(neverObj);
+                env->DeleteLocalRef(neverObj);
+            }
+        }
+
+        if (!g_visibilityRuleNever_121) {
+            const char* valueSigs[] = {
+                "()[Lnet/minecraft/world/scores/Team$Visibility;",
+                "()[Lnet/minecraft/scoreboard/AbstractTeam$VisibilityRule;",
+                "()[Lnet/minecraft/class_270$class_272;",
+                nullptr
+            };
+            jmethodID valuesMid = nullptr;
+            for (int si = 0; valueSigs[si] && !valuesMid; si++) {
+                valuesMid = env->GetStaticMethodID(g_visibilityRuleClass_121, "values", valueSigs[si]);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); valuesMid = nullptr; }
+            }
+            if (valuesMid) {
+                jobjectArray vals = (jobjectArray)env->CallStaticObjectMethod(g_visibilityRuleClass_121, valuesMid);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); vals = nullptr; }
+                if (vals) {
+                    jsize len = env->GetArrayLength(vals);
+                    if (len > 1) {
+                        jobject neverObj = env->GetObjectArrayElement(vals, 1);
+                        if (neverObj) {
+                            g_visibilityRuleNever_121 = env->NewGlobalRef(neverObj);
+                            env->DeleteLocalRef(neverObj);
+                        }
+                    }
+                    env->DeleteLocalRef(vals);
+                }
+            }
+        }
+    }
+
+    bool coreReady = AreNametagSuppressionCoreMappingsReady121();
+    if (!coreReady) {
+        LogNametagSuppressionMissingMappings121(env, worldObj);
+    }
+    return coreReady;
+}
+
+static jobject GetScoreboard121(JNIEnv* env, jobject worldObj) {
+    if (!env || !worldObj || !g_worldGetScoreboard_121) return nullptr;
+    jobject scoreboardObj = env->CallObjectMethod(worldObj, g_worldGetScoreboard_121);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); scoreboardObj = nullptr; }
+    return scoreboardObj;
+}
+
+static jobject EnsureNametagHideTeam121(JNIEnv* env, jobject scoreboardObj) {
+    if (!env || !scoreboardObj || !g_scoreboardGetTeam_121 || !g_scoreboardAddTeam_121) return nullptr;
+
+    static const char* kHideTeamName = "lc_hide_tags";
+    jstring jTeamName = env->NewStringUTF(kHideTeamName);
+    if (!jTeamName) return nullptr;
+
+    jobject teamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardGetTeam_121, jTeamName);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); teamObj = nullptr; }
+    if (!teamObj) {
+        teamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardAddTeam_121, jTeamName);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); teamObj = nullptr; }
+    }
+
+    if (teamObj && g_teamSetNameTagVisibilityRule_121 && g_visibilityRuleNever_121) {
+        env->CallVoidMethod(teamObj, g_teamSetNameTagVisibilityRule_121, g_visibilityRuleNever_121);
+        if (env->ExceptionCheck()) { env->ExceptionClear(); }
+    }
+
+    env->DeleteLocalRef(jTeamName);
+    return teamObj;
+}
+
+static bool ApplyVanillaNametagSuppression121(JNIEnv* env, jobject scoreboardObj, jobject hideTeamObj, const std::string& playerName) {
+    if (!env || !scoreboardObj || !hideTeamObj || playerName.empty()) return false;
+
+    jstring jPlayerName = env->NewStringUTF(playerName.c_str());
+    if (!jPlayerName) return false;
+
+    if (g_hiddenNametagOriginalTeamByPlayer_121.find(playerName) == g_hiddenNametagOriginalTeamByPlayer_121.end()) {
+        std::string originalTeamName;
+        if (g_scoreboardGetHolderTeam_121 && g_abstractTeamGetName_121) {
+            jobject originalTeamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardGetHolderTeam_121, jPlayerName);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); originalTeamObj = nullptr; }
+            if (originalTeamObj) {
+                jstring jOriginalName = (jstring)env->CallObjectMethod(originalTeamObj, g_abstractTeamGetName_121);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); jOriginalName = nullptr; }
+                if (jOriginalName) {
+                    originalTeamName = Utf8FromJString(env, jOriginalName);
+                    env->DeleteLocalRef(jOriginalName);
+                }
+                env->DeleteLocalRef(originalTeamObj);
+            }
+        }
+        g_hiddenNametagOriginalTeamByPlayer_121[playerName] = originalTeamName;
+    }
+
+    jboolean added = env->CallBooleanMethod(scoreboardObj, g_scoreboardAddHolderToTeam_121, jPlayerName, hideTeamObj);
+    bool ok = !env->ExceptionCheck();
+    if (!ok) env->ExceptionClear();
+    env->DeleteLocalRef(jPlayerName);
+    return ok && (added == JNI_TRUE || added == JNI_FALSE);
+}
+
+static void RestoreVanillaNametagSuppression121(JNIEnv* env, jobject scoreboardObj) {
+    if (!env || !scoreboardObj) {
+        g_hiddenNametagOriginalTeamByPlayer_121.clear();
+        return;
+    }
+
+    if (!g_scoreboardClearTeam_121 && !g_loggedNametagRestoreUnavailable_121) {
+        g_loggedNametagRestoreUnavailable_121 = true;
+        Log("NametagHideVanilla: Scoreboard.clearTeam missing; using fallback restore path.");
+    }
+
+    for (const auto& entry : g_hiddenNametagOriginalTeamByPlayer_121) {
+        const std::string& playerName = entry.first;
+        const std::string& originalTeamName = entry.second;
+        if (playerName.empty()) continue;
+
+        jstring jPlayerName = env->NewStringUTF(playerName.c_str());
+        if (!jPlayerName) continue;
+        if (g_scoreboardClearTeam_121) {
+            env->CallBooleanMethod(scoreboardObj, g_scoreboardClearTeam_121, jPlayerName);
+            if (env->ExceptionCheck()) env->ExceptionClear();
+        }
+
+        if (!originalTeamName.empty() && g_scoreboardGetTeam_121 && g_scoreboardAddHolderToTeam_121) {
+            jstring jOriginalTeam = env->NewStringUTF(originalTeamName.c_str());
+            if (jOriginalTeam) {
+                jobject teamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardGetTeam_121, jOriginalTeam);
+                if (env->ExceptionCheck()) { env->ExceptionClear(); teamObj = nullptr; }
+                if (teamObj) {
+                    env->CallBooleanMethod(scoreboardObj, g_scoreboardAddHolderToTeam_121, jPlayerName, teamObj);
+                    if (env->ExceptionCheck()) env->ExceptionClear();
+                    env->DeleteLocalRef(teamObj);
+                }
+                env->DeleteLocalRef(jOriginalTeam);
+            }
+        }
+        env->DeleteLocalRef(jPlayerName);
+    }
+    g_hiddenNametagOriginalTeamByPlayer_121.clear();
+
+    if (g_scoreboardGetTeam_121 && g_scoreboardRemoveTeam_121) {
+        jstring jHideTeamName = env->NewStringUTF("lc_hide_tags");
+        if (jHideTeamName) {
+            jobject hideTeamObj = env->CallObjectMethod(scoreboardObj, g_scoreboardGetTeam_121, jHideTeamName);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); hideTeamObj = nullptr; }
+            if (hideTeamObj) {
+                env->CallVoidMethod(scoreboardObj, g_scoreboardRemoveTeam_121, hideTeamObj);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(hideTeamObj);
+            }
+            env->DeleteLocalRef(jHideTeamName);
+        }
     }
 }
 
@@ -4018,13 +4635,172 @@ static void CleanupJniGlobals(JNIEnv* env) {
     DeleteGlobalRefSafe(env, g_blockPosClass_121);
     DeleteGlobalRefSafe(env, g_javaHashMapClass);
     DeleteGlobalRefSafe(env, g_playerEntityClass_121);
+    DeleteGlobalRefSafe(env, g_scoreboardClass_121);
+    DeleteGlobalRefSafe(env, g_teamClass_121);
+    DeleteGlobalRefSafe(env, g_abstractTeamClass_121);
+    DeleteGlobalRefSafe(env, g_visibilityRuleClass_121);
+    DeleteGlobalRefSafe(env, g_visibilityRuleNever_121);
+    DeleteGlobalRefSafe(env, g_lastNametagSuppressionWorld_121);
     DeleteGlobalRefSafe(env, g_itemStackClass_121);
     DeleteGlobalRefSafe(env, g_identifierClass_121);
     DeleteGlobalRefSafe(env, g_entityReachIdentifier_121);
     DeleteGlobalRefSafe(env, g_blockReachIdentifier_121);
+    DeleteGlobalRefSafe(env, g_reachRegistryEntry_121);
 
     DeleteGlobalRefSafe(env, g_cachedLocalPlayer);
     DeleteGlobalRefSafe(env, g_cachedReachAttrInst);
+}
+
+static void ResetModernJniRuntimeCaches121(JNIEnv* env, const char* reason) {
+    if (!env) return;
+
+    CleanupJniGlobals(env);
+    ResetNametagSuppressionCaches121(env, nullptr);
+
+    g_setScreenMethod = nullptr;
+    g_chatScreenCtor = nullptr;
+    g_chatCtorKind = 0;
+    g_screenField = nullptr;
+    g_chatJniReady = false;
+    g_stateJniReady = false;
+    g_screenType.clear();
+    g_lastLoggedScreen.clear();
+
+    g_jniScreenName.clear();
+    g_jniActionBar.clear();
+    g_jniGuiOpen = false;
+    g_jniInWorld = false;
+    g_jniLookingAtBlock = false;
+    g_jniLookingAtEntity = false;
+    g_jniLookingAtEntityLatched = false;
+    g_jniBreakingBlock = false;
+    g_jniHoldingBlock = false;
+    g_jniAttackCooldown = 1.0f;
+    g_jniAttackCooldownPerTick = 0.08f;
+    g_jniStateMs = 0;
+    g_lastEntitySeenMs = 0;
+    g_loggedCooldownProgressResolve = false;
+    g_loggedCooldownPerTickResolve = false;
+    g_loggedCooldownProgressMissing = false;
+    g_loggedCooldownPerTickMissing = false;
+    g_loggedCooldownPlayerFieldMissing = false;
+    g_loggedCooldownPlayerObjectMissing = false;
+    g_lastCooldownProgressFallbackLogMs = 0;
+    g_lastCooldownPerTickFallbackLogMs = 0;
+    g_lastCooldownSampleLogMs = 0;
+
+    g_inGameHudField_121 = nullptr;
+    g_hudTextFields_121.clear();
+    g_lastHudTextProbeMs = 0;
+
+    g_reachJniInit = false;
+    g_reachMethodsResolved = false;
+    g_getAttributes_121 = nullptr;
+    g_getCustomInstance_121 = nullptr;
+    g_setBaseValue_121 = nullptr;
+    g_dynGetAttributes = nullptr;
+    g_dynGetCustomInstance = nullptr;
+    g_dynGetAttributeInstance = nullptr;
+    g_dynRegistryEntryToString = nullptr;
+    g_dynRegistryEntryMatchesIdentifier = nullptr;
+    g_dynSetBaseValue = nullptr;
+    g_identifierFromString_121 = nullptr;
+
+    g_velocityMethodsResolved = false;
+    g_getVelocity_121 = nullptr;
+    g_setVelocityVec_121 = nullptr;
+    g_setVelocityXYZ_121 = nullptr;
+    g_hurtTimeField_121 = nullptr;
+    g_vec3dCtor_121 = nullptr;
+    g_lastHurtTime_121 = 0;
+    g_loggedVelocityResolveFail_121 = false;
+
+    g_getProjectionMatrix_121 = nullptr;
+    g_getModelViewMatrix_121 = nullptr;
+    g_matrixGetFloatArray_121 = nullptr;
+    g_matrixM00 = g_matrixM01 = g_matrixM02 = g_matrixM03 = nullptr;
+    g_matrixM10 = g_matrixM11 = g_matrixM12 = g_matrixM13 = nullptr;
+    g_matrixM20 = g_matrixM21 = g_matrixM22 = g_matrixM23 = nullptr;
+    g_matrixM30 = g_matrixM31 = g_matrixM32 = g_matrixM33 = nullptr;
+
+    g_gameRendererField_121 = nullptr;
+    g_gameRendererCameraField_121 = nullptr;
+    g_cameraPosF_121 = nullptr;
+    g_cameraYawF_121 = nullptr;
+    g_cameraPitchF_121 = nullptr;
+    g_vec3dX_121 = g_vec3dY_121 = g_vec3dZ_121 = nullptr;
+    g_lunarProjField_121 = nullptr;
+    g_lunarViewField_121 = nullptr;
+    g_optionsField_121 = nullptr;
+    g_fovField_121 = nullptr;
+    g_simpleOptionGet_121 = nullptr;
+
+    g_worldGetChunkMethod_121 = nullptr;
+    g_chunkBlockEntitiesMapField_121 = nullptr;
+    g_beGetPos_121 = nullptr;
+    g_blockPosX_121 = nullptr;
+    g_blockPosY_121 = nullptr;
+    g_blockPosZ_121 = nullptr;
+    g_beBlockPosField_121 = nullptr;
+    g_entityPosField_121 = nullptr;
+    g_javaHashMapTableField = nullptr;
+    g_javaHMNodeValueField = nullptr;
+    g_javaHMNodeNextField = nullptr;
+    g_javaHMNodeKeyField = nullptr;
+    g_blockPosGetX_121 = nullptr;
+    g_blockPosGetY_121 = nullptr;
+    g_blockPosGetZ_121 = nullptr;
+    g_beGetCachedState_121 = nullptr;
+    g_stateGetBlock_121 = nullptr;
+    g_blockGetTranslationKey_121 = nullptr;
+    for (int i = 0; i < 4; i++) g_chestBlockEntityClasses[i] = nullptr;
+
+    g_hitResultGetType_121 = nullptr;
+    g_crosshairTargetField_121 = nullptr;
+
+    g_worldField_121 = nullptr;
+    g_playerField_121 = nullptr;
+    g_worldPlayersListField_121 = nullptr;
+    g_getX_121 = nullptr;
+    g_getY_121 = nullptr;
+    g_getZ_121 = nullptr;
+    g_getYaw_121 = nullptr;
+    g_getPitch_121 = nullptr;
+    g_getHealth_121 = nullptr;
+    g_getName_121 = nullptr;
+    g_setCustomNameVisible_121 = nullptr;
+    g_isCustomNameVisible_121 = nullptr;
+    g_shouldRenderName_121 = nullptr;
+    g_textGetString_121 = nullptr;
+    g_getArmor_121 = nullptr;
+    g_getMainHandStack_121 = nullptr;
+    g_itemStackGetName_121 = nullptr;
+    g_itemStackGetDamage_121 = nullptr;
+    g_itemStackGetMaxDamage_121 = nullptr;
+    g_getGameProfile_121 = nullptr;
+    g_gameProfileGetName_121 = nullptr;
+
+    g_lastPlayerListUpdateMs = 0;
+    g_lastClosestUpdateMs = 0;
+    g_lastChestScanMs = 0;
+    g_worldTransitionEndMs = GetTickCount() + 1000;
+
+    {
+        LockGuard lk(g_playerListMutex);
+        g_playerList.clear();
+    }
+    {
+        LockGuard lk(g_chestListMutex);
+        g_chestList.clear();
+    }
+    {
+        LockGuard lk(g_bgCamMutex);
+        g_bgCamState = BgCamState();
+    }
+
+    if (reason && *reason) {
+        Log(std::string("ReloadMappings: reset JNI caches (") + reason + ").");
+    }
 }
 
 static void CleanupImGuiAndHooks() {
@@ -4327,11 +5103,13 @@ static jclass LoadClassWithLoader(JNIEnv* env, jobject cl, const char* name) {
 // Uses JVMTI to scan loaded classes, finds Minecraft by singleton pattern,
 // discovers screen field by method hierarchy walking, finds ChatScreen + setScreen.
 static bool DiscoverJniMappings(JNIEnv* env) {
+    TRACE261_PATH("enter");
     Log("Starting JNI discovery for 26.1...");
 
     // Get JVMTI
     jvmtiEnv* jvmti = nullptr;
-    if (g_jvm->GetEnv((void**)&jvmti, JVMTI_VERSION_1_2) != JNI_OK || !jvmti) {
+    bool jvmtiReady = TRACE261_IF("jvmtiReady", (g_jvm->GetEnv((void**)&jvmti, JVMTI_VERSION_1_2) == JNI_OK && jvmti));
+    if (!jvmtiReady) {
         Log("ERROR: Failed to get JVMTI"); return false;
     }
     jint classCount = 0; jclass* classes = nullptr;
@@ -4340,6 +5118,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
 
     // Get game classloader
     jobject gcl = GetGameClassLoader(env);
+    TRACE261_BRANCH("gameClassLoaderAvailable", gcl != nullptr);
     if (!gcl) { Log("ERROR: No game classloader found"); jvmti->Deallocate((unsigned char*)classes); return false; }
     Log("Game classloader found.");
 
@@ -4383,66 +5162,10 @@ static bool DiscoverJniMappings(JNIEnv* env) {
     };
     for (int i = 0; knownMC[i]; i++) {
         jclass c = LoadClassWithLoader(env, gcl, knownMC[i]);
-        if (c) { mcClass = c; mcName = knownMC[i]; Log("Found MC by name: " + mcName); break; }
+        TRACE261_BRANCH("mcKnownNameHit", c != nullptr);
+        if (c) { mcClass = c; mcName = knownMC[i]; TRACE261_VALUE("mcClassSource", "known-name"); Log("Found MC by name: " + mcName); break; }
     }
 
-    // Fallback: scan all classes for singleton pattern (like 1.8.9)
-    // Collect all candidates and pick the best one (most fields, prefer net.minecraft)
-    if (!mcClass) {
-        jclass bestCls = nullptr;
-        std::string bestName;
-        int bestFields = 0;
-
-        for (int i = 0; i < classCount; i++) {
-            jclass cls = classes[i];
-            if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-            jstring jn = (jstring)env->CallObjectMethod(cls, mGetName);
-            if (!jn || env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-            const char* cn = env->GetStringUTFChars(jn, nullptr);
-            std::string name = cn ? cn : "";
-            if (cn) env->ReleaseStringUTFChars(jn, cn);
-            // Skip JDK/library/launcher/Lunar classes
-            if (name.find("java.") == 0 || name.find("sun.") == 0 || name.find("javax.") == 0 ||
-                name.find("com.sun.") == 0 || name.find("org.") == 0 || name.find("jdk.") == 0 ||
-                name.find("com.google.") == 0 || name.find("io.") == 0 || name[0] == '[' ||
-                name.find("com.moonsworth.") == 0 || name.find("com.lunarclient.") == 0 ||
-                name.find("lunar.") == 0) continue;
-
-            jobjectArray fields = (jobjectArray)env->CallObjectMethod(cls, mGetFields);
-            if (!fields || env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-            jsize fc = env->GetArrayLength(fields);
-            bool hasSelf = false; int objCount = 0;
-            for (int f = 0; f < fc; f++) {
-                jobject fld = env->GetObjectArrayElement(fields, f);
-                if (!fld) continue;
-                jint mod = env->CallIntMethod(fld, mFMod);
-                bool isS = env->CallStaticBooleanMethod(cMod, mIsStatic, mod);
-                jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
-                if (!ft || env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-                std::string tn = GetClassNameFromClass(env, ft);
-                if (isS && tn == name) hasSelf = true;
-                if (!isS) objCount++;
-            }
-            if (hasSelf && objCount > 15) {
-                Log("Singleton candidate: " + name + " (" + std::to_string(objCount) + " fields)");
-                // Prefer candidate with more fields, or net.minecraft over anything else
-                bool better = false;
-                if (!bestCls) better = true;
-                else if (name.find("net.minecraft") == 0 && bestName.find("net.minecraft") != 0) better = true;
-                else if (objCount > bestFields && bestName.find("net.minecraft") != 0) better = true;
-                if (better) {
-                    bestCls = cls;
-                    bestName = name;
-                    bestFields = objCount;
-                }
-            }
-        }
-        if (bestCls) {
-            mcClass = (jclass)env->NewGlobalRef(bestCls);
-            mcName = bestName;
-            Log("Selected MC class: " + mcName + " (" + std::to_string(bestFields) + " fields)");
-        }
-    }
     if (!mcClass) { Log("ERROR: Minecraft class not found"); jvmti->Deallocate((unsigned char*)classes); return false; }
 
     // ---- Step 2: Find MC singleton instance ----
@@ -4469,9 +5192,11 @@ static bool DiscoverJniMappings(JNIEnv* env) {
             Log("Singleton field: " + fn);
         }
     }
+    TRACE261_BRANCH("singletonFieldResolved", singletonField != nullptr);
     if (!singletonField) { Log("ERROR: No singleton field"); jvmti->Deallocate((unsigned char*)classes); return false; }
 
     jobject mcInst = env->GetStaticObjectField(mcClass, singletonField);
+    TRACE261_BRANCH("mcInstanceAvailable", mcInst != nullptr);
     if (!mcInst) { Log("ERROR: MC instance null"); jvmti->Deallocate((unsigned char*)classes); return false; }
     Log("Got Minecraft instance.");
 
@@ -4513,71 +5238,13 @@ static bool DiscoverJniMappings(JNIEnv* env) {
     };
     for (int ni = 0; directScreenNames[ni] && !g_screenField; ni++) {
         for (int si = 0; directScreenSigs[si] && !g_screenField; si++) {
-            tryScreenField(directScreenNames[ni], directScreenSigs[si]);
+            bool hit = tryScreenField(directScreenNames[ni], directScreenSigs[si]);
+            TRACE261_BRANCH("screenDirectLookupHit", hit);
         }
     }
 
-    // Fallback: inspect Minecraft instance fields and detect Screen-like types by class traits.
-    for (int f = 0; f < mcFC; f++) {
-        if (g_screenField) break;
-        jobject fld = env->GetObjectArrayElement(mcFields, f);
-        if (!fld) continue;
-        jint mod = env->CallIntMethod(fld, mFMod);
-        if (env->CallStaticBooleanMethod(cMod, mIsStatic, mod)) continue; // skip static
-        jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
-        if (!ft || env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-        std::string tn = GetClassNameFromClass(env, ft);
-        jstring jfn = (jstring)env->CallObjectMethod(fld, mFName);
-        const char* cfn = env->GetStringUTFChars(jfn, nullptr);
-        std::string fn = cfn ? cfn : "";
-        if (cfn) env->ReleaseStringUTFChars(jfn, cfn);
-
-        bool isScreen = false;
-        std::string tnLower = ToLowerAscii(tn);
-        if (tnLower.rfind("net.minecraft", 0) == 0 &&
-            (tnLower.find("screen") != std::string::npos || tnLower.find("gui") != std::string::npos)) {
-            isScreen = true;
-        }
-
-        // Walk hierarchy to check for screen-like signatures
-        jclass walk = ft; int depth = 0;
-        while (walk && depth < 8) {
-            jobjectArray methods = (jobjectArray)env->CallObjectMethod(walk, mGetMethods);
-            if (methods && !env->ExceptionCheck()) {
-                jsize mc2 = env->GetArrayLength(methods);
-                for (int m2 = 0; m2 < mc2; m2++) {
-                    jobject mth = env->GetObjectArrayElement(methods, m2);
-                    if (!mth) continue;
-                    jstring jmn = (jstring)env->CallObjectMethod(mth, mMName);
-                    const char* cmn = env->GetStringUTFChars(jmn, nullptr);
-                    if (cmn) {
-                        std::string s_cmn(cmn);
-                        if (s_cmn == "renderBackground" || s_cmn == "drawScreen" ||
-                            s_cmn == "render" ||
-                            s_cmn == "drawDefaultBackground" || s_cmn == "method_25420" ||
-                            s_cmn == "method_25394") {
-                            isScreen = true;
-                        }
-                        env->ReleaseStringUTFChars(jmn, cmn);
-                    }
-                }
-            }
-            if (env->ExceptionCheck()) env->ExceptionClear();
-            if (isScreen) break;
-            walk = (jclass)env->CallObjectMethod(walk, mGetSuper);
-            if (env->ExceptionCheck()) { env->ExceptionClear(); break; }
-            depth++;
-        }
-        if (isScreen && !g_screenField) {
-            std::string sig = "L" + tn + ";"; std::replace(sig.begin(), sig.end(), '.', '/');
-            g_screenField = env->GetFieldID(mcClass, fn.c_str(), sig.c_str());
-            if (env->ExceptionCheck()) { env->ExceptionClear(); g_screenField = nullptr; }
-            if (g_screenField) {
-                screenType = tn;
-                g_screenType = tn;
-                Log("Screen field: " + fn + " type=" + tn);
-            }
-        }
+    if (g_screenField && !screenType.empty()) {
+        TRACE261_VALUE("screenType", screenType);
     }
 
     // ---- Step 4: Find setScreen method (takes Screen type, returns void) ----
@@ -4590,48 +5257,21 @@ static bool DiscoverJniMappings(JNIEnv* env) {
         // Prefer known method names first (Yarn commonly: method_1507).
         g_setScreenMethod = env->GetMethodID(mcClass, "setScreen", fullSig.c_str());
         if (env->ExceptionCheck()) { env->ExceptionClear(); g_setScreenMethod = nullptr; }
+        TRACE261_BRANCH("setScreenPreferredSetScreenHit", g_setScreenMethod != nullptr);
         if (!g_setScreenMethod) {
             g_setScreenMethod = env->GetMethodID(mcClass, "method_1507", fullSig.c_str());
             if (env->ExceptionCheck()) { env->ExceptionClear(); g_setScreenMethod = nullptr; }
+            TRACE261_BRANCH("setScreenPreferredMethod1507Hit", g_setScreenMethod != nullptr);
         }
         if (g_setScreenMethod) {
             Log(std::string("setScreen method (preferred): sig=") + fullSig);
         }
 
-        // Fallback: heuristic scan (only if preferred names failed).
-        if (!g_setScreenMethod) {
-            jobjectArray methods = (jobjectArray)env->CallObjectMethod(mcClass, mGetMethods);
-            if (methods && !env->ExceptionCheck()) {
-                jsize mc2 = env->GetArrayLength(methods);
-                for (int m2 = 0; m2 < mc2; m2++) {
-                    jobject mth = env->GetObjectArrayElement(methods, m2);
-                    if (!mth) continue;
-                    // Check: 1 param of Screen type, void return
-                    jobjectArray params = (jobjectArray)env->CallObjectMethod(mth, mMParams);
-                    if (!params || env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-                    if (env->GetArrayLength(params) != 1) continue;
-                    jclass pt = (jclass)env->GetObjectArrayElement(params, 0);
-                    std::string ptn = GetClassNameFromClass(env, pt);
-                    if (ptn != screenType) continue;
-                    jclass rt = (jclass)env->CallObjectMethod(mth, mMRet);
-                    std::string rtn = GetClassNameFromClass(env, rt);
-                    if (rtn != "void") continue;
-                    // Get method name and resolve it
-                    jstring jmn = (jstring)env->CallObjectMethod(mth, mMName);
-                    const char* cmn = env->GetStringUTFChars(jmn, nullptr);
-                    std::string mname = cmn; env->ReleaseStringUTFChars(jmn, cmn);
-                    g_setScreenMethod = env->GetMethodID(mcClass, mname.c_str(), fullSig.c_str());
-                    if (env->ExceptionCheck()) { env->ExceptionClear(); g_setScreenMethod = nullptr; continue; }
-                    Log("setScreen method (scanned): " + mname + " sig=" + fullSig);
-                    break;
-                }
-            }
-            if (env->ExceptionCheck()) env->ExceptionClear();
-        }
     }
 
     // ---- Step 5: Find ChatScreen (subclass of Screen with String constructor) ----
     if (!screenType.empty()) {
+        TRACE261_PATH("resolve-chat-screen");
         // Try known names first
         const char* knownChat[] = {
             "net.minecraft.client.gui.screens.ChatScreen",
@@ -4642,6 +5282,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
         };
         for (int i = 0; knownChat[i]; i++) {
             jclass c = LoadClassWithLoader(env, gcl, knownChat[i]);
+            TRACE261_BRANCH("chatKnownNameClassHit", c != nullptr);
             if (c) {
                 // Constructors vary in 1.21 clients (some take String, some String+bool, some empty).
                 // Use reflection to find an allowed ctor and then resolve it to a jmethodID.
@@ -4707,39 +5348,17 @@ static bool DiscoverJniMappings(JNIEnv* env) {
                     jmethodID ctor = env->GetMethodID(c, "<init>", sig.c_str());
                     if (env->ExceptionCheck()) { env->ExceptionClear(); ctor = nullptr; }
                     if (ctor) {
+                        if (g_chatScreenClass) {
+                            env->DeleteGlobalRef(g_chatScreenClass);
+                            g_chatScreenClass = nullptr;
+                        }
                         g_chatScreenClass = (jclass)env->NewGlobalRef(c);
                         g_chatScreenCtor  = ctor;
                         g_chatCtorKind    = kind;
+                        TRACE261_VALUE("chatScreenSource", knownChat[i]);
                         Log("Found ChatScreen by name: " + std::string(knownChat[i]) + " ctorSig=" + sig);
                         break;
                     }
-                }
-            }
-        }
-        // Fallback: scan loaded classes for Screen subclass with String ctor
-        if (!g_chatScreenClass) {
-            jclass screenCls = LoadClassWithLoader(env, gcl, screenType.c_str());
-            for (int i = 0; i < classCount && !g_chatScreenClass; i++) {
-                jclass cls = classes[i];
-                if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-                // Must be subclass of Screen
-                if (screenCls && !env->IsAssignableFrom(cls, screenCls)) continue;
-                // Check for String constructor (1.8.9)
-                jmethodID ctor = env->GetMethodID(cls, "<init>", "(Ljava/lang/String;)V");
-                if (env->ExceptionCheck()) { env->ExceptionClear(); ctor = nullptr; }
-                // Check for empty constructor (1.21)
-                if (!ctor) {
-                    ctor = env->GetMethodID(cls, "<init>", "()V");
-                    if (env->ExceptionCheck()) { env->ExceptionClear(); ctor = nullptr; }
-                }
-                if (!ctor) continue;
-                
-                // Check class name contains "Chat" or "chat"
-                std::string cn = GetClassNameFromClass(env, cls);
-                if (cn.find("Chat") != std::string::npos || cn.find("chat") != std::string::npos) {
-                    g_chatScreenClass = (jclass)env->NewGlobalRef(cls);
-                    g_chatScreenCtor  = ctor;
-                    Log("Found ChatScreen by scan: " + cn);
                 }
             }
         }
@@ -4785,9 +5404,15 @@ static bool DiscoverJniMappings(JNIEnv* env) {
     }
 
     // ---- Step 7: Store globals ----
+    if (g_mcInstance) {
+        env->DeleteGlobalRef(g_mcInstance);
+        g_mcInstance = nullptr;
+    }
     g_mcInstance = env->NewGlobalRef(mcInst);
     g_stateJniReady = (g_screenField != nullptr);
     g_chatJniReady  = (g_setScreenMethod != nullptr && g_chatScreenClass != nullptr && g_chatScreenCtor != nullptr);
+    TRACE261_BRANCH("stateJniReady", g_stateJniReady);
+    TRACE261_BRANCH("chatJniReady", g_chatJniReady);
 
 
     if (!g_renderSystemClass_121) {
@@ -4858,6 +5483,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
 
     // Resolve GameRenderer to get Camera without invoking crashing reflection scans.
     if (!g_gameRendererField_121) {
+        TRACE261_PATH("resolve-gamerenderer-field");
         const char* gameRendererSigs[] = {
             "Lnet/minecraft/class_757;",
             "Lnet/minecraft/client/render/GameRenderer;",
@@ -4868,6 +5494,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
             Log(std::string("Trying GameRenderer sig: ") + gameRendererSigs[i]);
             g_gameRendererField_121 = FindFieldByType(env, mcClass, gameRendererSigs[i]);
             if (g_gameRendererField_121) {
+                TRACE261_VALUE("gameRendererFieldSource", gameRendererSigs[i]);
                 Log("Found GameRenderer field with sig: " + std::string(gameRendererSigs[i]));
             }
         }
@@ -4888,6 +5515,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
             grCls = LoadClassWithLoader(env, gcl, gameRendererNames[i]);
             if (env->ExceptionCheck()) { env->ExceptionClear(); grCls = nullptr; }
             if (grCls) {
+                TRACE261_VALUE("gameRendererClassSource", gameRendererNames[i]);
                 Log("Loaded GameRenderer class: " + std::string(gameRendererNames[i]));
             }
         }
@@ -4906,6 +5534,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
                     g_gameRendererCameraField_121 = env->GetFieldID(grCls, cameraFieldNames[ni], cameraFieldSigs[si]);
                     if (env->ExceptionCheck()) { env->ExceptionClear(); g_gameRendererCameraField_121 = nullptr; }
                     else if (g_gameRendererCameraField_121) {
+                        TRACE261_VALUE("cameraFieldSource", std::string(cameraFieldNames[ni]) + "|" + cameraFieldSigs[si]);
                         Log(std::string("Found camera field: ") + cameraFieldNames[ni] + " with sig: " + cameraFieldSigs[si]);
                         break;
                     }
@@ -4914,6 +5543,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
             
             // Reflection scan fallback: find first field with "Camera" in its type
             if (!g_gameRendererCameraField_121) {
+                TRACE261_PATH("camera-field-reflection-fallback");
                 Log("Scanning GameRenderer fields via reflection...");
                 jclass cClass = env->FindClass("java/lang/Class");
                 jclass cField = env->FindClass("java/lang/reflect/Field");
@@ -4949,6 +5579,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
                                     env->ExceptionClear(); 
                                     g_gameRendererCameraField_121 = nullptr; 
                                 } else if (g_gameRendererCameraField_121) {
+                                    TRACE261_VALUE("cameraFieldSource", std::string("reflection|") + fnameStr + "|" + sig);
                                     Log("Successfully got field ID for camera field");
                                     break;
                                 }
@@ -4977,6 +5608,7 @@ static bool DiscoverJniMappings(JNIEnv* env) {
     // Get Camera class by actually getting the camera instance from GameRenderer
     jclass camCls = nullptr;
     if (!camCls && g_gameRendererCameraField_121 && g_gameRendererField_121) {
+        TRACE261_PATH("camera-class-runtime-path");
         Log("Getting Camera class from runtime instance...");
         jobject grObj = env->GetObjectField(g_mcInstance, g_gameRendererField_121);
         if (grObj && !env->ExceptionCheck()) {
@@ -4997,25 +5629,6 @@ static bool DiscoverJniMappings(JNIEnv* env) {
         }
     }
     
-    // Fallback: try loading by known names
-    if (!camCls) {
-        const char* cameraClassNames[] = {
-            "net.minecraft.class_4184",
-            "net.minecraft.client.render.Camera",
-            "net.minecraft.client.renderer.Camera",
-            "net.minecraft.client.Camera",
-            "com.mojang.blaze3d.platform.Camera",
-            nullptr
-        };
-        for (int i = 0; cameraClassNames[i] && !camCls; i++) {
-            Log(std::string("Trying to load Camera class: ") + cameraClassNames[i]);
-            camCls = LoadClassWithLoader(env, gcl, cameraClassNames[i]);
-            if (env->ExceptionCheck()) { env->ExceptionClear(); camCls = nullptr; }
-            if (camCls) {
-                Log("Loaded Camera class: " + std::string(cameraClassNames[i]));
-            }
-        }
-    }
     if (camCls) {
         g_cameraClass_121 = (jclass)env->NewGlobalRef(camCls);
         
@@ -5034,66 +5647,13 @@ static bool DiscoverJniMappings(JNIEnv* env) {
                 g_cameraPosF_121 = env->GetFieldID(camCls, cameraPosNames[ni], cameraPosSigs[si]);
                 if (env->ExceptionCheck()) { env->ExceptionClear(); g_cameraPosF_121 = nullptr; }
                 else if (g_cameraPosF_121) {
+                    TRACE261_VALUE("cameraPosFieldSource", std::string(cameraPosNames[ni]) + "|" + cameraPosSigs[si]);
                     Log(std::string("Found camera pos field: ") + cameraPosNames[ni] + " with sig: " + cameraPosSigs[si]);
                     break;
                 }
             }
         }
         
-        // Reflection scan if direct lookup failed
-        if (!g_cameraPosF_121) {
-            Log("Scanning Camera fields via reflection for position...");
-            jclass cClass = env->FindClass("java/lang/Class");
-            jclass cField = env->FindClass("java/lang/reflect/Field");
-            jmethodID mGetFields = cClass ? env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;") : nullptr;
-            jmethodID mFType = cField ? env->GetMethodID(cField, "getType", "()Ljava/lang/Class;") : nullptr;
-            jmethodID mFName = cField ? env->GetMethodID(cField, "getName", "()Ljava/lang/String;") : nullptr;
-            if (env->ExceptionCheck()) env->ExceptionClear();
-            
-            if (mGetFields && mFType && mFName) {
-                jobjectArray fields = (jobjectArray)env->CallObjectMethod(camCls, mGetFields);
-                if (fields && !env->ExceptionCheck()) {
-                    jsize fc = env->GetArrayLength(fields);
-                    for (int i = 0; i < fc; i++) {
-                        jobject fld = env->GetObjectArrayElement(fields, i);
-                        if (!fld) continue;
-                        
-                        jclass ftype = (jclass)env->CallObjectMethod(fld, mFType);
-                        jstring fname = (jstring)env->CallObjectMethod(fld, mFName);
-                        if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-                        
-                        std::string ftypeName = ftype ? GetClassNameFromClass(env, ftype) : "";
-                        const char* fnameC = fname ? env->GetStringUTFChars(fname, nullptr) : nullptr;
-                        std::string fnameStr = fnameC ? fnameC : "";
-                        if (fnameC) env->ReleaseStringUTFChars(fname, fnameC);
-                        
-                        // Look for Vec3 position field
-                        if (!g_cameraPosF_121 && (ftypeName.find("Vec3") != std::string::npos || ftypeName.find("Vector3") != std::string::npos)) {
-                            Log("Found Vec3-like field: " + fnameStr + " type=" + ftypeName);
-                            std::string sig = "L" + ftypeName + ";";
-                            std::replace(sig.begin(), sig.end(), '.', '/');
-                            jfieldID testFid = env->GetFieldID(camCls, fnameStr.c_str(), sig.c_str());
-                            if (!env->ExceptionCheck() && testFid) {
-                                g_cameraPosF_121 = testFid;
-                                Log("Using as camera position field: " + fnameStr);
-                            } else {
-                                env->ExceptionClear();
-                            }
-                        }
-                        
-                        if (ftype) env->DeleteLocalRef(ftype);
-                        if (fname) env->DeleteLocalRef(fname);
-                        env->DeleteLocalRef(fld);
-                        
-                        if (g_cameraPosF_121) break;
-                    }
-                    env->DeleteLocalRef(fields);
-                } else if (env->ExceptionCheck()) env->ExceptionClear();
-            }
-            if (cClass) env->DeleteLocalRef(cClass);
-            if (cField) env->DeleteLocalRef(cField);
-        }
-
         const char* yawNames[] = { "field_18715", "yaw", "yRot", "f_90571_", "yRotation", nullptr };
         for (int i = 0; yawNames[i] && !g_cameraYawF_121; i++) {
             Log(std::string("Trying camera yaw field: ") + yawNames[i]);
@@ -5147,26 +5707,6 @@ static bool DiscoverJniMappings(JNIEnv* env) {
             env->DeleteLocalRef(grObj);
         } else if (env->ExceptionCheck()) {
             env->ExceptionClear();
-        }
-    }
-    
-    // Fallback: try loading by known names
-    if (!vecCls) {
-        const char* vecClassNames[] = {
-            "net.minecraft.world.phys.Vec3",
-            "net.minecraft.class_243",
-            "net.minecraft.util.math.Vec3d",
-            "org.joml.Vector3f",
-            "org.joml.Vector3d",
-            nullptr
-        };
-        for (int i = 0; vecClassNames[i] && !vecCls; i++) {
-            Log(std::string("Trying to load Vec3d class: ") + vecClassNames[i]);
-            vecCls = LoadClassWithLoader(env, gcl, vecClassNames[i]);
-            if (env->ExceptionCheck()) { env->ExceptionClear(); vecCls = nullptr; }
-            if (vecCls) {
-                Log("Loaded Vec3d class: " + std::string(vecClassNames[i]));
-            }
         }
     }
     
@@ -5238,34 +5778,45 @@ static bool DiscoverJniMappings(JNIEnv* env) {
 // Like 1.8.9: open a real MC screen so MC releases mouse natively.
 // Falls back to direct GLFW call if JNI not ready.
 static void OpenChatScreen() {
-    if (g_chatJniReady && g_jvm) {
+    TRACE261_PATH("enter");
+    bool canUseJni = TRACE261_IF("jniChatReady", (g_chatJniReady && g_jvm));
+    if (canUseJni) {
         JNIEnv* env = nullptr;
-        if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_OK && env) {
+        bool envReady = TRACE261_IF("jniEnvReady", (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_OK && env));
+        if (envReady) {
             jobject chatInst = nullptr;
             if (g_chatCtorKind == 0) {
+                TRACE261_PATH("chat-ctor-kind-0");
                 chatInst = env->NewObject(g_chatScreenClass, g_chatScreenCtor);
             } else if (g_chatCtorKind == 1) {
+                TRACE261_PATH("chat-ctor-kind-1");
                 jstring empty = env->NewStringUTF("");
                 chatInst = env->NewObject(g_chatScreenClass, g_chatScreenCtor, empty);
                 env->DeleteLocalRef(empty);
             } else if (g_chatCtorKind == 2) {
+                TRACE261_PATH("chat-ctor-kind-2");
                 jstring empty = env->NewStringUTF("");
                 chatInst = env->NewObject(g_chatScreenClass, g_chatScreenCtor, empty, (jboolean)JNI_FALSE);
                 env->DeleteLocalRef(empty);
             }
             
-            if (!env->ExceptionCheck() && chatInst) {
+            bool chatCreated = TRACE261_IF("chatScreenCreated", (!env->ExceptionCheck() && chatInst));
+            if (chatCreated) {
                 env->CallVoidMethod(g_mcInstance, g_setScreenMethod, chatInst);
                 env->ExceptionClear();
                 env->DeleteLocalRef(chatInst);
+                TRACE261_PATH("jni-chat-open-success");
                 return; // MC handles cursor natively
             }
+            TRACE261_PATH("jni-chat-open-failed");
             env->ExceptionClear();
         }
     }
     // GLFW fallback (when JNI not ready or failed)
+    TRACE261_PATH("glfw-chat-open-fallback");
     if (glfwGetCurrentContext_fn && glfwSetInputMode_fn) {
         void* win = glfwGetCurrentContext_fn();
+        TRACE261_BRANCH("glfwWindowAvailable", win != nullptr);
         if (win) {
             glfwSetInputMode_fn(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
             // Disable raw mouse motion while our GUI is open to prevent camera drift.
@@ -5274,16 +5825,22 @@ static void OpenChatScreen() {
     }
 }
 static void CloseChatScreen() {
-    if (g_chatJniReady && g_jvm) {
+    TRACE261_PATH("enter");
+    bool canUseJni = TRACE261_IF("jniChatReady", (g_chatJniReady && g_jvm));
+    if (canUseJni) {
         JNIEnv* env = nullptr;
-        if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_OK && env) {
+        bool envReady = TRACE261_IF("jniEnvReady", (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_OK && env));
+        if (envReady) {
             env->CallVoidMethod(g_mcInstance, g_setScreenMethod, nullptr);
             env->ExceptionClear();
+            TRACE261_PATH("jni-chat-close-issued");
         }
     }
     // GLFW safety: ensure Minecraft is put back into mouse-captured mode.
+    TRACE261_PATH("glfw-chat-close-path");
     if (glfwGetCurrentContext_fn && glfwSetInputMode_fn) {
         void* win = glfwGetCurrentContext_fn();
+        TRACE261_BRANCH("glfwWindowAvailable", win != nullptr);
         if (win) {
             // Order matters: disable cursor first, then (later) re-enable raw mouse.
             // Keeping raw mouse OFF briefly reduces post-close flick.
@@ -5303,8 +5860,11 @@ static void CloseChatScreen() {
 // Moving this here eliminates CallObjectMethod (getSuperclass, getMainHandStack, etc.) from the
 // render thread which caused nvoglv64.dll AVX2 crashes (see 1.21_MAPPINGS.md).
 static bool IsInWorldNow(JNIEnv* env) {
-    if (!env || !g_mcInstance) return false;
+    TRACE261_PATH("enter");
+    bool prerequisites = TRACE261_IF("prerequisitesMet", (env && g_mcInstance));
+    if (!prerequisites) return false;
     if (!g_worldField_121) {
+        TRACE261_PATH("resolve-world-field");
         jclass mcCls = env->GetObjectClass(g_mcInstance);
         if (mcCls) {
             const char* worldNames[] = { "field_1687", "world", "level", "f_91073_", nullptr };
@@ -5321,65 +5881,19 @@ static bool IsInWorldNow(JNIEnv* env) {
                     g_worldField_121 = env->GetFieldID(mcCls, worldNames[ni], worldSigs[si]);
                     if (env->ExceptionCheck()) { env->ExceptionClear(); g_worldField_121 = nullptr; }
                     else if (g_worldField_121) {
+                        TRACE261_VALUE("worldFieldSource", std::string(worldNames[ni]) + "|" + worldSigs[si]);
                         Log(std::string("Found world field: ") + worldNames[ni] + " with sig: " + worldSigs[si]);
                         break;
                     }
                 }
             }
             if (!g_worldField_121) {
-                Log("WARNING: World field not found, trying reflection scan...");
-                // Reflection scan for any field with "Level" or "World" in type
-                jclass cClass = env->FindClass("java/lang/Class");
-                jclass cField = env->FindClass("java/lang/reflect/Field");
-                jmethodID mGetFields = cClass ? env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;") : nullptr;
-                jmethodID mFType = cField ? env->GetMethodID(cField, "getType", "()Ljava/lang/Class;") : nullptr;
-                jmethodID mFName = cField ? env->GetMethodID(cField, "getName", "()Ljava/lang/String;") : nullptr;
-                if (env->ExceptionCheck()) env->ExceptionClear();
-                
-                if (mGetFields && mFType && mFName) {
-                    jobjectArray fields = (jobjectArray)env->CallObjectMethod(mcCls, mGetFields);
-                    if (fields && !env->ExceptionCheck()) {
-                        jsize fc = env->GetArrayLength(fields);
-                        for (int i = 0; i < fc && !g_worldField_121; i++) {
-                            jobject fld = env->GetObjectArrayElement(fields, i);
-                            if (!fld) continue;
-                            
-                            jclass ftype = (jclass)env->CallObjectMethod(fld, mFType);
-                            jstring fname = (jstring)env->CallObjectMethod(fld, mFName);
-                            if (env->ExceptionCheck()) { env->ExceptionClear(); continue; }
-                            
-                            std::string ftypeName = ftype ? GetClassNameFromClass(env, ftype) : "";
-                            const char* fnameC = fname ? env->GetStringUTFChars(fname, nullptr) : nullptr;
-                            std::string fnameStr = fnameC ? fnameC : "";
-                            if (fnameC) env->ReleaseStringUTFChars(fname, fnameC);
-                            
-                            if (ftypeName.find("Level") != std::string::npos || ftypeName.find("World") != std::string::npos) {
-                                Log("Found Level/World-like field via reflection: " + fnameStr + " type=" + ftypeName);
-                                std::string sig = "L" + ftypeName + ";";
-                                std::replace(sig.begin(), sig.end(), '.', '/');
-                                g_worldField_121 = env->GetFieldID(mcCls, fnameStr.c_str(), sig.c_str());
-                                if (env->ExceptionCheck()) { 
-                                    env->ExceptionClear(); 
-                                    g_worldField_121 = nullptr; 
-                                } else if (g_worldField_121) {
-                                    Log("Successfully got field ID for world field");
-                                    break;
-                                }
-                            }
-                            
-                            if (ftype) env->DeleteLocalRef(ftype);
-                            if (fname) env->DeleteLocalRef(fname);
-                            env->DeleteLocalRef(fld);
-                        }
-                        env->DeleteLocalRef(fields);
-                    } else if (env->ExceptionCheck()) env->ExceptionClear();
-                }
-                if (cClass) env->DeleteLocalRef(cClass);
-                if (cField) env->DeleteLocalRef(cField);
+                Log("WARNING: World field unresolved from known names/signatures.");
             }
             env->DeleteLocalRef(mcCls);
         }
     }
+    TRACE261_BRANCH("worldFieldResolved", g_worldField_121 != nullptr);
     if (!g_worldField_121) return false;
     jobject worldCheck = env->GetObjectField(g_mcInstance, g_worldField_121);
     if (env->ExceptionCheck()) { env->ExceptionClear(); worldCheck = nullptr; }
@@ -5402,9 +5916,12 @@ static bool IsInWorldNow(JNIEnv* env) {
 }
 
 static void EnsureHudTextFields(JNIEnv* env, jclass mcCls, jobject hudObj) {
-    if (!env || !mcCls) return;
+    TRACE261_PATH("enter");
+    bool prerequisites = TRACE261_IF("prerequisitesMet", (env && mcCls));
+    if (!prerequisites) return;
 
     if (!g_inGameHudField_121) {
+        TRACE261_PATH("resolve-ingamehud-field");
         const char* hudSigs[] = {
             "Lnet/minecraft/class_329;",
             "Lnet/minecraft/client/gui/Gui;",
@@ -5416,14 +5933,20 @@ static void EnsureHudTextFields(JNIEnv* env, jclass mcCls, jobject hudObj) {
             for (int ni = 0; hudNames[ni] && !g_inGameHudField_121; ni++) {
                 g_inGameHudField_121 = env->GetFieldID(mcCls, hudNames[ni], hudSigs[si]);
                 if (env->ExceptionCheck()) { env->ExceptionClear(); g_inGameHudField_121 = nullptr; }
+                TRACE261_BRANCH("inGameHudFieldCandidateHit", g_inGameHudField_121 != nullptr);
+                if (g_inGameHudField_121) TRACE261_VALUE("inGameHudFieldSource", std::string(hudNames[ni]) + "|" + hudSigs[si]);
             }
         }
     }
 
+    TRACE261_BRANCH("hudObjAvailable", hudObj != nullptr);
     if (!hudObj) return;
+    TRACE261_BRANCH("hudTextAlreadyResolved", !g_hudTextFields_121.empty());
     if (!g_hudTextFields_121.empty()) return;
     DWORD now = GetTickCount();
-    if (now - g_lastHudTextProbeMs < 2000) return;
+    bool probeDue = (now - g_lastHudTextProbeMs >= 2000);
+    TRACE261_BRANCH("hudTextProbeDue", probeDue);
+    if (!probeDue) return;
     g_lastHudTextProbeMs = now;
 
     jclass hudCls = env->GetObjectClass(hudObj);
@@ -5438,84 +5961,77 @@ static void EnsureHudTextFields(JNIEnv* env, jclass mcCls, jobject hudObj) {
         g_hudTextFields_121.push_back(fid);
     };
 
-    const char* knownNames[] = {
-        "field_2015",      // common overlay/action bar text field
-        "overlayMessage",
-        "field_2014",
-        "title",
-        "subtitle",
-        nullptr
-    };
-    for (int i = 0; knownNames[i]; i++) addHudTextField(knownNames[i]);
+    TRACE261_PATH("hudtext-reflection-fallback");
+    jclass cClass = env->FindClass("java/lang/Class");
+    jclass cField = env->FindClass("java/lang/reflect/Field");
+    jclass cMod = env->FindClass("java/lang/reflect/Modifier");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); cClass = nullptr; cField = nullptr; cMod = nullptr; }
+    if (cClass && cField && cMod) {
+        jmethodID mGetFields = env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
+        jmethodID mFName = env->GetMethodID(cField, "getName", "()Ljava/lang/String;");
+        jmethodID mFType = env->GetMethodID(cField, "getType", "()Ljava/lang/Class;");
+        jmethodID mFMod  = env->GetMethodID(cField, "getModifiers", "()I");
+        jmethodID mIsStatic = env->GetStaticMethodID(cMod, "isStatic", "(I)Z");
+        if (env->ExceptionCheck()) { env->ExceptionClear(); mGetFields = nullptr; }
 
-    if (g_hudTextFields_121.empty()) {
-        jclass cClass = env->FindClass("java/lang/Class");
-        jclass cField = env->FindClass("java/lang/reflect/Field");
-        jclass cMod = env->FindClass("java/lang/reflect/Modifier");
-        if (env->ExceptionCheck()) { env->ExceptionClear(); cClass = nullptr; cField = nullptr; cMod = nullptr; }
-        if (cClass && cField && cMod) {
-            jmethodID mGetFields = env->GetMethodID(cClass, "getDeclaredFields", "()[Ljava/lang/reflect/Field;");
-            jmethodID mFName = env->GetMethodID(cField, "getName", "()Ljava/lang/String;");
-            jmethodID mFType = env->GetMethodID(cField, "getType", "()Ljava/lang/Class;");
-            jmethodID mFMod  = env->GetMethodID(cField, "getModifiers", "()I");
-            jmethodID mIsStatic = env->GetStaticMethodID(cMod, "isStatic", "(I)Z");
-            if (env->ExceptionCheck()) { env->ExceptionClear(); mGetFields = nullptr; }
+        if (mGetFields && mFName && mFType && mFMod && mIsStatic) {
+            jobjectArray fields = (jobjectArray)env->CallObjectMethod(hudCls, mGetFields);
+            if (env->ExceptionCheck()) { env->ExceptionClear(); fields = nullptr; }
+            if (fields) {
+                jsize count = env->GetArrayLength(fields);
+                for (jsize i = 0; i < count; i++) {
+                    jobject fld = env->GetObjectArrayElement(fields, i);
+                    if (!fld) continue;
 
-            if (mGetFields && mFName && mFType && mFMod && mIsStatic) {
-                jobjectArray fields = (jobjectArray)env->CallObjectMethod(hudCls, mGetFields);
-                if (env->ExceptionCheck()) { env->ExceptionClear(); fields = nullptr; }
-                if (fields) {
-                    jsize count = env->GetArrayLength(fields);
-                    for (jsize i = 0; i < count; i++) {
-                        jobject fld = env->GetObjectArrayElement(fields, i);
-                        if (!fld) continue;
-
-                        jint mod = env->CallIntMethod(fld, mFMod);
-                        if (env->ExceptionCheck()) { env->ExceptionClear(); env->DeleteLocalRef(fld); continue; }
-                        if (env->CallStaticBooleanMethod(cMod, mIsStatic, mod) == JNI_TRUE) {
-                            env->DeleteLocalRef(fld);
-                            continue;
-                        }
-
-                        jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
-                        if (env->ExceptionCheck()) { env->ExceptionClear(); ft = nullptr; }
-                        std::string typeName = ft ? GetClassNameFromClass(env, ft) : "";
-                        if (ft) env->DeleteLocalRef(ft);
-                        if (typeName != "net.minecraft.class_2561") { env->DeleteLocalRef(fld); continue; }
-
-                        jstring jfn = (jstring)env->CallObjectMethod(fld, mFName);
-                        if (env->ExceptionCheck()) { env->ExceptionClear(); jfn = nullptr; }
-                        if (!jfn) { env->DeleteLocalRef(fld); continue; }
-                        const char* cfn = env->GetStringUTFChars(jfn, nullptr);
-                        std::string fn = cfn ? cfn : "";
-                        if (cfn) env->ReleaseStringUTFChars(jfn, cfn);
-                        env->DeleteLocalRef(jfn);
-
-                        if (!fn.empty()) addHudTextField(fn.c_str());
+                    jint mod = env->CallIntMethod(fld, mFMod);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); env->DeleteLocalRef(fld); continue; }
+                    if (env->CallStaticBooleanMethod(cMod, mIsStatic, mod) == JNI_TRUE) {
                         env->DeleteLocalRef(fld);
+                        continue;
                     }
-                    env->DeleteLocalRef(fields);
+
+                    jclass ft = (jclass)env->CallObjectMethod(fld, mFType);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); ft = nullptr; }
+                    std::string typeName = ft ? GetClassNameFromClass(env, ft) : "";
+                    if (ft) env->DeleteLocalRef(ft);
+                    if (typeName != "net.minecraft.class_2561") { env->DeleteLocalRef(fld); continue; }
+
+                    jstring jfn = (jstring)env->CallObjectMethod(fld, mFName);
+                    if (env->ExceptionCheck()) { env->ExceptionClear(); jfn = nullptr; }
+                    if (!jfn) { env->DeleteLocalRef(fld); continue; }
+                    const char* cfn = env->GetStringUTFChars(jfn, nullptr);
+                    std::string fn = cfn ? cfn : "";
+                    if (cfn) env->ReleaseStringUTFChars(jfn, cfn);
+                    env->DeleteLocalRef(jfn);
+
+                    if (!fn.empty()) addHudTextField(fn.c_str());
+                    env->DeleteLocalRef(fld);
                 }
+                env->DeleteLocalRef(fields);
             }
         }
-        if (cClass) env->DeleteLocalRef(cClass);
-        if (cField) env->DeleteLocalRef(cField);
-        if (cMod) env->DeleteLocalRef(cMod);
     }
+    if (cClass) env->DeleteLocalRef(cClass);
+    if (cField) env->DeleteLocalRef(cField);
+    if (cMod) env->DeleteLocalRef(cMod);
 
     env->DeleteLocalRef(hudCls);
 }
 
 static void UpdateJniState() {
-    if (!g_stateJniReady || !g_jvm || !g_mcInstance || !g_screenField) return;
+    TRACE261_PATH("enter");
+    bool prerequisites = TRACE261_IF("prerequisitesMet", (g_stateJniReady && g_jvm && g_mcInstance && g_screenField));
+    if (!prerequisites) return;
     JNIEnv* env = nullptr;
-    if (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) != JNI_OK || !env) return;
+    bool envReady = TRACE261_IF("jniEnvReady", (g_jvm->GetEnv((void**)&env, JNI_VERSION_1_8) == JNI_OK && env));
+    if (!envReady) return;
     unsigned long long nowMs = (unsigned long long)GetTickCount64();
 
     jobject scr = env->GetObjectField(g_mcInstance, g_screenField);
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
 
     bool guiOpen = (scr != nullptr);
+    TRACE261_BRANCH("guiOpen", guiOpen);
     bool inWorld = false;
     std::string screenName;
     std::string actionBarText;
@@ -5562,9 +6078,8 @@ static void UpdateJniState() {
         // Any screen change (especially connecting/loading) = world may be transitioning.
         // Pause chunk scanning for 5 seconds to avoid racing with world teardown.
         g_worldTransitionEndMs = GetTickCount() + 5000;
-        // NOTE: Do NOT reset g_chunkBlockEntitiesMapField_121 here - the field ID is 
-        // stable across world changes and resetting it causes chest ESP to take a long
-        // time to rediscover after lobby switches.
+        // NOTE: avoid forcing per-screen cache resets here; it causes remap thrash and
+        // prevents mapping convergence on some runtimes.
     }
 
     // ===== lookingAtBlock (crosshair hit = BLOCK) =====
@@ -5585,18 +6100,16 @@ static void UpdateJniState() {
 
         EnsureCrosshairTargetField(env, mcCls);
         jfieldID hitFld = g_crosshairTargetField_121;
+        TRACE261_BRANCH("crosshairFieldResolved", hitFld != nullptr);
         if (!guiOpen && hitFld) {
             jobject hitObj = env->GetObjectField(g_mcInstance, hitFld);
             if (env->ExceptionCheck()) { env->ExceptionClear(); hitObj = nullptr; }
             if (hitObj) {
                 int hitOrd = GetHitResultTypeOrdinal(env, hitObj);
                 if (hitOrd >= 0) {
+                    TRACE261_PATH("hitresult-ordinal-path");
                     lookingAtBlock = (hitOrd == 1);
                     lookingAtEntity = (hitOrd == 2);
-                } else {
-                    std::string hitType = GetHitResultTypeName(env, hitObj);
-                    lookingAtBlock = (hitType == "BLOCK");
-                    lookingAtEntity = (hitType == "ENTITY");
                 }
                 env->DeleteLocalRef(hitObj);
             }
@@ -6209,6 +6722,8 @@ static void RenderClickGUI() {
         if (ImGui::Checkbox("Show Health", &health)) SendCmd("toggleNametagHealth");
         bool armor = cfg.nametagArmor;
         if (ImGui::Checkbox("Show Armor", &armor)) SendCmd("toggleNametagArmor");
+        bool hideVanilla = cfg.nametagHideVanilla;
+        if (ImGui::Checkbox("Hide Vanilla Tags", &hideVanilla)) SendCmd("toggleNametagHideVanilla");
 
     } else if (selCategory == 1 && selModule == 2) {
         ImGui::TextDisabled("No extra settings.");
@@ -6259,23 +6774,29 @@ static void RenderClickGUI() {
 // ===================== SCREEN DETECTION =====================
 // Combine GLFW cursor polling (fast) with JNI screen name (accurate).
 static void UpdateRealGuiState() {
+    TRACE261_PATH("enter");
     // JNI state (screen name) is already updated in UpdateJniState() each frame.
     // g_realGuiOpen = GLFW cursor visible AND not our own GUI.
     if (!glfwGetCurrentContext_fn || !glfwGetInputMode_fn) {
+        TRACE261_PATH("glfw-unavailable");
         g_realGuiOpen = false;
         return;
     }
     void* win = glfwGetCurrentContext_fn();
+    TRACE261_BRANCH("glfwWindowAvailable", win != nullptr);
     if (!win) { g_realGuiOpen = false; return; }
     int mode = glfwGetInputMode_fn(win, GLFW_CURSOR);
+    TRACE261_VALUE("cursorMode", std::to_string(mode));
     // Only report realGuiOpen when cursor is NORMAL and it's NOT our own GUI
     // and the JNI screen is NOT the ChatScreen we opened for cursor unlock
     if (mode == GLFW_CURSOR_NORMAL && !g_ShowMenu) {
+        TRACE261_PATH("cursor-normal-path");
         std::string sn;
         { LockGuard lk(g_jniStateMtx); sn = g_jniScreenName; }
         // "ChatScreen" is our own cursor-unlock screen, not a real Minecraft GUI
         g_realGuiOpen = !sn.empty() && sn != "ChatScreen";
     } else {
+        TRACE261_PATH("cursor-nonnormal-or-menu-path");
         g_realGuiOpen = false;
     }
 }
@@ -6289,7 +6810,9 @@ static void UpdateRealGuiState() {
 // Stores the result in g_bgCamState (under g_bgCamMutex) so the render thread can use it with
 // zero JNI calls.
 static void ReadCameraState(JNIEnv* env) {
-    if (!g_mcInstance || !g_gameRendererField_121 || !g_gameRendererCameraField_121) return;
+    TRACE261_PATH("enter");
+    bool prerequisites = TRACE261_IF("prerequisitesMet", (g_mcInstance && g_gameRendererField_121 && g_gameRendererCameraField_121));
+    if (!prerequisites) return;
 
     BgCamState cs = {};
     cs.fov = 70.0f; // default
@@ -6454,26 +6977,6 @@ static void ReadCameraState(JNIEnv* env) {
         env->DeleteLocalRef(gr);
     }
 
-    // Final fallback: Camera.pos Vec3d was null (common in Lunar Client).
-    // Use player entity position + eye height so camFound is valid for ESP.
-    if (!cs.camFound && g_playerField_121) {
-        jobject pFb = env->GetObjectField(g_mcInstance, g_playerField_121);
-        if (!env->ExceptionCheck() && pFb) {
-            if (!g_entityPosField_121) EnsureEntityMethods(env, pFb);
-            if (g_entityPosField_121) {
-                jobject posVec = env->GetObjectField(pFb, g_entityPosField_121);
-                if (!env->ExceptionCheck() && posVec) {
-                    if (g_vec3dX_121) cs.camX = env->GetDoubleField(posVec, g_vec3dX_121);
-                    if (g_vec3dY_121) cs.camY = env->GetDoubleField(posVec, g_vec3dY_121) + 1.62;
-                    if (g_vec3dZ_121) cs.camZ = env->GetDoubleField(posVec, g_vec3dZ_121);
-                    cs.camFound = true;
-                    env->DeleteLocalRef(posVec);
-                } else env->ExceptionClear();
-            }
-            env->DeleteLocalRef(pFb);
-        } else env->ExceptionClear();
-    }
-
     static bool s_camDiag = false;
     if (!s_camDiag && cs.camFound) {
         s_camDiag = true;
@@ -6491,7 +6994,10 @@ static DWORD WINAPI FastPollThreadProc(LPVOID) {
     if (!g_jvm || g_jvm->AttachCurrentThread((void**)&env, nullptr) != JNI_OK) return 1;
     while (g_running) {
         if (g_stateJniReady) {
-            UpdateJniState();
+            LockGuard remapGuard(g_jniRemapMtx);
+            if (g_stateJniReady) {
+                UpdateJniState();
+            }
         }
         Sleep(5); // 200Hz poll
     }
@@ -6502,9 +7008,42 @@ static DWORD WINAPI FastPollThreadProc(LPVOID) {
 static DWORD WINAPI ChestScanThreadProc(LPVOID) {
     JNIEnv* env = nullptr;
     if (!g_jvm || g_jvm->AttachCurrentThread((void**)&env, nullptr) != JNI_OK) return 1;
+    TRACE261_PATH("thread-start");
+    DWORD lastAutoRemapRetryMs = 0;
     while (g_running) {
         Config cfg;
         { LockGuard lk(g_configMutex); cfg = g_config; }
+
+        bool forcedRemap = (InterlockedExchange(&g_forceGlobalJniRemap_121, 0) != 0);
+        TRACE261_BRANCH("forcedGlobalRemapPulse", forcedRemap);
+        if (forcedRemap) {
+            bool remapReady = false;
+            {
+                LockGuard remapGuard(g_jniRemapMtx);
+                TRACE261_PATH("manual-remap-cycle");
+                ResetModernJniRuntimeCaches121(env, "manual-reload-request");
+                for (int attempt = 0; attempt < 8 && g_running; ++attempt) {
+                    if (DiscoverJniMappings(env)) {
+                        remapReady = true;
+                        break;
+                    }
+                    Sleep(500);
+                }
+            }
+            Log(std::string("ReloadMappings: full JNI remap ")
+                + (remapReady ? "completed." : "still unresolved; auto-retry will continue."));
+        }
+
+        DWORD loopNow = GetTickCount();
+        bool needAutoRetry = ((!g_stateJniReady || !g_mcInstance || !g_screenField) && (loopNow - lastAutoRemapRetryMs >= 5000));
+        TRACE261_BRANCH("autoRemapRetryDue", needAutoRetry);
+        if (needAutoRetry) {
+            lastAutoRemapRetryMs = loopNow;
+            LockGuard remapGuard(g_jniRemapMtx);
+            TRACE261_PATH("auto-remap-retry");
+            DiscoverJniMappings(env);
+        }
+
         if (g_stateJniReady) {
             // All CallObjectMethod work runs here — never on the render thread.
             ReadCameraState(env);   // camera pos/yaw/pitch/matrices → g_bgCamState
@@ -6516,7 +7055,7 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
                 DWORD nowMs = GetTickCount();
                 if (nowMs - s_cfgLogMs > 10000) {
                     s_cfgLogMs = nowMs;
-                    Log("ScanThread cfg: chestEsp=" + std::to_string(cfg.chestEsp) + " nametags=" + std::to_string(cfg.nametags) + " closestPlayer=" + std::to_string(cfg.closestPlayer));
+                    Log("ScanThread cfg: chestEsp=" + std::to_string(cfg.chestEsp) + " nametags=" + std::to_string(cfg.nametags) + " closestPlayer=" + std::to_string(cfg.closestPlayer) + " hideVanilla=" + std::to_string(cfg.nametagHideVanilla));
                 }
 
                 static bool s_reachWasEnabled = false;
@@ -6533,16 +7072,22 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
 
                 if (cfg.closestPlayer)
                     UpdateClosestPlayerOverlay(env);
-                if (cfg.nametags || cfg.closestPlayer || cfg.aimAssist)
+                if (cfg.nametags || cfg.closestPlayer || cfg.aimAssist || cfg.nametagHideVanilla || g_nametagSuppressionActive_121)
                     UpdatePlayerListOverlay(env);
                 if (cfg.chestEsp)
                     UpdateChestList(env);
             } else {
+                if (g_nametagSuppressionActive_121 || !g_hiddenNametagOriginalTeamByPlayer_121.empty()) {
+                    ResetNametagSuppressionCaches121(env, "left-world");
+                }
                 { LockGuard lk(g_playerListMutex); g_playerList.clear(); }
                 { LockGuard lk2(g_chestListMutex); g_chestList.clear(); }
                 { LockGuard lk3(g_bgCamMutex); g_bgCamState = BgCamState(); }
             }
         } else {
+            if (g_nametagSuppressionActive_121 || !g_hiddenNametagOriginalTeamByPlayer_121.empty()) {
+                ResetNametagSuppressionCaches121(env, "jni-not-ready");
+            }
             { LockGuard lk(g_playerListMutex); g_playerList.clear(); }
             { LockGuard lk2(g_chestListMutex); g_chestList.clear(); }
             { LockGuard lk3(g_bgCamMutex); g_bgCamState = BgCamState(); }
@@ -6558,26 +7103,33 @@ static DWORD WINAPI ChestScanThreadProc(LPVOID) {
 // Two-phase init: phase 1 = ImGui context + Win32 (no GL), phase 2 = GL backend (deferred).
 
 BOOL WINAPI hwglSwapBuffers(HDC hDc) {
-    if (!hDc) return o_wglSwapBuffers(hDc);
+    TRACE261_PATH("enter");
+    bool hasHdc = TRACE261_IF("hasHdc", hDc != nullptr);
+    if (!hasHdc) return o_wglSwapBuffers(hDc);
 
     // If there is no current GL context, do not touch OpenGL/ImGui.
     HGLRC currentRc = wglGetCurrentContext();
-    if (!currentRc) return o_wglSwapBuffers(hDc);
+    bool hasCurrentGlrc = TRACE261_IF("hasCurrentGlrc", currentRc != nullptr);
+    if (!hasCurrentGlrc) return o_wglSwapBuffers(hDc);
 
     HWND window = WindowFromDC(hDc);
-    if (!window || !IsWindow(window)) return o_wglSwapBuffers(hDc);
+    bool hasWindow = TRACE261_IF("windowValid", (window && IsWindow(window)));
+    if (!hasWindow) return o_wglSwapBuffers(hDc);
 
     // Only run on the main GLFW game window
     char cls[256] = {};
-    if (!GetClassNameA(window, cls, sizeof(cls)-1))
+    bool classReadOk = TRACE261_IF("windowClassRead", GetClassNameA(window, cls, sizeof(cls)-1) != 0);
+    if (!classReadOk)
         return o_wglSwapBuffers(hDc);
-    if (strcmp(cls, "GLFW30") != 0)
+    bool isGlfwGameWindow = TRACE261_IF("isGlfwGameWindow", strcmp(cls, "GLFW30") == 0);
+    if (!isGlfwGameWindow)
         return o_wglSwapBuffers(hDc);
 
     // ── Phase 1: ImGui context + Win32 backend (NO OpenGL calls at all) ──
     // Runs on the very first GLFW swap call.  We must not touch GL here so the
     // NVIDIA driver's internal swap-chain state is completely undisturbed.
     if (!g_imguiPhase1Done) {
+        TRACE261_PATH("imgui-phase1-init");
         g_hwnd = window;
         g_imguiGlrc = currentRc;
 
@@ -6650,6 +7202,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
     // Warmup: let clean frames pass between phases / after GL init.
     if (g_imguiWarmupFrames > 0) {
+        TRACE261_PATH("imgui-warmup-frame-skip");
         g_imguiWarmupFrames--;
         return o_wglSwapBuffers(hDc);
     }
@@ -6658,6 +7211,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
     // Do NOT shutdown/reinit immediately: doing glDelete* on stale IDs in a different
     // context can corrupt Minecraft/Lunar rendering and may trigger nvoglv64.dll crashes.
     if (g_imguiInitialized && g_imguiGlBackendReady && g_imguiGlrc && currentRc != g_imguiGlrc) {
+        TRACE261_PATH("imgui-glrc-changed-schedule-reset");
         Log("OpenGL context changed; scheduling ImGui OpenGL backend reset.");
         g_imguiPendingBackendReset = true;
         g_imguiPendingGlrc = currentRc;
@@ -6667,6 +7221,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
     // Execute the pending reset on a clean frame, then defer actual Init to a later frame.
     if (g_imguiPendingBackendReset) {
+        TRACE261_PATH("imgui-execute-deferred-reset");
         Log("ImGui: executing deferred OpenGL backend shutdown (skip GL deletes)");
         ImGui_ImplOpenGL3_SetSkipGLDeletes(true);
         ImGui_ImplOpenGL3_Shutdown();
@@ -6685,6 +7240,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
     // so the driver only sees our GL init work, with no rendering or ImGui draw
     // calls mixed in.
     if (!g_imguiInitialized) {
+        TRACE261_PATH("imgui-phase2-init");
         static bool glModernLoadedLogged = false;
         if (!glModernLoadedLogged) {
             bool ok = LoadModernOpenGL();
@@ -6750,6 +7306,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
     {
         static bool s_chestThreadStarted = false;
         if (g_jvm && !s_chestThreadStarted) {
+            TRACE261_PATH("start-background-threads");
             s_chestThreadStarted = true;
             g_chestThreadHandle = CreateThread(nullptr, 0, ChestScanThreadProc, nullptr, 0, nullptr);
             g_fastPollThreadHandle = CreateThread(nullptr, 0, FastPollThreadProc, nullptr, 0, nullptr);
@@ -6787,6 +7344,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
         }
         
         if (!g_ShowMenu && inWorld) {
+            TRACE261_PATH("overlay-render-active");
             ImDrawList* fg = ImGui::GetForegroundDrawList();
             ImGuiIO& io = ImGui::GetIO();
             BgCamState cpCamState;
@@ -6797,7 +7355,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             { LockGuard lk(g_playerListMutex); playerSnap = g_playerList; }
 
             // ── Closest Player: styled HUD box above hotbar ───
-            if (cfg.closestPlayer && !playerSnap.empty()) {
+            bool renderClosestPlayer = TRACE261_IF("renderClosestPlayer", (cfg.closestPlayer && !playerSnap.empty()));
+            if (renderClosestPlayer) {
                 const auto& cp = playerSnap[0];
                 const float fontSz   = ImGui::GetFontSize();
                 const float smallSz  = std::floor(fontSz * 0.82f);
@@ -6947,7 +7506,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             int drawnTags = -1;
 
             // ── Nametags: no JNI on render thread, all data from background-thread snapshots ──
-            if (!g_realGuiOpen && cfg.nametags && sharedCamFound) {
+            bool renderNametags = TRACE261_IF("renderNametags", (!g_realGuiOpen && cfg.nametags && sharedCamFound));
+            if (renderNametags) {
                 drawnTags = 0;
                 const int nametagRenderCap = (std::max)(1, (std::min)(20, cfg.nametagMaxCount));
 
@@ -6972,7 +7532,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                         float sx = 0, sy = 0;
 
                         bool projected = false;
-                        if (matsOk) {
+                        bool useMatrices = TRACE261_IF("nametagUseMatrices", matsOk);
+                        if (useMatrices) {
                             projected = WorldToScreen(headPos, cam, viewMat, projMat, winW, winH, &sx, &sy);
                         } else {
                             projected = WorldToScreen_Angles(headPos, cam, yaw, pitch, fov, winW, winH, &sx, &sy);
@@ -7090,7 +7651,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
             } // cfg.nametags
 
             // ── Chest ESP: draw bounding rect over each nearby chest ──
-            if (!g_realGuiOpen && cfg.chestEsp && sharedCamFound) {
+            bool renderChestEsp = TRACE261_IF("renderChestEsp", (!g_realGuiOpen && cfg.chestEsp && sharedCamFound));
+            if (renderChestEsp) {
                 LockGuard chestLk(g_chestListMutex); // protect g_chestList from background scan thread
                 // Use shared camera data (same source as nametags – no redundant JNI fetch)
                 const LegoVec3   espCam   = sharedCam;
@@ -7158,7 +7720,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                         for (int c = 0; c < 8; c++) {
                             LegoVec3 corner = { ch.x + offsets[c][0], ch.y + offsets[c][1], ch.z + offsets[c][2] };
                             float csx = 0, csy = 0;
-                            bool ok = espMatsOk
+                            bool useMatrices = TRACE261_IF("chestEspUseMatrices", espMatsOk);
+                            bool ok = useMatrices
                                 ? WorldToScreen(corner, espCam, espView, espProj, winW, winH, &csx, &csy)
                                 : WorldToScreen_Angles(corner, espCam, espYaw, espPitch, fov, winW, winH, &csx, &csy);
                             if (!ok) continue;
@@ -7210,7 +7773,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 }
             } // cfg.chestEsp
 
-            if (cfg.gtbHelper) {
+            bool renderGtbHelper = TRACE261_IF("renderGtbHelper", cfg.gtbHelper);
+            if (renderGtbHelper) {
                 std::string hint = cfg.gtbHint;
                 std::string preview = cfg.gtbPreview;
                 if (hint.empty() || hint == "-") hint = "waiting for hint...";
@@ -7254,7 +7818,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 }
             }
 
-            if (cfg.showModuleList) {
+            bool renderModuleList = TRACE261_IF("renderModuleList", cfg.showModuleList);
+            if (renderModuleList) {
                 // Module list (top-right) - original-like (right aligned colored bars)
                 struct ModLine { const char* text; ImU32 accent; float width; };
                 ModLine mods[16];
@@ -7363,6 +7928,8 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                     y += boxH + gapY;
                 }
             }
+        } else {
+            TRACE261_PATH("overlay-render-skipped");
         }
     }
 
@@ -7384,6 +7951,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
 
 // ===================== MAIN THREAD =====================
 DWORD WINAPI MainThread(LPVOID) {
+    TRACE261_PATH("enter");
     Log("=== bridge_261.dll loaded ===");
 
     // Wait for JVM
@@ -7392,10 +7960,12 @@ DWORD WINAPI MainThread(LPVOID) {
         hJvm = GetModuleHandleA("jvm.dll");
         if (!hJvm) Sleep(500);
     }
+    TRACE261_BRANCH("jvmModuleFound", hJvm != nullptr);
     if (!hJvm) { Log("ERROR: jvm.dll not found."); return 0; }
 
     typedef jint (JNICALL* FnGetVMs)(JavaVM**, jsize, jsize*);
     FnGetVMs fn = (FnGetVMs)GetProcAddress(hJvm, "JNI_GetCreatedJavaVMs");
+    TRACE261_BRANCH("jniGetCreatedVmsFound", fn != nullptr);
     if (!fn) { Log("ERROR: JNI_GetCreatedJavaVMs not found."); return 0; }
 
     JavaVM* jvm = nullptr; jsize cnt = 0;
@@ -7404,6 +7974,7 @@ DWORD WINAPI MainThread(LPVOID) {
         if (jvm && cnt > 0) break;
         Sleep(1000);
     }
+    TRACE261_BRANCH("jvmInstanceFound", (jvm && cnt > 0));
     if (!jvm || cnt == 0) { Log("ERROR: No JVM."); return 0; }
     g_jvm = jvm;
     Log("JVM found.");
@@ -7414,6 +7985,7 @@ DWORD WINAPI MainThread(LPVOID) {
     // Hook wglSwapBuffers (for ImGui rendering)
     HMODULE hOgl = GetModuleHandleA("opengl32.dll");
     void* pSwap  = (void*)GetProcAddress(hOgl, "wglSwapBuffers");
+    TRACE261_BRANCH("swapBuffersSymbolFound", pSwap != nullptr);
     if (!pSwap) { Log("ERROR: wglSwapBuffers not found."); return 0; }
     if (MH_CreateHook(pSwap, (void*)hwglSwapBuffers, (void**)&o_wglSwapBuffers) != MH_OK ||
         MH_EnableHook(pSwap) != MH_OK) {
@@ -7454,7 +8026,10 @@ glfw_done:;
         if (denv) {
             // Retry discovery a few times (MC may not be fully loaded yet)
             for (int attempt = 0; attempt < 5; attempt++) {
-                if (DiscoverJniMappings(denv)) break;
+                {
+                    LockGuard remapGuard(g_jniRemapMtx);
+                    if (DiscoverJniMappings(denv)) break;
+                }
                 Log("Discovery attempt " + std::to_string(attempt+1) + " failed, retrying in 3s...");
                 Sleep(3000);
             }
@@ -7477,6 +8052,7 @@ glfw_done:;
 
     while (g_running) {
         SOCKET cli = accept(srv, nullptr, nullptr);
+        TRACE261_BRANCH("clientAccepted", cli != INVALID_SOCKET);
         if (cli == INVALID_SOCKET) { Sleep(100); continue; }
         g_clientSocket = cli;
         Log("C# Loader connected.");
@@ -7485,8 +8061,10 @@ glfw_done:;
         std::string readBuf;
         bool capabilitiesSent = false;
         while (g_running) {
+            TRACE261_PATH("client-loop-iteration");
             if (!capabilitiesSent) {
                 capabilitiesSent = TrySendCapabilities(cli);
+                TRACE261_BRANCH("capabilitiesSent", capabilitiesSent);
                 if (capabilitiesSent) Log("Sent bridge capabilities packet");
             }
 
@@ -7520,6 +8098,7 @@ glfw_done:;
                 // guiOpen = our menu OR JNI reports a Minecraft screen is open
                 // (but ChatScreen opened by US for cursor unlock is not a "real" gui)
                 bool anyGui = g_ShowMenu || (jniGui && sn != "ChatScreen");
+                TRACE261_BRANCH("stateAnyGui", anyGui);
 
                 // JSON-escape the screen name
                 std::string snEsc;
@@ -7587,9 +8166,11 @@ glfw_done:;
                     float sx = -1.0f, sy = -1.0f;
                     bool projected = false;
 
-                    if (camState.camFound) {
+                    bool canProject = TRACE261_IF("entityProjectionCamFound", camState.camFound);
+                    if (canProject) {
                         auto projectPoint = [&](const LegoVec3& pos, float* outX, float* outY) -> bool {
-                            return camState.matsOk
+                            bool useMatrices = TRACE261_IF("entityProjectionUseMatrices", camState.matsOk);
+                            return useMatrices
                                 ? WorldToScreen(pos, camPos, camState.view, camState.proj, winW, winH, outX, outY)
                                 : WorldToScreen_Angles(pos, camPos, camState.yaw, camState.pitch, camState.fov, winW, winH, outX, outY);
                         };
@@ -7626,11 +8207,13 @@ glfw_done:;
                             }
                         }
 
+                        TRACE261_BRANCH("entityProjectionBodySampleHit", bestFound);
                         if (bestFound) {
                             sx = bestSx;
                             sy = bestSy;
                             projected = true;
                         } else {
+                            TRACE261_PATH("entityProjectionHeadFallback");
                             LegoVec3 fallbackPos = { p.ex, p.ey + 1.575, p.ez };
                             projected = projectPoint(fallbackPos, &sx, &sy);
                         }
@@ -7709,6 +8292,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
             if (pos != std::string::npos) {
                 g_logPath = fullPath.substr(0, pos) + "\\bridge_261_debug.log";
             }
+        }
+
+        char traceEnv[16] = {};
+        DWORD traceLen = GetEnvironmentVariableA("LC_BRIDGE_TRACE", traceEnv, sizeof(traceEnv));
+        if (traceLen > 0) {
+            g_trace261Enabled = (traceEnv[0] == '1'
+                || traceEnv[0] == 'y' || traceEnv[0] == 'Y'
+                || traceEnv[0] == 't' || traceEnv[0] == 'T');
         }
         
         std::ofstream(g_logPath, std::ios_base::trunc)

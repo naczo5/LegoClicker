@@ -2,6 +2,8 @@
 
 This `GEMINI.md` file serves as a comprehensive guide for AI agents and developers working on the LegoClicker project. It provides an overview of the architecture, build instructions, and core development conventions.
 
+Primary reference: see `GUIDE.md` for the deeper architecture/mapping notes and implementation constraints used across this repository.
+
 ## Project Overview
 
 **LegoClicker** is a Windows utility client for Lunar Client (Minecraft).

@@ -43,6 +43,7 @@ public class Profile
     public bool NametagShowHealth { get; set; } = true;
     public bool NametagShowArmor { get; set; } = true;
     public bool NametagShowHeldItem { get; set; } = true;
+    public bool NametagHideVanilla { get; set; } = false;
     public int NametagMaxCount { get; set; } = 8;
 
     public bool ChestEspEnabled { get; set; } = false;
@@ -185,6 +186,7 @@ public static class ProfileManager
             NametagShowHealth = clicker.NametagShowHealth,
             NametagShowArmor = clicker.NametagShowArmor,
             NametagShowHeldItem = clicker.NametagShowHeldItem,
+            NametagHideVanilla = clicker.NametagHideVanilla,
             NametagMaxCount = clicker.NametagMaxCount,
             ChestEspEnabled = clicker.ChestEspEnabled,
             ChestEspMaxCount = clicker.ChestEspMaxCount,
@@ -250,6 +252,7 @@ public static class ProfileManager
         clicker.NametagShowHealth = profile.NametagShowHealth;
         clicker.NametagShowArmor = profile.NametagShowArmor;
         clicker.NametagShowHeldItem = profile.NametagShowHeldItem;
+        clicker.NametagHideVanilla = profile.NametagHideVanilla;
         clicker.NametagMaxCount = profile.NametagMaxCount;
         clicker.ChestEspEnabled = profile.ChestEspEnabled;
         clicker.ChestEspMaxCount = profile.ChestEspMaxCount;

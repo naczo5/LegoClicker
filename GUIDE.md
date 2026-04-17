@@ -76,6 +76,7 @@ For legacy 1.8.9, menu injection is supported: you can inject while in menus/lob
 *   **DO** use `SendInput` from the external C# loader to simulate human input.
 *   **DO** respect the cross-thread limitations of JNI. Only use JNI calls from threads properly attached to the JVM. Avoid heavy JNI reflection inside the high-frequency `wglSwapBuffers` render thread; cache method and field IDs beforehand!
 *   **DO** preserve **menu-injection compatibility** in all code changes (especially 1.8.9): mappings and feature behavior must recover correctly when injected in menus/lobby, not only when injected in-world.
+*   **DO** prefer a single deterministic path when runtime evidence shows fallback branches are unnecessary. Keep fallback/recovery logic only where logs prove it is needed.
 
 ---
 
@@ -131,6 +132,7 @@ Because the rendering and state extraction differ heavily, the design of visual 
 ### Visual Modules (Nametags, Chest ESP, ClickGUI)
 *   **Modern Design (1.21.x / 26.1):** Heavily utilizes **ImGui**. The ClickGUI uses standard ImGui windows. Overlays use `ImGui::GetBackgroundDrawList()` to draw text/rectangles. Entity and chunk iterations are used for Nametags and Chest ESP with JOML matrices for projection.
 *   **Legacy Design (1.8.9):** Uses **Raw OpenGL** (`glBegin`, `glVertex2f`). Custom font rendering (`g_fontTexture`) is used right inside the `wglSwapBuffers` hook.
+*   **Nametags Option:** Nametags include a hide-vanilla toggle that attempts native nametag visibility suppression (no visual mask fallback). The modern bridge now supports Mojmap/Yarn scoreboard variants, retries mapping resolution when startup mapping is incomplete, and exposes **Reload Mappings** as a full JNI remap across modules (not nametag-only). If required mappings are unsupported on a runtime/build, it fails open and logs exactly what is missing.
 
 ### Internal Game State Modules (Reach & Velocity)
 These modules modify the game state and execute within the C++ bridges, presenting the biggest architectural splits:

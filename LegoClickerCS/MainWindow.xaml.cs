@@ -294,6 +294,7 @@ public partial class MainWindow : Window
         bool gtbSupported = IsModuleSupported("gtbhelper");
         bool reachSupported = IsModuleSupported("reach");
         bool velocitySupported = IsModuleSupported("velocity");
+        bool reloadMappingsSupported = GameStateClient.Instance.SupportsSetting("reloadMappingsNonce");
 
         AimAssistCard.IsEnabled = aimAssistSupported;
         TriggerbotCard.IsEnabled = triggerbotSupported;
@@ -323,6 +324,10 @@ public partial class MainWindow : Window
         KeybindReachButton.IsEnabled = reachSupported;
         KeybindVelocityButton.IsEnabled = velocitySupported;
         KeybindPanicButton.IsEnabled = true;
+        ReloadMappingsButton.IsEnabled = reloadMappingsSupported;
+        ReloadMappingsAvailabilityText.Text = reloadMappingsSupported
+            ? "Available"
+            : "Unavailable on 1.8.9 bridge";
     }
     
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -458,6 +463,14 @@ public partial class MainWindow : Window
     private void PanicButton_Click(object sender, RoutedEventArgs e)
     {
         Clicker.Instance.TriggerPanic();
+    }
+
+    private void ReloadMappingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!GameStateClient.Instance.SupportsSetting("reloadMappingsNonce"))
+            return;
+
+        GameStateClient.Instance.RequestBridgeMappingReload();
     }
 
     internal void EnterPanicStealthMode()

@@ -37,6 +37,7 @@ public class GameStateClient : INotifyPropertyChanged
     private int _injectionProgress;
     private bool _isInjectionInProgress;
     private long _lastUiActionBarDispatchTicks;
+    private int _reloadMappingsNonce;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event Action? StateUpdated;
@@ -151,6 +152,12 @@ public class GameStateClient : INotifyPropertyChanged
         IsInjectionInProgress = true;
         InjectionProgress = progress;
         StatusMessage = $"{stageText} ({InjectionProgress}%)";
+    }
+
+    public void RequestBridgeMappingReload()
+    {
+        Interlocked.Increment(ref _reloadMappingsNonce);
+        Log("Queued bridge mapping reload request.");
     }
 
     // === Injection ===
@@ -771,6 +778,8 @@ public class GameStateClient : INotifyPropertyChanged
                     nametagShowHealth = clicker.NametagShowHealth,
                     nametagShowArmor = clicker.NametagShowArmor,
                     nametagShowHeldItem = clicker.NametagShowHeldItem,
+                    nametagHideVanilla = clicker.NametagHideVanilla,
+                    reloadMappingsNonce = Volatile.Read(ref _reloadMappingsNonce),
                     nametagMaxCount = clicker.NametagMaxCount,
                     chestEsp = clicker.ChestEspEnabled,
                     chestEspMaxCount = clicker.ChestEspMaxCount,
@@ -871,6 +880,9 @@ public class GameStateClient : INotifyPropertyChanged
                     break;
                 case "toggleNametagHeldItem":
                     clicker.NametagShowHeldItem = !clicker.NametagShowHeldItem;
+                    break;
+                case "toggleNametagHideVanilla":
+                    clicker.NametagHideVanilla = !clicker.NametagHideVanilla;
                     break;
                 case "toggleChestEsp":
                     clicker.ChestEspEnabled = !clicker.ChestEspEnabled;

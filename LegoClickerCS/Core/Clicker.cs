@@ -399,6 +399,7 @@ public class Clicker : INotifyPropertyChanged
             TriggerbotEnabled = false;
             GtbHelperEnabled = false;
             NametagsEnabled = false;
+            NametagHideVanilla = false;
             ClosestPlayerInfoEnabled = false;
             ChestEspEnabled = false;
             ReachEnabled = false;
@@ -669,6 +670,18 @@ public class Clicker : INotifyPropertyChanged
         {
             _nametagShowHeldItem = value;
             OnPropertyChanged(nameof(NametagShowHeldItem));
+            StateChanged?.Invoke();
+        }
+    }
+
+    private bool _nametagHideVanilla = false;
+    public bool NametagHideVanilla
+    {
+        get => _nametagHideVanilla;
+        set
+        {
+            _nametagHideVanilla = value;
+            OnPropertyChanged(nameof(NametagHideVanilla));
             StateChanged?.Invoke();
         }
     }

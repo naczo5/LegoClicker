@@ -347,6 +347,7 @@
                                 <WrapPanel Margin="0,10,0,0" IsEnabled="{Binding NametagsEnabled}">
                                     <CheckBox Content="Show Health" IsChecked="{Binding NametagShowHealth, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
                                     <CheckBox Content="Show Armor" IsChecked="{Binding NametagShowArmor, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Hide Vanilla Tags" IsChecked="{Binding NametagHideVanilla, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
                                     <CheckBox Content="Show Item" IsChecked="{Binding NametagShowHeldItem, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" />
                                 </WrapPanel>
                                 <DockPanel Margin="0,10,0,0" IsEnabled="{Binding NametagsEnabled}">
@@ -540,9 +541,25 @@
                 </ScrollViewer>
             </TabItem>
         
-            <TabItem Header="Customization">
+            <TabItem Header="Settings">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
                     <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Reload Mappings" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,8" />
+                                <TextBlock x:Name="ReloadMappingsAvailabilityText"
+                                           Text="Available"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,0,0,6"/>
+                                <TextBlock Text="Use this if something is not working properly (missing overlays, broken nametags, stale in-game data after injection)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <Button x:Name="ReloadMappingsButton"
+                                        Content="Reload Mappings"
+                                        Click="ReloadMappingsButton_Click"
+                                        Style="{StaticResource DarkButton}"
+                                        Width="170"/>
+                            </StackPanel>
+                        </Border>
                         <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
                             <StackPanel>
                                 <TextBlock Text="GUI Customization" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
