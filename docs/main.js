@@ -1,4 +1,4 @@
-/* LegoClicker docs - lightweight interactions */
+/* aoko client docs - lightweight interactions */
 
 /* Status date */
 (function () {
@@ -11,7 +11,7 @@
 /* Scroll reveal */
 (function () {
   const items = document.querySelectorAll(
-    '.feature-card, .status-card, .arch-step, .setup-block, .dl-box, .section-header, .shot-card, .hero-preview'
+    '.section-head, .entry, .col-num, .status-list, .dl-block, .hero-logo, .tagline, .hero-btns, .hero-preview'
   );
 
   items.forEach((el) => el.classList.add('reveal'));

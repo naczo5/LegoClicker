@@ -131,7 +131,7 @@
 #endif
 
 // -----------------------------------------------------------------------------
-// LegoClicker (custom): allow skipping OpenGL deletes during shutdown.
+// Aoko (custom): allow skipping OpenGL deletes during shutdown.
 //
 // When the host application recreates or swaps OpenGL contexts, calling backend
 // shutdown while a different context is current can delete unrelated objects

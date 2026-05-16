@@ -26,5 +26,5 @@ cd ..
 
 echo.
 echo [bridge.dll] Output:
-echo   %~dp0LegoClickerCS\bin\Release\net8.0-windows\bridge.dll
-echo   %~dp0LegoClickerCS\bin\Release\net8.0-windows\bridge_261.dll
+echo   %~dp0Aoko\bin\Release\net8.0-windows\bridge.dll
+echo   %~dp0Aoko\bin\Release\net8.0-windows\bridge_261.dll

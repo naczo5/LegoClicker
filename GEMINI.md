@@ -13,7 +13,7 @@ Primary reference: see `GUIDE.md` for the deeper architecture/mapping notes and 
 ### Architecture
 
 The project consists of two main components communicating over TCP on port `25590`:
-1. **LegoClickerCS (.NET 8 WPF):** The external GUI and loader. It manages settings, profiles (saved in `%AppData%\LegoClicker\profiles\`), and injects the native bridge DLL into the Lunar Client process.
+1. **Aoko (.NET 8 WPF):** The external GUI and loader. It manages settings, profiles (saved in `%AppData%\Aoko\profiles\`), and injects the native bridge DLL into the Lunar Client process.
 2. **McInjector (Native C++):** The bridge DLL injected into Lunar Client. It renders overlays using ImGui/OpenGL, hooks functions using MinHook, and reads the game state via JNI. The Java agent sources under `McInjector/src/main/java` are obsolete.
 
 ## Building and Running
@@ -37,9 +37,9 @@ Run these from the repository root unless noted otherwise:
 - Build 1.8.9 only (legacy): `McInjector\build.bat`
 
 **Loader / UI (C#):**
-- Debug build: `dotnet build LegoClickerCS\LegoClickerCS.csproj`
-- Release build: `dotnet build -c Release LegoClickerCS\LegoClickerCS.csproj`
-- Run: `dotnet run --project LegoClickerCS\LegoClickerCS.csproj`
+- Debug build: `dotnet build Aoko\Aoko.csproj`
+- Release build: `dotnet build -c Release Aoko\Aoko.csproj`
+- Run: `dotnet run --project Aoko\Aoko.csproj`
 - Publish release executable: `build_exe.bat`
 
 ## Development Conventions & Constraints
@@ -48,5 +48,5 @@ Run these from the repository root unless noted otherwise:
 - **Input Simulation:** All input actions (e.g., clicking, aiming) must be performed using Win32 `SendInput` from the external C# or appropriate safe native channels.
 - **Limited State Writes:** Thoughtful, minimal JNI state modifications are permitted when ghost-safe and undetectable (e.g., reach via entity attributes, velocity scaling, nametag visibility). Keep overlay work draw-only; mutate state only when justified and stealthy.
 - **Version Scope:** Keep all supported versions (`bridge_261.dll` for 26.1/1.21, `bridge.dll` for 1.8.9) working through the same external GUI flow.
-- **UI Modifications:** The C# external GUI (`LegoClickerCS/MainWindow.xaml`) is the primary user interface.
+- **UI Modifications:** The C# external GUI (`Aoko/MainWindow.xaml`) is the primary user interface.
 - **Capability Sync:** Bridge capability packets drive version-aware UI gating. Keep `BridgeCapabilities.cs`, `bridge_capabilities.h`, profiles, keybinds, TCP config, and tests in sync when adding modules.

@@ -1,12 +1,12 @@
 # ── C# build outputs ─────────────────────────────────────────────
-LegoClickerCS/bin/
-LegoClickerCS/obj/
-LegoClickerCS/publish/
-LegoClickerCS.Tests/bin/
-LegoClickerCS.Tests/obj/
+Aoko/bin/
+Aoko/obj/
+Aoko/publish/
+Aoko.Tests/bin/
+Aoko.Tests/obj/
 
-# bridge.dll is built from source; don't track the copy inside LegoClickerCS
-LegoClickerCS/bridge.dll
+# bridge.dll is built from source; don't track the copy inside Aoko
+Aoko/bridge.dll
 
 # ── C++ build outputs ────────────────────────────────────────────
 McInjector/bridge.dll
@@ -43,6 +43,7 @@ generate_analysis.py
 *.md
 !README.md
 !GUIDE.md
+/Aoko_Release
 /LegoClicker_Release
 /archive
 /meteor-source

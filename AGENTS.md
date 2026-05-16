@@ -13,8 +13,8 @@ Operating guide for coding agents working in `legoclickerC`. Build/test/lint com
 
 ## Repository Overview
 
-- `LegoClickerCS/`: .NET 8 WPF loader + external GUI (publishes as `LegoClicker.exe`).
-- `LegoClickerCS/Core/`: clicker engine, input hooks, profile persistence, TCP client, GTB solver.
+- `Aoko/`: .NET 8 WPF loader + external GUI (publishes as `Aoko.exe`).
+- `Aoko/Core/`: clicker engine, input hooks, profile persistence, TCP client, GTB solver.
 - `McInjector/`: native bridge DLLs (`bridge.dll` for 1.8.9, `bridge_261.dll` for 26.1 / 1.21.x).
 - `McInjector/src/main/cpp/`: JNI/Win32/OpenGL/ImGui/MinHook bridge sources.
 - `McInjector/src/main/java/`: **Unused/obsolete Java agent code. Ignore it.** The C++ bridges perform all JNI, rendering, and TCP duties themselves.
@@ -37,12 +37,12 @@ Run from repository root. Prefer PowerShell for compound commands (avoids path/q
 - Build 26.1 bridge only: `McInjector\build_261.bat`
 - `build_bridge.bat` is deprecated (prints a message and exits).
 
-Bridge build scripts auto-copy output to `LegoClickerCS\bin\Debug\`, `Release\`, and `publish\` folders. The csproj also includes `<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>` for the two bridge DLLs, so `dotnet build` picks them up from the project root `LegoClickerCS\` folder.
+Bridge build scripts auto-copy output to `Aoko\bin\Debug\`, `Release\`, and `publish\` folders. The csproj also includes `<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>` for the two bridge DLLs, so `dotnet build` picks them up from the project root `Aoko\` folder.
 
 ### C# loader builds
 
-- Debug build: `dotnet build LegoClickerCS\LegoClickerCS.csproj`
-- Release build: `dotnet build -c Release LegoClickerCS\LegoClickerCS.csproj`
+- Debug build: `dotnet build Aoko\Aoko.csproj`
+- Release build: `dotnet build -c Release Aoko\Aoko.csproj`
 - Publish (self-contained single-file, used for distribution): `build_exe.bat`
 - Full release pipeline (bridges + publish): `build_release.bat`
 
@@ -50,26 +50,26 @@ Note: the Release publish is self-contained (`SelfContained=true`, `PublishSingl
 
 ### Run locally
 
-- Run app: `dotnet run --project LegoClickerCS\LegoClickerCS.csproj`
-- If `dotnet run` fails because `LegoClicker.exe` is locked, close the running app first.
+- Run app: `dotnet run --project Aoko\Aoko.csproj`
+- If `dotnet run` fails because `Aoko.exe` is locked, close the running app first.
 
 ## Lint and Formatting
 
 No `.editorconfig` or `.clang-format` checked in. Practical quality gates:
 
-- C# compile gate: `dotnet build LegoClickerCS\LegoClickerCS.csproj`
+- C# compile gate: `dotnet build Aoko\Aoko.csproj`
 - Native compile gate: `McInjector\build_261.bat` and/or `McInjector\build.bat`
 - Optional formatting check (if `dotnet format` is installed):
-  `dotnet format LegoClickerCS\LegoClickerCS.csproj --verify-no-changes`
+  `dotnet format Aoko\Aoko.csproj --verify-no-changes`
 
 ## Test Commands
 
-C# tests use **xUnit** (`LegoClickerCS.Tests\`). Native harness tests are a standalone C++ exe.
+C# tests use **xUnit** (`Aoko.Tests\`). Native harness tests are a standalone C++ exe.
 
-- Run all C# tests: `dotnet test LegoClickerCS.Tests\LegoClickerCS.Tests.csproj`
-- List tests: `dotnet test LegoClickerCS.Tests\LegoClickerCS.Tests.csproj --list-tests`
-- Run a single test: `dotnet test LegoClickerCS.Tests\LegoClickerCS.Tests.csproj --filter "FullyQualifiedName~Namespace.ClassName.TestName"`
-- Run one test class: `dotnet test LegoClickerCS.Tests\LegoClickerCS.Tests.csproj --filter "FullyQualifiedName~Namespace.ClassName"`
+- Run all C# tests: `dotnet test Aoko.Tests\Aoko.Tests.csproj`
+- List tests: `dotnet test Aoko.Tests\Aoko.Tests.csproj --list-tests`
+- Run a single test: `dotnet test Aoko.Tests\Aoko.Tests.csproj --filter "FullyQualifiedName~Namespace.ClassName.TestName"`
+- Run one test class: `dotnet test Aoko.Tests\Aoko.Tests.csproj --filter "FullyQualifiedName~Namespace.ClassName"`
 - Run native tests: `McInjector\run_tests.bat`
 
 ## Debugging
@@ -87,7 +87,7 @@ C# tests use **xUnit** (`LegoClickerCS.Tests\`). Native harness tests are a stan
 - `bridge_261.cpp` uses Yarn-first, Mojmap-fallback class name arrays to support both 1.21 (obfuscated, Yarn mappings) and 26.1 (unobfuscated, Mojang mappings) from a single DLL.
 - `bridge.cpp` (1.8.9) now links the shared ImGui/OpenGL backend and MinHook sources. Do not assume legacy rendering is raw GL-only.
 - **Menu-injection compatibility (1.8.9):** mappings and features must recover correctly when injected while in menus/lobby, not only when already in a world.
-- Release publish `build_release.bat` copies DLLs from `McInjector\` (not `LegoClickerCS\`), so both bridges must be built first.
+- Release publish `build_release.bat` copies DLLs from `McInjector\` (not `Aoko\`), so both bridges must be built first.
 
 ## Coding Style
 
@@ -133,7 +133,7 @@ When adding a setting, update ALL of:
 
 - `JNIEnv*` is thread-local. Using it from an unattached thread will crash. Always `AttachCurrentThread` from non-render threads.
 - `build_bridge.bat` is a no-op stub. Use `McInjector\build.bat` or `McInjector\build_261.bat`.
-- The csproj auto-copies bridge DLLs from `LegoClickerCS\` root. Build scripts also copy into `bin\` folders. After a native rebuild, ensure the active run configuration has the latest DLL.
+- The csproj auto-copies bridge DLLs from `Aoko\` root. Build scripts also copy into `bin\` folders. After a native rebuild, ensure the active run configuration has the latest DLL.
 - `bridge_261.cpp` fallback-array parsing: Yarn names are tried first, then Mojmap. Adding a new class lookup MUST follow the same pattern or dual-version support breaks.
 
 ## Agent Workflow

@@ -1,6 +1,6 @@
-# LegoClicker
+# aoko client
 
-LegoClicker is a Windows utility client for Lunar Client.
+aoko client is a Windows utility client for Lunar Client.
 
 # Showcase
 [![Watch the showcase video](docs/screenshots/thumbnail.png)](https://www.youtube.com/watch?v=eR7QKAWw8D4)
@@ -8,7 +8,7 @@ LegoClicker is a Windows utility client for Lunar Client.
 ## Current status
 
 - Supported versions: **26.1**, **1.21.x**, and **1.8.9**.
-- All supported versions are used through the external GUI in `LegoClickerCS`.
+- All supported versions are used through the external GUI in `Aoko/`.
 
 ## Features (current)
 
@@ -22,14 +22,28 @@ LegoClicker is a Windows utility client for Lunar Client.
 - Discord Rich Presence
 - Nametags, Closest Player panel, Chest ESP
 - Per-module keybinds (all unbound by default)
-- Profiles saved in `%AppData%\LegoClicker\profiles\`
-- GUI customization (palette, module list style, show logo)
+- Profiles saved in `%AppData%\Aoko\profiles\`
+- GUI customization (slate palettes, module list style, show logo)
+
+## Look & feel
+
+aoko client ships with a near-monochrome aesthetic across the website,
+external GUI, and in-game overlay:
+
+- One default theme (`Slate`, near-black with a coral accent) plus three
+  monochrome variants (`Ink`, `Graphite`, `Steel`).
+- Flat surfaces, hairline borders, no gradient backgrounds, no drop shadows.
+- A single coral accent (`#C7625A`) is used very sparingly — only on the logo
+  dot, sliders, the in-game module accent, and small interactive highlights.
+
+Existing profiles are copied into `%AppData%\Aoko\profiles\` on first run when
+the new profile folder is empty. The legacy profile folder is left untouched.
 
 ## Screenshots
 
 ![GUI Showcase GIF](screenshots/gui.gif)
 
-![Gameplay HUD](screenshots/gameplay.png)
+![Gameplay HUD](screenshots/gameplay.jpg)
 
 ## Requirements
 
@@ -41,7 +55,7 @@ LegoClicker is a Windows utility client for Lunar Client.
 ## Quick start
 
 1. Start Lunar Client.
-2. Run `LegoClicker.exe`.
+2. Run `Aoko.exe`.
 3. Click **Inject**.
 4. Use the external GUI (bind keys under the Keybinds tab).
 
@@ -59,9 +73,9 @@ Run from repository root unless noted.
 
 ### Loader (C#)
 
-- Debug build: `dotnet build LegoClickerCS\LegoClickerCS.csproj`
-- Release build: `dotnet build -c Release LegoClickerCS\LegoClickerCS.csproj`
-- Run: `dotnet run --project LegoClickerCS\LegoClickerCS.csproj`
+- Debug build: `dotnet build Aoko\Aoko.csproj`
+- Release build: `dotnet build -c Release Aoko\Aoko.csproj`
+- Run: `dotnet run --project Aoko\Aoko.csproj`
 - Publish release exe: `build_exe.bat`
 
 ### Full release pipeline
@@ -70,7 +84,7 @@ Run from repository root unless noted.
 
 ## Tests
 
-- Run C# tests: `dotnet test LegoClickerCS.Tests\LegoClickerCS.Tests.csproj`
+- Run C# tests: `dotnet test Aoko.Tests\Aoko.Tests.csproj`
 - Run native harness tests: `McInjector\run_tests.bat`
 
 ## Notes on versions
@@ -83,8 +97,8 @@ Run from repository root unless noted.
 ## Project structure
 
 ```text
-legoclickerC/
-|- LegoClickerCS/              # WPF loader + external GUI (.NET 8)
+aoko/
+|- Aoko/              # WPF loader + external GUI (.NET 8)
 |  |- Core/                    # Clicker, hooks, profile, TCP client
 |  |- MainWindow.xaml(.cs)     # Main UI
 |  |- bridge.dll               # 1.8.9 bridge (legacy)
@@ -99,7 +113,7 @@ legoclickerC/
 
 ## Architecture (short)
 
-- `LegoClickerCS` injects bridge DLL into Lunar and manages settings/UI.
+- The C# loader injects the bridge DLL into Lunar and manages settings/UI.
 - Bridge and loader communicate over TCP (`25590`).
 - Bridge renders overlays through OpenGL/ImGui and reads game state via JNI.
 - Input actions are sent through Win32 `SendInput`.

@@ -1,12 +1,12 @@
-# LegoClicker Developer Guide
+# aoko client Developer Guide
 
-Welcome to the LegoClicker project! This guide provides a comprehensive overview of the architecture, workflow, implementation details, and version differences for anyone working on this repository, including AI agents.
+Welcome to the aoko client project! This guide provides a comprehensive overview of the architecture, workflow, implementation details, and version differences for anyone working on this repository, including AI agents.
 
 ## 1. Project Architecture
 
-LegoClicker is a split-architecture utility client designed for Lunar Client (Minecraft).
+aoko client is a split-architecture utility client designed for Lunar Client (Minecraft).
 
-*   **LegoClickerCS (C# / .NET 8 WPF):** 
+*   **Aoko (C# / .NET 8 WPF):** 
     *   Acts as the external GUI, profile manager, and loader.
     *   Hosts the cheat logic (`Clicker.cs`), simulating inputs using Win32 `SendInput`.
     *   Connects to the native bridge over a TCP socket (`127.0.0.1:25590`) via `GameStateClient.cs`.
@@ -20,7 +20,7 @@ LegoClicker is a split-architecture utility client designed for Lunar Client (Mi
     *   Hooks `WndProc` to manage cursor state and block game input when the internal ClickGUI is open.
 
 **Note on Unused Code:**
-The repository contains a Java Agent (`McInjector/src/main/java/me/legoclicker/agent/LegoAgent.java`, `GameStateServer.java`, etc.). Analysis shows this is likely **obsolete/unused legacy code**. The native C++ bridges (`bridge.cpp`, `bridge_261.cpp`) now perform all JNI reflections and host the TCP server on port `25590` themselves.
+The obsolete Java agent manifests were removed. The native C++ bridges (`bridge.cpp`, `bridge_261.cpp`) perform all JNI reflections and host the TCP server on port `25590` themselves.
 
 ---
 
@@ -39,7 +39,7 @@ Use the provided batch scripts in the root directory:
 *   `build_release.bat`: Full pipeline build.
 
 ### Running
-Run `LegoClicker.exe` (or `dotnet run` in `LegoClickerCS`), select the version, and click "Inject".
+Run `Aoko.exe` (or `dotnet run` in `Aoko`), select the version, and click "Inject".
 
 For legacy 1.8.9, menu injection is supported: you can inject while in menus/lobby and mappings will bootstrap when entering a world.
 
@@ -48,7 +48,7 @@ For legacy 1.8.9, menu injection is supported: you can inject while in menus/lob
 ## 3. How to Implement New Features
 
 ### Adding Cheat Logic (e.g., a new Aim or Click feature)
-**Where:** `LegoClickerCS/Core/Clicker.cs`
+**Where:** `Aoko/Core/Clicker.cs`
 1.  Add configuration properties (e.g., `MyNewCheatEnabled`).
 2.  Add a new Loop method (e.g., `MyNewCheatLoop`) and manage its lifecycle via `CancellationTokenSource`, similar to `AimAssistLoop` or `TriggerbotLoop`.
 3.  Simulate input using Win32 `SendInput` (`_leftClickInputs`, `_aimAssistMoveInput`, etc.). Do not send packets directly.
@@ -129,7 +129,7 @@ The codebase is split strictly into two runtime paradigms due to massive differe
 Because the rendering and state extraction differ heavily, the design of visual modules and state modifications is distinct between versions.
 
 ### External Modules (Shared Logic)
-*   **Aim Assist & Triggerbot:** These are handled almost entirely in the external C# application (`LegoClickerCS/Core/Clicker.cs`). They rely on the game state (player position, rotations, entity lists) streamed over TCP. 
+*   **Aim Assist & Triggerbot:** These are handled almost entirely in the external C# application (`Aoko/Core/Clicker.cs`). They rely on the game state (player position, rotations, entity lists) streamed over TCP. 
     *   **Aim Assist** calculates pitch/yaw differences and simulates mouse movement using Win32 `SendInput`.
     *   **Triggerbot** tracks server attack cooldowns and crosshair state, simulating clicks via `SendInput`.
 

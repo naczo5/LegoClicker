@@ -4448,140 +4448,80 @@ struct OverlayTheme {
 static OverlayTheme ResolveOverlayTheme(const std::string& guiTheme) {
     std::string key = ToLowerAscii(guiTheme);
 
-    if (key == "dark blue") {
+    // Each theme uses a SINGLE accent (matches the external GUI's AccentBrush).
+    // moduleBg / moduleBorder mirror PanelColor / SliderBgColor from App.xaml so
+    // the in-game module list reads as the same surface the WPF window uses.
+
+    if (key == "ink") {
+        // Ink: pure mono, white-grey accent
         return {
-            MakeColor4(59, 130, 246, 255),
-            MakeColor4(37, 99, 235, 255),
-            MakeColor4(96, 165, 250, 255),
-            MakeColor4(125, 195, 255, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(12, 23, 42, 160),
-            MakeColor4(148, 163, 184, 70),
-            MakeColor4(241, 245, 249, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(12, 23, 42, 100),
-            MakeColor4(6, 18, 34, 190),
-            MakeColor4(125, 211, 252, 105),
-            MakeColor4(255, 255, 255, 245)
+            MakeColor4(176, 182, 192, 255), // accentPrimary
+            MakeColor4(176, 182, 192, 255), // accentSecondary (same)
+            MakeColor4(176, 182, 192, 255), // accentTertiary (same)
+            MakeColor4(232, 234, 238, 255), // logoColor (text)
+            MakeColor4(0, 0, 0, 200),       // logoShadow
+            MakeColor4(16, 17, 21, 200),    // moduleBg (#101115 panel)
+            MakeColor4(22, 24, 28, 200),    // moduleBorder (#16181C)
+            MakeColor4(232, 234, 238, 240), // moduleText
+            MakeColor4(0, 0, 0, 200),       // moduleTextShadow
+            MakeColor4(22, 24, 28, 130),    // moduleMinimalBg
+            MakeColor4(16, 17, 21, 200),    // moduleOutlinedBg
+            MakeColor4(176, 182, 192, 90),  // moduleGlassBorder
+            MakeColor4(232, 234, 238, 245)  // moduleBoldText
         };
     }
-    if (key == "crimson") {
+    if (key == "graphite") {
+        // Graphite: warm mono, beige accent
         return {
-            MakeColor4(244, 63, 94, 255),
-            MakeColor4(225, 29, 72, 255),
-            MakeColor4(251, 113, 133, 255),
-            MakeColor4(255, 145, 165, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(42, 15, 21, 168),
-            MakeColor4(251, 113, 133, 80),
-            MakeColor4(255, 234, 238, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(42, 15, 21, 108),
-            MakeColor4(28, 9, 13, 198),
-            MakeColor4(251, 113, 133, 118),
-            MakeColor4(255, 245, 247, 245)
+            MakeColor4(184, 155, 130, 255),
+            MakeColor4(184, 155, 130, 255),
+            MakeColor4(184, 155, 130, 255),
+            MakeColor4(232, 232, 234, 255),
+            MakeColor4(0, 0, 0, 200),
+            MakeColor4(19, 19, 22, 200),    // #131316
+            MakeColor4(25, 25, 28, 200),    // #19191C
+            MakeColor4(232, 232, 234, 240),
+            MakeColor4(0, 0, 0, 200),
+            MakeColor4(25, 25, 28, 130),
+            MakeColor4(19, 19, 22, 200),
+            MakeColor4(184, 155, 130, 90),
+            MakeColor4(232, 232, 234, 245)
         };
     }
-    if (key == "emerald") {
+    if (key == "steel") {
+        // Steel: cool blue-grey, steel-blue accent
         return {
-            MakeColor4(16, 185, 129, 255),
-            MakeColor4(5, 150, 105, 255),
-            MakeColor4(52, 211, 153, 255),
-            MakeColor4(86, 255, 199, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(8, 33, 30, 165),
-            MakeColor4(74, 222, 128, 70),
-            MakeColor4(220, 252, 231, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(8, 33, 30, 105),
-            MakeColor4(6, 24, 22, 196),
-            MakeColor4(74, 222, 128, 105),
-            MakeColor4(240, 253, 244, 245)
-        };
-    }
-    if (key == "amber") {
-        return {
-            MakeColor4(245, 158, 11, 255),
-            MakeColor4(217, 119, 6, 255),
-            MakeColor4(251, 191, 36, 255),
-            MakeColor4(255, 200, 108, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(35, 23, 4, 170),
-            MakeColor4(251, 191, 36, 72),
-            MakeColor4(255, 247, 237, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(35, 23, 4, 115),
-            MakeColor4(23, 14, 3, 200),
-            MakeColor4(251, 191, 36, 112),
-            MakeColor4(255, 251, 235, 245)
-        };
-    }
-    if (key == "slate") {
-        return {
-            MakeColor4(148, 163, 184, 255),
-            MakeColor4(100, 116, 139, 255),
-            MakeColor4(203, 213, 225, 255),
-            MakeColor4(190, 202, 220, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(16, 20, 24, 170),
-            MakeColor4(148, 163, 184, 72),
-            MakeColor4(241, 245, 249, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(16, 20, 24, 110),
-            MakeColor4(10, 13, 17, 200),
-            MakeColor4(203, 213, 225, 106),
-            MakeColor4(255, 255, 255, 245)
-        };
-    }
-    if (key == "sunset") {
-        return {
-            MakeColor4(251, 113, 133, 255),
-            MakeColor4(219, 39, 119, 255),
-            MakeColor4(244, 114, 182, 255),
-            MakeColor4(255, 154, 173, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(33, 17, 37, 170),
-            MakeColor4(244, 114, 182, 76),
-            MakeColor4(253, 242, 248, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(33, 17, 37, 110),
-            MakeColor4(20, 10, 22, 200),
-            MakeColor4(244, 114, 182, 112),
-            MakeColor4(255, 245, 250, 245)
-        };
-    }
-    if (key == "frost") {
-        return {
-            MakeColor4(56, 189, 248, 255),
-            MakeColor4(14, 165, 233, 255),
-            MakeColor4(125, 211, 252, 255),
-            MakeColor4(147, 224, 255, 255),
-            MakeColor4(0, 0, 0, 210),
-            MakeColor4(13, 22, 36, 166),
-            MakeColor4(125, 211, 252, 76),
-            MakeColor4(224, 242, 254, 238),
-            MakeColor4(0, 0, 0, 190),
-            MakeColor4(13, 22, 36, 108),
-            MakeColor4(7, 14, 26, 198),
-            MakeColor4(125, 211, 252, 110),
-            MakeColor4(240, 249, 255, 245)
+            MakeColor4(107, 141, 171, 255),
+            MakeColor4(107, 141, 171, 255),
+            MakeColor4(107, 141, 171, 255),
+            MakeColor4(229, 232, 238, 255),
+            MakeColor4(0, 0, 0, 200),
+            MakeColor4(15, 18, 24, 200),    // #0F1218
+            MakeColor4(22, 26, 33, 200),    // #161A21
+            MakeColor4(229, 232, 238, 240),
+            MakeColor4(0, 0, 0, 200),
+            MakeColor4(22, 26, 33, 130),
+            MakeColor4(15, 18, 24, 200),
+            MakeColor4(107, 141, 171, 90),
+            MakeColor4(229, 232, 238, 245)
         };
     }
 
+    // Default = Slate (monochrome navy + coral accent)
     return {
-        MakeColor4(167, 125, 255, 255),
-        MakeColor4(124, 101, 176, 255),
-        MakeColor4(196, 181, 253, 255),
-        MakeColor4(155, 220, 255, 255),
-        MakeColor4(0, 0, 0, 210),
-        MakeColor4(0, 0, 0, 145),
-        MakeColor4(255, 255, 255, 44),
-        MakeColor4(255, 255, 255, 235),
-        MakeColor4(0, 0, 0, 180),
-        MakeColor4(0, 0, 0, 90),
-        MakeColor4(0, 0, 0, 185),
-        MakeColor4(255, 255, 255, 90),
-        MakeColor4(255, 255, 255, 245)
+        MakeColor4(199, 98, 90, 255),   // coral #C7625A
+        MakeColor4(199, 98, 90, 255),
+        MakeColor4(199, 98, 90, 255),
+        MakeColor4(232, 234, 238, 255), // logoColor (text)
+        MakeColor4(0, 0, 0, 200),
+        MakeColor4(18, 20, 26, 200),    // moduleBg (#12141A panel)
+        MakeColor4(24, 27, 34, 200),    // moduleBorder (#181B22 slider-bg)
+        MakeColor4(232, 234, 238, 240),
+        MakeColor4(0, 0, 0, 200),
+        MakeColor4(24, 27, 34, 130),    // moduleMinimalBg
+        MakeColor4(18, 20, 26, 200),    // moduleOutlinedBg
+        MakeColor4(199, 98, 90, 90),    // moduleGlassBorder (coral w/alpha)
+        MakeColor4(232, 234, 238, 245)
     };
 }
 
@@ -5029,7 +4969,7 @@ void RenderHUD(int winW, int winH) {
     float y = 10.0f;
 
     if (cfg.showLogo) {
-        const char* logoText = "LegoClicker";
+        const char* logoText = "aoko client";
         ImVec2 logoSz = ImGui::CalcTextSize(logoText);
         float logoX = io.DisplaySize.x - marginX - logoSz.x;
         fg->AddText(ImVec2(logoX + 1, y + 1), ToImU32(theme.logoShadow), logoText);
@@ -6743,7 +6683,7 @@ void RenderClickGUI(int winW, int winH) {
     DrawRect(px, py, 2.0f, panelH, accent.r, accent.g, accent.b, 1.0f);
     DrawRect(px, py + headerH - 1.0f, panelW, 1.0f, 0.17f, 0.17f, 0.18f, 1.0f);
 
-    DrawText2D(px + 12.0f, py + 8.0f, "LegoClicker", 0.93f, 0.94f, 0.96f, 1.0f, scale * 1.05f);
+    DrawText2D(px + 12.0f, py + 8.0f, "aoko client", 0.788f, 0.819f, 0.772f, 1.0f, scale * 1.05f);
     DrawText2D(px + 130.0f, py + 9.0f, "Internal ClickGUI", 0.45f, 0.45f, 0.50f, 1.0f, scale * 0.78f);
 
     DrawRect(closeX, closeY, closeW, closeW, closeHovered ? 0.62f : 0.22f, 0.12f, 0.15f, 0.92f);

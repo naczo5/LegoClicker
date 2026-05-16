@@ -1,5 +1,5 @@
 /**
- * bridge_261.cpp - LegoClicker Native Bridge for Lunar 26.1 (Fabric)
+ * bridge_261.cpp - aoko client Native Bridge for Lunar 26.1 (Fabric)
  * Build: 2026-02-20
  *
  * Architecture:
@@ -322,164 +322,93 @@ static OverlayTheme ResolveOverlayTheme(const std::string& guiTheme)
 {
     std::string key = ToLowerAscii(guiTheme);
 
-    if (key == "dark blue") {
+    // Each theme uses a SINGLE accent (matches the external GUI's AccentBrush).
+    // moduleBg / moduleBorder mirror PanelColor / SliderBgColor from App.xaml so
+    // the in-game module list reads as the same surface the WPF window uses.
+    // GTB slots: gtbBorder = accent w/alpha; gtbTitle/Row = text/accent.
+
+    if (key == "ink") {
+        // Ink: pure mono, white-grey accent
         return {
-            IM_COL32(59, 130, 246, 255),
-            IM_COL32(37, 99, 235, 255),
-            IM_COL32(96, 165, 250, 255),
-            IM_COL32(125, 195, 255, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(12, 23, 42, 160),
-            IM_COL32(148, 163, 184, 70),
-            IM_COL32(241, 245, 249, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(12, 23, 42, 100),
-            IM_COL32(6, 18, 34, 190),
-            IM_COL32(125, 211, 252, 105),
-            IM_COL32(255, 255, 255, 245),
-            IM_COL32(125, 195, 255, 220),
-            IM_COL32(191, 219, 254, 245),
-            IM_COL32(224, 242, 254, 238)
+            IM_COL32(176, 182, 192, 255), // accentPrimary
+            IM_COL32(176, 182, 192, 255), // accentSecondary (same)
+            IM_COL32(176, 182, 192, 255), // accentTertiary (same)
+            IM_COL32(232, 234, 238, 255), // logoColor (text)
+            IM_COL32(0, 0, 0, 200),       // logoShadow
+            IM_COL32(16, 17, 21, 200),    // moduleBg (#101115)
+            IM_COL32(22, 24, 28, 200),    // moduleBorder (#16181C)
+            IM_COL32(232, 234, 238, 240), // moduleText
+            IM_COL32(0, 0, 0, 200),       // moduleTextShadow
+            IM_COL32(22, 24, 28, 130),    // moduleMinimalBg
+            IM_COL32(16, 17, 21, 200),    // moduleOutlinedBg
+            IM_COL32(176, 182, 192, 90),  // moduleGlassBorder
+            IM_COL32(232, 234, 238, 245), // moduleBoldText
+            IM_COL32(176, 182, 192, 200), // gtbBorder
+            IM_COL32(232, 234, 238, 245), // gtbTitle
+            IM_COL32(176, 182, 192, 235)  // gtbRow (uses accent)
         };
     }
-    if (key == "crimson") {
+    if (key == "graphite") {
+        // Graphite: warm mono, beige accent
         return {
-            IM_COL32(244, 63, 94, 255),
-            IM_COL32(225, 29, 72, 255),
-            IM_COL32(251, 113, 133, 255),
-            IM_COL32(255, 145, 165, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(42, 15, 21, 168),
-            IM_COL32(251, 113, 133, 80),
-            IM_COL32(255, 234, 238, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(42, 15, 21, 108),
-            IM_COL32(28, 9, 13, 198),
-            IM_COL32(251, 113, 133, 118),
-            IM_COL32(255, 245, 247, 245),
-            IM_COL32(255, 150, 165, 220),
-            IM_COL32(255, 220, 228, 245),
-            IM_COL32(255, 238, 242, 238)
+            IM_COL32(184, 155, 130, 255),
+            IM_COL32(184, 155, 130, 255),
+            IM_COL32(184, 155, 130, 255),
+            IM_COL32(232, 232, 234, 255),
+            IM_COL32(0, 0, 0, 200),
+            IM_COL32(19, 19, 22, 200),    // #131316
+            IM_COL32(25, 25, 28, 200),    // #19191C
+            IM_COL32(232, 232, 234, 240),
+            IM_COL32(0, 0, 0, 200),
+            IM_COL32(25, 25, 28, 130),
+            IM_COL32(19, 19, 22, 200),
+            IM_COL32(184, 155, 130, 90),
+            IM_COL32(232, 232, 234, 245),
+            IM_COL32(184, 155, 130, 200),
+            IM_COL32(232, 232, 234, 245),
+            IM_COL32(184, 155, 130, 235)
         };
     }
-    if (key == "emerald") {
+    if (key == "steel") {
+        // Steel: cool blue-grey, steel-blue accent
         return {
-            IM_COL32(16, 185, 129, 255),
-            IM_COL32(5, 150, 105, 255),
-            IM_COL32(52, 211, 153, 255),
-            IM_COL32(86, 255, 199, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(8, 33, 30, 165),
-            IM_COL32(74, 222, 128, 70),
-            IM_COL32(220, 252, 231, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(8, 33, 30, 105),
-            IM_COL32(6, 24, 22, 196),
-            IM_COL32(74, 222, 128, 105),
-            IM_COL32(240, 253, 244, 245),
-            IM_COL32(134, 239, 172, 220),
-            IM_COL32(167, 243, 208, 245),
-            IM_COL32(236, 253, 245, 238)
-        };
-    }
-    if (key == "amber") {
-        return {
-            IM_COL32(245, 158, 11, 255),
-            IM_COL32(217, 119, 6, 255),
-            IM_COL32(251, 191, 36, 255),
-            IM_COL32(255, 200, 108, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(35, 23, 4, 170),
-            IM_COL32(251, 191, 36, 72),
-            IM_COL32(255, 247, 237, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(35, 23, 4, 115),
-            IM_COL32(23, 14, 3, 200),
-            IM_COL32(251, 191, 36, 112),
-            IM_COL32(255, 251, 235, 245),
-            IM_COL32(252, 211, 77, 220),
-            IM_COL32(253, 230, 138, 245),
-            IM_COL32(255, 251, 235, 238)
-        };
-    }
-    if (key == "slate") {
-        return {
-            IM_COL32(148, 163, 184, 255),
-            IM_COL32(100, 116, 139, 255),
-            IM_COL32(203, 213, 225, 255),
-            IM_COL32(190, 202, 220, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(16, 20, 24, 170),
-            IM_COL32(148, 163, 184, 72),
-            IM_COL32(241, 245, 249, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(16, 20, 24, 110),
-            IM_COL32(10, 13, 17, 200),
-            IM_COL32(203, 213, 225, 106),
-            IM_COL32(255, 255, 255, 245),
-            IM_COL32(186, 198, 216, 220),
-            IM_COL32(226, 232, 240, 245),
-            IM_COL32(226, 232, 240, 238)
-        };
-    }
-    if (key == "sunset") {
-        return {
-            IM_COL32(251, 113, 133, 255),
-            IM_COL32(219, 39, 119, 255),
-            IM_COL32(244, 114, 182, 255),
-            IM_COL32(255, 154, 173, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(33, 17, 37, 170),
-            IM_COL32(244, 114, 182, 76),
-            IM_COL32(253, 242, 248, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(33, 17, 37, 110),
-            IM_COL32(20, 10, 22, 200),
-            IM_COL32(244, 114, 182, 112),
-            IM_COL32(255, 245, 250, 245),
-            IM_COL32(249, 168, 212, 220),
-            IM_COL32(251, 207, 232, 245),
-            IM_COL32(253, 242, 248, 238)
-        };
-    }
-    if (key == "frost") {
-        return {
-            IM_COL32(56, 189, 248, 255),
-            IM_COL32(14, 165, 233, 255),
-            IM_COL32(125, 211, 252, 255),
-            IM_COL32(147, 224, 255, 255),
-            IM_COL32(0, 0, 0, 210),
-            IM_COL32(13, 22, 36, 166),
-            IM_COL32(125, 211, 252, 76),
-            IM_COL32(224, 242, 254, 238),
-            IM_COL32(0, 0, 0, 190),
-            IM_COL32(13, 22, 36, 108),
-            IM_COL32(7, 14, 26, 198),
-            IM_COL32(125, 211, 252, 110),
-            IM_COL32(240, 249, 255, 245),
-            IM_COL32(125, 211, 252, 220),
-            IM_COL32(186, 230, 253, 245),
-            IM_COL32(224, 242, 254, 238)
+            IM_COL32(107, 141, 171, 255),
+            IM_COL32(107, 141, 171, 255),
+            IM_COL32(107, 141, 171, 255),
+            IM_COL32(229, 232, 238, 255),
+            IM_COL32(0, 0, 0, 200),
+            IM_COL32(15, 18, 24, 200),    // #0F1218
+            IM_COL32(22, 26, 33, 200),    // #161A21
+            IM_COL32(229, 232, 238, 240),
+            IM_COL32(0, 0, 0, 200),
+            IM_COL32(22, 26, 33, 130),
+            IM_COL32(15, 18, 24, 200),
+            IM_COL32(107, 141, 171, 90),
+            IM_COL32(229, 232, 238, 245),
+            IM_COL32(107, 141, 171, 200),
+            IM_COL32(229, 232, 238, 245),
+            IM_COL32(107, 141, 171, 235)
         };
     }
 
+    // Default = Slate (monochrome navy + coral accent)
     return {
-        IM_COL32(167, 125, 255, 255),
-        IM_COL32(124, 101, 176, 255),
-        IM_COL32(196, 181, 253, 255),
-        IM_COL32(155, 220, 255, 255),
-        IM_COL32(0, 0, 0, 210),
-        IM_COL32(0, 0, 0, 145),
-        IM_COL32(255, 255, 255, 44),
-        IM_COL32(255, 255, 255, 235),
-        IM_COL32(0, 0, 0, 180),
-        IM_COL32(0, 0, 0, 90),
-        IM_COL32(0, 0, 0, 185),
-        IM_COL32(255, 255, 255, 90),
-        IM_COL32(255, 255, 255, 245),
-        IM_COL32(255, 210, 90, 220),
-        IM_COL32(255, 226, 150, 245),
-        IM_COL32(240, 240, 240, 235)
+        IM_COL32(199, 98, 90, 255),   // coral #C7625A
+        IM_COL32(199, 98, 90, 255),
+        IM_COL32(199, 98, 90, 255),
+        IM_COL32(232, 234, 238, 255), // logoColor (text)
+        IM_COL32(0, 0, 0, 200),
+        IM_COL32(18, 20, 26, 200),    // moduleBg (#12141A panel)
+        IM_COL32(24, 27, 34, 200),    // moduleBorder (#181B22 slider-bg)
+        IM_COL32(232, 234, 238, 240),
+        IM_COL32(0, 0, 0, 200),
+        IM_COL32(24, 27, 34, 130),    // moduleMinimalBg
+        IM_COL32(18, 20, 26, 200),    // moduleOutlinedBg
+        IM_COL32(199, 98, 90, 90),    // moduleGlassBorder (coral w/alpha)
+        IM_COL32(232, 234, 238, 245), // moduleBoldText
+        IM_COL32(199, 98, 90, 200),   // gtbBorder (coral w/alpha)
+        IM_COL32(232, 234, 238, 245), // gtbTitle
+        IM_COL32(199, 98, 90, 235)    // gtbRow (coral)
     };
 }
 
@@ -8023,27 +7952,27 @@ static void ApplyStyle() {
     s.ItemSpacing       = ImVec2(6, 5);
     s.GrabMinSize       = 8.0f;
 
-    s.Colors[ImGuiCol_WindowBg]         = ImVec4(0.10f,  0.10f,  0.11f,  0.98f);
-    s.Colors[ImGuiCol_ChildBg]          = ImVec4(0.084f, 0.084f, 0.090f, 0.98f);
-    s.Colors[ImGuiCol_Border]           = ImVec4(0.17f,  0.17f,  0.19f,  1.0f);
-    s.Colors[ImGuiCol_Text]             = ImVec4(0.93f,  0.94f,  0.96f,  1.0f);
-    s.Colors[ImGuiCol_TextDisabled]     = ImVec4(0.45f,  0.46f,  0.50f,  1.0f);
-    s.Colors[ImGuiCol_Header]           = ImVec4(0.36f,  0.24f,  0.52f,  0.70f);
-    s.Colors[ImGuiCol_HeaderHovered]    = ImVec4(0.44f,  0.30f,  0.64f,  0.86f);
-    s.Colors[ImGuiCol_HeaderActive]     = ImVec4(0.52f,  0.34f,  0.74f,  1.00f);
-    s.Colors[ImGuiCol_FrameBg]          = ImVec4(0.15f,  0.15f,  0.20f,  1.00f);
-    s.Colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.20f,  0.20f,  0.28f,  1.00f);
-    s.Colors[ImGuiCol_FrameBgActive]    = ImVec4(0.25f,  0.25f,  0.34f,  1.00f);
-    s.Colors[ImGuiCol_SliderGrab]       = ImVec4(0.65f,  0.45f,  0.92f,  1.00f);
-    s.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.73f,  0.55f,  0.98f,  1.00f);
-    s.Colors[ImGuiCol_CheckMark]        = ImVec4(0.86f,  0.74f,  1.00f,  1.00f);
-    s.Colors[ImGuiCol_Button]           = ImVec4(0.22f,  0.12f,  0.14f,  0.90f);
-    s.Colors[ImGuiCol_ButtonHovered]    = ImVec4(0.65f,  0.12f,  0.18f,  1.00f);
-    s.Colors[ImGuiCol_ButtonActive]     = ImVec4(0.80f,  0.15f,  0.20f,  1.00f);
-    s.Colors[ImGuiCol_Separator]        = ImVec4(0.22f,  0.22f,  0.25f,  1.0f);
-    s.Colors[ImGuiCol_ScrollbarBg]      = ImVec4(0.08f,  0.08f,  0.09f,  1.0f);
-    s.Colors[ImGuiCol_ScrollbarGrab]    = ImVec4(0.25f,  0.25f,  0.30f,  1.0f);
-    s.Colors[ImGuiCol_PopupBg]          = ImVec4(0.08f,  0.08f,  0.09f,  0.98f);
+    s.Colors[ImGuiCol_WindowBg]         = ImVec4(0.039f, 0.043f, 0.058f, 0.98f);
+    s.Colors[ImGuiCol_ChildBg]          = ImVec4(0.054f, 0.062f, 0.082f, 0.98f);
+    s.Colors[ImGuiCol_Border]           = ImVec4(0.121f, 0.133f, 0.160f, 1.0f);
+    s.Colors[ImGuiCol_Text]             = ImVec4(0.909f, 0.917f, 0.933f, 1.0f);
+    s.Colors[ImGuiCol_TextDisabled]     = ImVec4(0.478f, 0.509f, 0.564f, 1.0f);
+    s.Colors[ImGuiCol_Header]           = ImVec4(0.781f, 0.384f, 0.353f, 0.30f);
+    s.Colors[ImGuiCol_HeaderHovered]    = ImVec4(0.781f, 0.384f, 0.353f, 0.45f);
+    s.Colors[ImGuiCol_HeaderActive]     = ImVec4(0.781f, 0.384f, 0.353f, 0.65f);
+    s.Colors[ImGuiCol_FrameBg]          = ImVec4(0.094f, 0.105f, 0.133f, 1.0f);
+    s.Colors[ImGuiCol_FrameBgHovered]   = ImVec4(0.121f, 0.133f, 0.160f, 1.0f);
+    s.Colors[ImGuiCol_FrameBgActive]    = ImVec4(0.165f, 0.184f, 0.219f, 1.0f);
+    s.Colors[ImGuiCol_SliderGrab]       = ImVec4(0.781f, 0.384f, 0.353f, 1.0f);
+    s.Colors[ImGuiCol_SliderGrabActive] = ImVec4(0.847f, 0.522f, 0.490f, 1.0f);
+    s.Colors[ImGuiCol_CheckMark]        = ImVec4(0.781f, 0.384f, 0.353f, 1.0f);
+    s.Colors[ImGuiCol_Button]           = ImVec4(0.094f, 0.105f, 0.133f, 0.92f);
+    s.Colors[ImGuiCol_ButtonHovered]    = ImVec4(0.165f, 0.184f, 0.219f, 1.0f);
+    s.Colors[ImGuiCol_ButtonActive]     = ImVec4(0.781f, 0.384f, 0.353f, 0.85f);
+    s.Colors[ImGuiCol_Separator]        = ImVec4(0.121f, 0.133f, 0.160f, 1.0f);
+    s.Colors[ImGuiCol_ScrollbarBg]      = ImVec4(0.039f, 0.043f, 0.058f, 1.0f);
+    s.Colors[ImGuiCol_ScrollbarGrab]    = ImVec4(0.165f, 0.184f, 0.219f, 1.0f);
+    s.Colors[ImGuiCol_PopupBg]          = ImVec4(0.054f, 0.062f, 0.082f, 0.98f);
 }
 
 // ===================== RENDER CLICKGUI =====================
@@ -8093,11 +8022,11 @@ static void RenderClickGUI() {
                 IM_COL32(43, 43, 47, 255));
     // Left accent bar (2px teal)
     dl->AddRectFilled(wPos, ImVec2(wPos.x + 2, wPos.y + WIN_H),
-                      IM_COL32(168, 219, 255, 255));
+                      IM_COL32(199, 98, 90, 255));
 
     // Title
     ImGui::SetCursorPos(ImVec2(12, 8));
-    ImGui::Text("LegoClicker");
+    ImGui::Text("aoko client");
     ImGui::SameLine();
     ImGui::SetCursorPosX(130);
     ImGui::TextColored(ImVec4(0.45f, 0.45f, 0.50f, 1.0f), "- Internal ClickGUI");
@@ -8137,7 +8066,7 @@ static void RenderClickGUI() {
     ImGui::BeginChild("##sidebar", ImVec2(SIDE_W, PANEL_H), false);
     ImGui::SetCursorPosY(8);
     auto catStyle = [](bool sel) {
-        if (sel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.78f, 0.64f, 1.0f, 1.0f));
+        if (sel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.781f, 0.384f, 0.353f, 1.0f));
         else     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.80f, 0.82f, 0.85f, 1.0f));
     };
     catStyle(selCategory == 0);
@@ -8206,7 +8135,7 @@ static void RenderClickGUI() {
     ImGui::SetCursorPos(ImVec2(setX, PANEL_Y));
     ImGui::BeginChild("##settings", ImVec2(SET_W, PANEL_H), false);
     ImGui::SetCursorPos(ImVec2(8, 6));
-    ImGui::TextColored(ImVec4(0.78f, 0.64f, 1.0f, 1.0f), "Settings");
+    ImGui::TextColored(ImVec4(0.781f, 0.384f, 0.353f, 1.0f), "Settings");
     ImGui::Separator();
     ImGui::Spacing();
 
@@ -8237,7 +8166,7 @@ static void RenderClickGUI() {
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.78f, 0.64f, 1.0f, 1.0f), "Right Click");
+        ImGui::TextColored(ImVec4(0.781f, 0.384f, 0.353f, 1.0f), "Right Click");
 
         bool rc = cfg.rightClick;
         if (ImGui::Checkbox("Enable Right Click", &rc)) SendCmd("toggleRight");
@@ -8258,12 +8187,12 @@ static void RenderClickGUI() {
     } else if (selCategory == 0 && selModule == 1) {
         bool aa = cfg.aimAssist;
         if (ImGui::Checkbox("Enable Aim Assist", &aa)) SendCmd("toggleAimAssist");
-        ImGui::TextDisabled("Adjust FOV/range/strength in Control Center.");
+        ImGui::TextDisabled("Adjust FOV/range/strength in external gui.");
 
     } else if (selCategory == 0 && selModule == 2) {
         bool tb = cfg.triggerbot;
         if (ImGui::Checkbox("Enable Triggerbot", &tb)) SendCmd("toggleTriggerbot");
-        ImGui::TextDisabled("Cooldown-based timing (1.9+ combat). Tune in Control Center.");
+        ImGui::TextDisabled("Cooldown-based timing (1.9+ combat). Tune in external gui.");
 
     } else if (selCategory == 0 && selModule == 3) {
         bool sb = cfg.speedBridge;
@@ -9511,7 +9440,7 @@ BOOL WINAPI hwglSwapBuffers(HDC hDc) {
                 float y = 10.0f;
                 
                 if (cfg.showLogo) {
-                    const char* logoText = "LegoClicker";
+                    const char* logoText = "aoko client";
                     ImVec2 logoSz = ImGui::CalcTextSize(logoText);
                     float logoX = io.DisplaySize.x - marginX - logoSz.x;
                     // Logo Shadow

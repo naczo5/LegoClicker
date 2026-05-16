@@ -17,9 +17,9 @@ if %errorlevel% neq 0 (
 )
 
 echo [Release] Preparing release folder...
-set "RELEASE_DIR=LegoClicker_Release"
-set "SOURCE_DIR=LegoClickerCS\bin\Release\net8.0-windows\win-x64\publish"
-set "ZIP_PATH=LegoClicker_Release.zip"
+set "RELEASE_DIR=Aoko_Release"
+set "SOURCE_DIR=Aoko\bin\Release\net8.0-windows\win-x64\publish"
+set "ZIP_PATH=Aoko_Release.zip"
 
 if not exist "%SOURCE_DIR%\" (
     echo [Release] ERROR: Publish output folder not found: %SOURCE_DIR%
@@ -54,19 +54,19 @@ if %errorlevel% neq 0 (
 )
 
 if not exist "%RELEASE_DIR%\Data" mkdir "%RELEASE_DIR%\Data"
-copy /Y "LegoClickerCS\Data\gtb_wordlist.js" "%RELEASE_DIR%\Data\" >nul
+copy /Y "Aoko\Data\gtb_wordlist.js" "%RELEASE_DIR%\Data\" >nul
 if %errorlevel% neq 0 (
-    echo [Release] ERROR: Missing LegoClickerCS\Data\gtb_wordlist.js.
+    echo [Release] ERROR: Missing Aoko\Data\gtb_wordlist.js.
     exit /b %errorlevel%
 )
 
-copy /Y "LegoClickerCS\Data\minecraftia.ttf" "%RELEASE_DIR%\Data\" >nul
+copy /Y "Aoko\Data\minecraftia.ttf" "%RELEASE_DIR%\Data\" >nul
 if %errorlevel% neq 0 (
-    echo [Release] ERROR: Missing LegoClickerCS\Data\minecraftia.ttf.
+    echo [Release] ERROR: Missing Aoko\Data\minecraftia.ttf.
     exit /b %errorlevel%
 )
 
-if not exist "%RELEASE_DIR%\LegoClicker.exe" (
+if not exist "%RELEASE_DIR%\Aoko.exe" (
     echo [Release] ERROR: Expected executable not found in release folder.
     exit /b 1
 )

@@ -3,298 +3,229 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="LegoClicker is a Lunar utility client supporting 1.8.9, 1.21.x, and 26.1. It includes autoclicker, aim assist, triggerbot, SpeedBridge, reach, velocity, auto totem, GTB helper, render modules, profiles, keybinds, and GUI customization." />
+  <meta name="description" content="aoko client is a foss, injectable utility client for Lunar. Built for 1.8.9, 1.21.x, and 26.1." />
   <meta name="robots" content="index,follow" />
-  <meta name="theme-color" content="#b28cff" />
+  <meta name="theme-color" content="#0A0B0F" />
 
   <link rel="canonical" href="https://naczo5.github.io/LegoClicker/" />
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="LegoClicker" />
-  <meta property="og:title" content="LegoClicker — Minecraft Utility Client" />
-  <meta property="og:description" content="Lunar utility client supporting 1.8.9, 1.21.x, and 26.1 with combat, SpeedBridge, auto totem, render, profiles, and GUI customization." />
+  <meta property="og:site_name" content="aoko client" />
+  <meta property="og:title" content="aoko — a foss, injectable utility client for Lunar" />
+  <meta property="og:description" content="Built for 1.8.9, 1.21.x, and 26.1." />
   <meta property="og:url" content="https://naczo5.github.io/LegoClicker/" />
-  <meta property="og:image" content="https://naczo5.github.io/LegoClicker/screenshots/gameplay.png" />
-  <meta property="og:image:alt" content="LegoClicker gameplay HUD preview" />
+  <meta property="og:image" content="https://naczo5.github.io/LegoClicker/screenshots/gameplay.jpg" />
+  <meta property="og:image:alt" content="aoko client gameplay HUD preview" />
 
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="LegoClicker — Minecraft Utility Client" />
-  <meta name="twitter:description" content="Lunar utility client supporting 1.8.9, 1.21.x, and 26.1 with combat, SpeedBridge, auto totem, render, profiles, and GUI customization." />
-  <meta name="twitter:image" content="https://naczo5.github.io/LegoClicker/screenshots/gameplay.png" />
-  <title>LegoClicker — Minecraft Utility Client</title>
+  <meta name="twitter:title" content="aoko — a foss, injectable utility client for Lunar" />
+  <meta name="twitter:description" content="Built for 1.8.9, 1.21.x, and 26.1." />
+  <meta name="twitter:image" content="https://naczo5.github.io/LegoClicker/screenshots/gameplay.jpg" />
+  <title>aoko — a foss, injectable utility client for Lunar</title>
   <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 </head>
 <body>
 
   <!-- NAV -->
   <nav>
     <div class="nav-inner">
-      <span class="logo">LEGO<span class="accent">CLICKER</span></span>
+      <a href="#" class="logo-mini">aoko<span class="dot">.</span></a>
       <ul>
-        <li><a href="#features">Features</a></li>
-        <li><a href="#status">Status</a></li>
-        <li><a href="#setup">Setup</a></li>
-        <li><a href="https://github.com/naczo5/LegoClicker/releases" class="nav-dl">Download</a></li>
+        <li><a href="#features">features</a></li>
+        <li><a href="#status">status</a></li>
+        <li><a href="#setup">setup</a></li>
+        <li><a href="https://github.com/naczo5/LegoClicker/releases" class="nav-dl">download</a></li>
       </ul>
     </div>
   </nav>
 
   <!-- HERO -->
   <section class="hero">
-    <div class="hero-content">
-      <div class="badge">SUPPORTED: LUNAR CLIENT 1.8.9, 1.21.x, AND 26.1</div>
-      <h1>LEGO<span class="accent">CLICKER</span></h1>
-      <p class="tagline">A Lunar Client injectable closet cheat client.<br>Built for 1.8.9, 1.21.x, and 26.1.</p>
-      <div class="hero-btns">
-        <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary">
-          <svg class="btn-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v 3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
-          </svg>
-          Download
-        </a>
-        <a href="#features" class="btn-ghost">VIEW FEATURES</a>
-      </div>
-      <div class="hero-stats">
-        <div class="stat"><span class="stat-num">1.8.9</span><span class="stat-label">SUPPORTED</span></div>
-        <div class="stat-sep"></div>
-        <div class="stat"><span class="stat-num">1.21.x</span><span class="stat-label">SUPPORTED</span></div>
-        <div class="stat-sep"></div>
-        <div class="stat"><span class="stat-num">26.1</span><span class="stat-label">SUPPORTED</span></div>
-      </div>
+    <h1 class="hero-logo">aoko<span class="dot">.</span></h1>
+    <p class="tagline">a foss, injectable utility client for lunar.<br>built for 1.8.9, 1.21.x, and 26.1.</p>
+    <div class="hero-btns">
+      <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary">download</a>
+      <a href="#features" class="btn-text">view features <span class="arrow">-&gt;</span></a>
     </div>
-    <div class="hero-preview">
-      <div class="preview-shell">
-        <img src="screenshots/121_gui.png" alt="LegoClicker control center preview" loading="eager" />
-      </div>
-    </div>
+    <figure class="hero-preview">
+      <img src="screenshots/121_gui.png" alt="aoko external gui" loading="eager" />
+      <figcaption>external gui.</figcaption>
+    </figure>
   </section>
+
+  <hr class="rule" />
 
   <!-- FEATURES -->
   <section id="features" class="section">
-    <div class="section-header">
-      <span class="section-tag">MODULES</span>
-      <h2>Features</h2>
-      <p>Current modules and controls</p>
+    <div class="section-head">
+      <h2><span class="slash">/</span> features</h2>
+      <p>core modules and capabilities.</p>
     </div>
 
-    <div class="categories">
-
-      <div class="category">
-        <div class="cat-title"><span class="cat-icon">⚔</span> Combat</div>
-        <div class="feature-card">
-          <div class="feat-name">AutoClicker</div>
-          <div class="feat-desc">Left and right click with configurable CPS, jitter, block-only mode, and GUI/chest safety checks.</div>
-          <div class="feat-tags"><span>LMB</span><span>RMB</span><span>Block-Only</span><span>CPS Jitter</span></div>
+    <div class="cols">
+      <div class="col">
+        <div class="col-num">01. combat</div>
+        <div class="entry">
+          <div class="entry-name">autoclicker</div>
+          <div class="entry-desc">lmb/rmb with configurable cps, jitter, block-only mode, and gui/chest safety checks.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">Aim Assist</div>
-          <div class="feat-desc">Assist module with adjustable FOV, range, and strength.</div>
-          <div class="feat-tags"><span>FOV</span><span>Range</span><span>Strength</span></div>
+        <div class="entry">
+          <div class="entry-name">aim assist</div>
+          <div class="entry-desc">adjustable fov, targeting range, and smoothing strength.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">Triggerbot</div>
-          <div class="feat-desc">Crosshair-based triggerbot with cooldown threshold and hit chance controls.</div>
-          <div class="feat-tags"><span>Crosshair</span><span>Cooldown</span><span>Chance</span></div>
+        <div class="entry">
+          <div class="entry-name">triggerbot</div>
+          <div class="entry-desc">crosshair-gated firing with cooldown threshold and hit-chance controls.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">SpeedBridge</div>
-          <div class="feat-desc">Edge sneak assist with block-only, hold-sneak, looking-down, and safety timing controls.</div>
-          <div class="feat-tags"><span>Edge Probe</span><span>Sneak Gate</span><span>Keybind</span></div>
+        <div class="entry">
+          <div class="entry-name">speedbridge</div>
+          <div class="entry-desc">edge sneak assist with block-only, hold-sneak, looking-down, and safety timing controls.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">Reach + Velocity</div>
-          <div class="feat-desc">Additional combat settings.</div>
-          <div class="feat-tags"><span>Reach</span><span>Velocity</span><span>Chance</span></div>
+        <div class="entry">
+          <div class="entry-name">reach &amp; velocity</div>
+          <div class="entry-desc">extra combat tuning &mdash; reach extender and velocity dampener with hit-chance.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">AutoTotem</div>
-          <div class="feat-desc">Ghost (inventory only) and Anarchy mode, health threshold, and Elytra switch.</div>
-          <div class="feat-tags"><span>Ghost</span><span>Anarchy</span><span>Health</span><span>Elytra</span></div>
+        <div class="entry">
+          <div class="entry-name">autototem</div>
+          <div class="entry-desc">ghost (inventory only) and anarchy modes, health threshold, and elytra switch.</div>
         </div>
       </div>
 
-      <div class="category">
-        <div class="cat-title"><span class="cat-icon">👁</span> Render</div>
-        <div class="feature-card">
-          <div class="feat-name">Nametags</div>
-          <div class="feat-desc">Player tags with health, armor, held item, and configurable limits.</div>
-          <div class="feat-tags"><span>Health Bar</span><span>Armor</span><span>Chroma</span></div>
+      <div class="col">
+        <div class="col-num">02. visuals</div>
+        <div class="entry">
+          <div class="entry-name">nametags</div>
+          <div class="entry-desc">player tags detailing health, armor tier, and held items.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">Closest Player HUD</div>
-          <div class="feat-desc">Nearest-player panel with direction, distance, health, armor, and held item.</div>
-          <div class="feat-tags"><span>Distance</span><span>4-Way Arrow</span><span>Held Item</span></div>
+        <div class="entry">
+          <div class="entry-name">closest player</div>
+          <div class="entry-desc">on-screen tracking panel displaying direction, exact distance, and equipment.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">Chest ESP</div>
-          <div class="feat-desc">Chest highlighting with count limits and distance culling.</div>
-          <div class="feat-tags"><span>Through Walls</span><span>Nearest Priority</span><span>Capped Render</span></div>
+        <div class="entry">
+          <div class="entry-name">chest esp</div>
+          <div class="entry-desc">chest highlighting through walls with count limits and distance culling.</div>
         </div>
-      </div>
-
-      <div class="category">
-        <div class="cat-title"><span class="cat-icon">⚙</span> GUI / Misc</div>
-        <div class="feature-card">
-          <div class="feat-name">Version-Aware Module Gating</div>
-          <div class="feat-desc">Modules and controls are enabled based on bridge capabilities for 1.8.9, 1.21.x, and 26.1.</div>
-          <div class="feat-tags"><span>Capabilities</span><span>Version Sync</span><span>Safe Defaults</span></div>
+        <div class="entry">
+          <div class="entry-name">module list &amp; logo</div>
+          <div class="entry-desc">configurable in-game module list (default, minimal, outlined, glass, bold) with optional logo.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">External Control Center</div>
-          <div class="feat-desc">Main GUI with combat, render, keybinds, and customization tabs.</div>
-          <div class="feat-tags"><span>External UI</span><span>Module Switches</span><span>Keybind UI</span></div>
+        <div class="entry">
+          <div class="entry-name">gtb helper</div>
+          <div class="entry-desc">reads guess-the-build hints and shows candidate words in an overlay list.</div>
         </div>
-        <div class="feature-card">
-          <div class="feat-name">GUI Customization</div>
-          <div class="feat-desc">Palette previews, module-list style previews, logo toggle, and full theme propagation across controls.</div>
-          <div class="feat-tags"><span>Palettes</span><span>Module Styles</span><span>Saved</span></div>
-        </div>
-        <div class="feature-card">
-          <div class="feat-name">Profiles + Keybinds</div>
-          <div class="feat-desc">Settings and keybinds are saved to <code>%AppData%\LegoClicker\profiles\</code>.</div>
-          <div class="feat-tags"><span>JSON</span><span>Auto-save</span><span>Per-module keys</span></div>
-        </div>
-        <div class="feature-card">
-          <div class="feat-name">GTB Helper</div>
-          <div class="feat-desc">Reads GTB hints and shows candidate words in an overlay list.</div>
-          <div class="feat-tags"><span>Hypixel</span><span>Hint Solver</span><span>In-Game Overlay</span></div>
+        <div class="entry">
+          <div class="entry-name">discord rich presence</div>
+          <div class="entry-desc">live state, version, and active module count surfaced through discord rpc.</div>
         </div>
       </div>
-
     </div>
   </section>
 
-  <!-- SCREENSHOTS -->
-  <section class="section">
-    <div class="section-header">
-      <span class="section-tag">PREVIEW</span>
-      <h2>Screenshots</h2>
-      <p>Current gameplay and GUI previews</p>
-    </div>
-    <div class="shots-grid">
-      <figure class="shot-card">
-        <img src="screenshots/gameplay.png" alt="Gameplay HUD preview" loading="lazy" />
-        <figcaption>Gameplay HUD preview</figcaption>
-      </figure>
-      <figure class="shot-card">
-        <img src="screenshots/gui.gif" alt="LegoClicker GUI showcase animation" loading="lazy" />
-        <figcaption>GUI showcase</figcaption>
-      </figure>
-    </div>
-  </section>
+  <hr class="rule" />
 
   <!-- STATUS -->
-  <section id="status" class="section alt-section">
-    <div class="section-header">
-      <span class="section-tag">STATUS</span>
-      <h2>Support Status</h2>
-      <p>last checked: <span id="status-date"></span></p>
+  <section id="status" class="section">
+    <div class="section-head">
+      <h2><span class="slash">/</span> status</h2>
+      <p>last checked: <span id="status-date"></span>.</p>
     </div>
-    <div class="status-grid">
-      <div class="status-card">
-        <div class="status-name">Lunar Client 1.8.9</div>
-        <div class="status-dot dot-green"></div>
-        <div class="status-label">SUPPORTED</div>
-      </div>
-      <div class="status-card">
-        <div class="status-name">Lunar Client 1.21.x</div>
-        <div class="status-dot dot-green"></div>
-        <div class="status-label">SUPPORTED</div>
-      </div>
-      <div class="status-card">
-        <div class="status-name">Lunar Client 26.1</div>
-        <div class="status-dot dot-green"></div>
-        <div class="status-label">SUPPORTED</div>
-      </div>
-    </div>
-    <p class="status-note">All three versions are currently supported: 1.8.9, 1.21.x, and 26.1.</p>
+    <ul class="status-list">
+      <li><span class="dot-s">●</span> lunar client 1.8.9 &mdash; supported</li>
+      <li><span class="dot-s">●</span> lunar client 1.21.x &mdash; supported</li>
+      <li><span class="dot-s">●</span> lunar client 26.1 &mdash; supported</li>
+    </ul>
   </section>
 
-  <!-- HOW IT WORKS -->
+  <hr class="rule" />
+
+  <!-- ARCHITECTURE -->
   <section class="section">
-    <div class="section-header">
-      <span class="section-tag">ARCHITECTURE</span>
-      <h2>How it works</h2>
-      <p>Loader and bridge overview</p>
+    <div class="section-head">
+      <h2><span class="slash">/</span> architecture</h2>
+      <p>loader and bridge overview.</p>
     </div>
-    <div class="arch-grid">
-      <div class="arch-step">
-        <div class="arch-num">01</div>
-        <div class="arch-title">C# Loader</div>
-          <div class="arch-desc">The WPF loader finds <code>javaw.exe</code> and injects the native bridge DLL.</div>
+    <div class="cols">
+      <div class="col">
+        <div class="col-num">01. loader</div>
+        <div class="entry">
+          <div class="entry-name">c# / .net 8 wpf</div>
+          <div class="entry-desc">finds <code>javaw.exe</code> and injects the native bridge dll. owns the external gui, profiles, keybinds, and discord rpc.</div>
+        </div>
       </div>
-      <div class="arch-arrow">→</div>
-      <div class="arch-step">
-        <div class="arch-num">02</div>
-        <div class="arch-title">C++ Bridge DLL</div>
-        <div class="arch-desc">The bridge attaches to JVM/JNI, reads state, and renders ImGui overlays through <code>SwapBuffers</code>.</div>
-      </div>
-      <div class="arch-arrow">→</div>
-      <div class="arch-step">
-        <div class="arch-num">03</div>
-        <div class="arch-title">TCP Bridge</div>
-          <div class="arch-desc">State/config sync runs over TCP port <code>25590</code> between loader and bridge.</div>
+      <div class="col">
+        <div class="col-num">02. bridge</div>
+        <div class="entry">
+          <div class="entry-name">c++ jni overlay</div>
+          <div class="entry-desc">attaches to jvm/jni, reads game state, and renders imgui overlays through <code>SwapBuffers</code>. config and state sync over tcp <code>25590</code>.</div>
+        </div>
       </div>
     </div>
   </section>
+
+  <hr class="rule" />
 
   <!-- SETUP -->
-  <section id="setup" class="section alt-section">
-    <div class="section-header">
-      <span class="section-tag">SETUP</span>
-      <h2>Requirements &amp; Setup</h2>
+  <section id="setup" class="section">
+    <div class="section-head">
+      <h2><span class="slash">/</span> setup</h2>
+      <p>requirements and quick start.</p>
     </div>
-    <div class="setup-cols">
-      <div class="setup-block">
-        <h3>Requirements</h3>
-        <ul class="req-list">
-          <li><span class="dot-green-sm">●</span> Windows 10/11 x64</li>
-          <li><span class="dot-green-sm">●</span> No .NET install needed for release EXE (self-contained)</li>
-          <li><span class="dot-green-sm">●</span> Lunar Client (1.8.9, 1.21.x, 26.1)</li>
-          <li><span class="dot-yellow-sm">●</span> MinGW-w64 (build only)</li>
-        </ul>
+    <div class="cols">
+      <div class="col">
+        <div class="col-num">01. requirements</div>
+        <div class="entry-list">
+          <p>windows 10/11 x64.</p>
+          <p>lunar client (1.8.9, 1.21.x, 26.1).</p>
+          <p>release exe is self-contained &mdash; no .net install needed.</p>
+          <p>mingw-w64 + jdk 17 headers (build only).</p>
+        </div>
       </div>
-      <div class="setup-block">
-        <h3>Usage</h3>
-        <ol class="steps-list">
-          <li>Launch Lunar Client</li>
-          <li>Run <code>LegoClicker.exe</code></li>
-          <li>Click <strong>Inject</strong></li>
-          <li>Use the external control center after inject</li>
-          <li>Bind keys under the <strong>Keybinds</strong> tab to toggle modules</li>
+      <div class="col">
+        <div class="col-num">02. usage</div>
+        <ol class="steps">
+          <li>launch lunar client.</li>
+          <li>run <code>Aoko.exe</code>.</li>
+          <li>click <strong>inject</strong>.</li>
+          <li>use the external gui after inject.</li>
+          <li>bind keys under the <strong>keybinds</strong> tab to toggle modules.</li>
         </ol>
       </div>
     </div>
   </section>
 
+  <hr class="rule" />
+
   <!-- DOWNLOAD -->
-  <section id="download" class="section download-section">
-    <div class="section-header">
-      <span class="section-tag">DOWNLOAD</span>
-      <h2>Get LegoClicker</h2>
-      <p>Open source build for Windows x64.</p>
+  <section id="download" class="section">
+    <div class="section-head">
+      <h2><span class="slash">/</span> download</h2>
+      <p>open source build for windows x64.</p>
     </div>
-    <div class="dl-box">
-      <div class="dl-info">
-        <div class="dl-row"><span>Version</span><span class="dl-val">latest (main)</span></div>
-        <div class="dl-row"><span>Target</span><span class="dl-val">Lunar Client 1.8.9, 1.21.x, and 26.1</span></div>
-        <div class="dl-row"><span>Platform</span><span class="dl-val">Windows x64</span></div>
-        <div class="dl-row"><span>License</span><span class="dl-val">GPL-3</span></div>
+    <div class="dl-block">
+      <div class="dl-meta">
+        <div><span>version</span><span class="v">latest (main)</span></div>
+        <div><span>target</span><span class="v">lunar 1.8.9, 1.21.x, 26.1</span></div>
+        <div><span>platform</span><span class="v">windows x64</span></div>
+        <div><span>license</span><span class="v">gpl-3</span></div>
       </div>
-      <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary btn-lg" id="github-link">
-        OPEN LATEST RELEASES
-      </a>
-      <p class="dl-note">Build from source using the commands in README.</p>
+      <a href="https://github.com/naczo5/LegoClicker/releases" class="btn-primary" id="github-link">open latest releases</a>
+      <p class="dl-note">build from source using the commands in <code>README.md</code>.</p>
     </div>
   </section>
+
+  <hr class="rule" />
 
   <!-- FOOTER -->
   <footer>
     <div class="footer-inner">
-      <span class="logo">LEGO<span class="accent">CLICKER</span></span>
-      <p>Use at your own risk.</p>
-      <p class="footer-small">not affiliated with Mojang, Microsoft, or Lunar Client. for educational purposes only.</p>
+      <span class="logo-mini">aoko<span class="dot">.</span></span>
+      <p>use at your own risk.</p>
+      <p class="footer-small">not affiliated with mojang, microsoft, or lunar client. for educational purposes only.</p>
     </div>
   </footer>
 

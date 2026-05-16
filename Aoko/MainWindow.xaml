@@ -1,0 +1,741 @@
+<Window x:Class="Aoko.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="aoko client"
+        Width="320" Height="240"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="NoResize"
+        Background="{DynamicResource BgBrush}"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="ControlCenterTabSelectedBrush" Color="#1F2229"/>
+        <SolidColorBrush x:Key="ControlCenterTabHoverBrush" Color="#181B22"/>
+
+        <Style x:Key="PreviewCardButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource SliderBgBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SliderFgBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="card"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="card" Property="Background" Value="{DynamicResource PanelBrush}"/>
+                                <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="card" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ControlCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SliderBgBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource SliderFgBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ControlCenterTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource DimTextBrush}"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+            <Setter Property="Width" Value="150"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="tabBorder"
+                                Background="{DynamicResource SliderBgBrush}"
+                                BorderBrush="{DynamicResource SliderFgBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="{TemplateBinding Padding}"
+                                Margin="0,0,0,8"
+                                MinHeight="50">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              ContentSource="Header"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabHoverBrush}"/>
+                                <Setter TargetName="tabBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="tabBorder" Property="Background" Value="{DynamicResource ControlCenterTabSelectedBrush}"/>
+                                <Setter TargetName="tabBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ControlCenterTabControlStyle" TargetType="TabControl">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="176"/>
+                                <ColumnDefinition Width="10"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0"
+                                    Background="{DynamicResource PanelBrush}"
+                                    BorderBrush="{DynamicResource SliderBgBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="7,10,7,8">
+                                <StackPanel IsItemsHost="True"
+                                            KeyboardNavigation.TabIndex="1"
+                                            VerticalAlignment="Top"/>
+                            </Border>
+
+                            <Border Grid.Column="2"
+                                    Background="{DynamicResource BgBrush}"
+                                    BorderBrush="{DynamicResource SliderBgBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  ContentSource="SelectedContent"
+                                                  Margin="0"/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <!-- Minimal loader (default / 1.8.9) -->
+        <StackPanel x:Name="LoaderPanel" VerticalAlignment="Center">
+            <TextBlock Text="Injection Control" Foreground="{DynamicResource TextBrush}"
+                       FontSize="16" FontWeight="Bold" Margin="0,0,0,10" HorizontalAlignment="Center"/>
+            <TextBlock Text="Supported versions: 1.8.9, 1.21.x, and 26.1 (auto-detected)"
+                        Foreground="{DynamicResource DimTextBrush}"
+                        FontSize="11"
+                        HorizontalAlignment="Center"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap"
+                        Margin="0,0,0,10"/>
+
+            <Button x:Name="InjectButton" Content="Inject" Height="35"
+                    Style="{StaticResource DarkButton}" Click="InjectButton_Click"
+                    FontSize="14" Margin="0,0,0,10" Cursor="Hand"/>
+
+            <TextBlock x:Name="InjectionStatusText"
+                       Text="Status: Not Injected"
+                       Foreground="{DynamicResource DimTextBrush}"
+                       FontSize="12" HorizontalAlignment="Center"/>
+            <ProgressBar x:Name="InjectionProgressBar"
+                         Minimum="0"
+                         Maximum="100"
+                         Height="6"
+                         Foreground="{DynamicResource AccentBrush}"
+                         Background="{DynamicResource SliderBgBrush}"
+                         Margin="0,8,0,0"
+                         Visibility="Collapsed"/>
+        </StackPanel>
+
+        <!-- External gui (shown after connect) -->
+        <TabControl x:Name="ControlPanel"
+                    Visibility="Collapsed"
+                    TabStripPlacement="Left"
+                    Style="{StaticResource ControlCenterTabControlStyle}"
+                    ItemContainerStyle="{StaticResource ControlCenterTabItemStyle}"
+                    Background="{DynamicResource BgBrush}"
+                    BorderThickness="0"
+                    Padding="0"
+                    Margin="0">
+            <TabItem Header="Combat">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="AutoClicker" IsChecked="{Binding IsArmed, Mode=OneWay}" Style="{StaticResource ModuleSwitch}" Click="ToggleArmed_Click"/>
+                                <TextBlock Text="{Binding StatusText}" Foreground="{DynamicResource AccentBrush}" FontSize="12" Margin="0,4,0,10" />
+
+                                <DockPanel>
+                                    <TextBlock Text="Min CPS" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding MinCPS, StringFormat={}{0:0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="25" Value="{Binding MinCPS, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,6,0,0">
+                                    <TextBlock Text="Max CPS" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding MaxCPS, StringFormat={}{0:0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="25" Value="{Binding MaxCPS, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkSlider}"/>
+
+                                <WrapPanel Margin="0,10,0,0">
+                                    <CheckBox Content="Jitter" IsChecked="{Binding JitterEnabled, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Click in Chests" IsChecked="{Binding ClickInChests, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Pause when breaking" IsChecked="{Binding BreakBlocksEnabled, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Right Click" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" />
+                                <CheckBox Content="Enable Right Click" IsChecked="{Binding RightClickEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}" Margin="0,8,0,10"/>
+
+                                <DockPanel>
+                                    <TextBlock Text="Right Min CPS" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding RightMinCPS, StringFormat={}{0:0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="25" Value="{Binding RightMinCPS, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,6,0,0">
+                                    <TextBlock Text="Right Max CPS" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding RightMaxCPS, StringFormat={}{0:0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="25" Value="{Binding RightMaxCPS, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkSlider}"/>
+
+                                <CheckBox Content="Only when holding block" IsChecked="{Binding RightClickOnlyBlock, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="SpeedBridgeCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="SpeedBridge" IsChecked="{Binding SpeedBridgeEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="SpeedBridgeAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding SpeedBridgeEnabled}">
+                                    <TextBlock Text="Safety" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding SpeedBridgeDelayMs}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="20" Maximum="250" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding SpeedBridgeDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding SpeedBridgeEnabled}"/>
+
+                                <WrapPanel Margin="0,10,0,0" IsEnabled="{Binding SpeedBridgeEnabled}">
+                                    <CheckBox Content="Block only" IsChecked="{Binding SpeedBridgeBlockOnly, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,6"/>
+                                    <CheckBox Content="Holding sneak only" IsChecked="{Binding SpeedBridgeHoldingShiftOnly, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,6"/>
+                                    <CheckBox Content="Looking down only" IsChecked="{Binding SpeedBridgeLookingDownOnly, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,6"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="AimAssistCard" Style="{StaticResource ControlCardStyle}">
+                            <StackPanel>
+                                <CheckBox Content="Aim Assist" IsChecked="{Binding AimAssistEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="AimAssistAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding AimAssistEnabled}">
+                                    <TextBlock Text="FOV" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding AimAssistFov, StringFormat={}{0:0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="180"
+                                        Value="{Binding AimAssistFov, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding AimAssistEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding AimAssistEnabled}">
+                                    <TextBlock Text="Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding AimAssistRange, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="12"
+                                        Value="{Binding AimAssistRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding AimAssistEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding AimAssistEnabled}">
+                                    <TextBlock Text="Strength (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding AimAssistStrength}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding AimAssistStrength, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding AimAssistEnabled}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="TriggerbotCard" Style="{StaticResource ControlCardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <CheckBox Content="Triggerbot" IsChecked="{Binding TriggerbotEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="TriggerbotAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,6,0,0"/>
+
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding TriggerbotEnabled}">
+                                    <TextBlock Text="Cooldown Threshold (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding TriggerbotCooldownThreshold}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding TriggerbotCooldownThreshold, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only attack when crosshair is on entity"
+                                          IsChecked="{Binding TriggerbotOnlyCrosshair, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,10,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only attack if target is in real hit range"
+                                          IsChecked="{Binding TriggerbotOnlyIfCanAttack, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,6,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <DockPanel Margin="0,8,0,0" IsEnabled="{Binding TriggerbotEnabled}">
+                                    <TextBlock Text="Hit Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding TriggerbotHitChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding TriggerbotHitChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding TriggerbotEnabled}"/>
+
+                                <CheckBox Content="Only while holding left click"
+                                          IsChecked="{Binding TriggerbotRequireClick, Mode=TwoWay}"
+                                          Style="{StaticResource DarkCheckBox}"
+                                          Margin="0,10,0,0"
+                                          IsEnabled="{Binding TriggerbotEnabled}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Render">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="Nametags" IsChecked="{Binding NametagsEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <WrapPanel Margin="0,10,0,0" IsEnabled="{Binding NametagsEnabled}">
+                                    <CheckBox Content="Show Health" IsChecked="{Binding NametagShowHealth, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Show Armor" IsChecked="{Binding NametagShowArmor, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Hide Vanilla Tags" IsChecked="{Binding NametagHideVanilla, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,0,14,0"/>
+                                    <CheckBox Content="Show Item" IsChecked="{Binding NametagShowHeldItem, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" />
+                                </WrapPanel>
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding NametagsEnabled}">
+                                    <TextBlock Text="Nametag Count" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding NametagMaxCount}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding NametagMaxCount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding NametagsEnabled}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="Chest ESP" IsChecked="{Binding ChestEspEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <DockPanel Margin="0,10,0,0" IsEnabled="{Binding ChestEspEnabled}">
+                                    <TextBlock Text="Chest Count" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ChestEspMaxCount}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ChestEspMaxCount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}" IsEnabled="{Binding ChestEspEnabled}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}">
+                            <StackPanel>
+                                <CheckBox Content="Closest Player" IsChecked="{Binding ClosestPlayerInfoEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock Text="Includes 4-way direction arrow (^, v, &lt;, &gt;)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,12,0,0">
+                            <StackPanel>
+                                <CheckBox Content="Show module list (top-right)" IsChecked="{Binding ShowModuleList, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock Text="Shows/hides the active modules overlay list in-game." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Utility">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="Discord Rich Presence" IsChecked="{Binding DiscordRpcEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock Text="Shows your current client version, armed/clicking state, and in-game status on Discord."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,10"/>
+                                <TextBlock Text="{Binding DiscordRpcStatusText}"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,8,0,0"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="The Discord activity includes a Repository button linking to this project."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,4,0,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="GtbHelperCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <CheckBox Content="GTB Helper" IsChecked="{Binding GtbHelperEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+                                <TextBlock x:Name="GtbHelperAvailabilityText" Text="Hypixel Guess The Build helper using action-bar hints." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Panic" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
+                                <TextBlock Text="Immediately disables modules, hides UI/overlay settings, disconnects, and closes the loader. Best-effort only: this does not truly deinject while the game stays open."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           Margin="0,6,0,10"/>
+                                <Button Content="Trigger Panic Now"
+                                        Click="PanicButton_Click"
+                                        Style="{StaticResource DarkButton}"
+                                        Width="170"
+                                        Margin="0,0,0,10"/>
+                                <TextBlock Text="You can also bind Panic in Module Keybinds."
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ControlCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Module Keybinds" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold"/>
+                                <TextBlock Text="Click a button, then press a key (Esc = unbind)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,4,0,10"/>
+                                <WrapPanel>
+                                    <Button x:Name="KeybindAutoclickerButton" Tag="autoclicker" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindRightClickButton" Tag="rightclick" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindJitterButton" Tag="jitter" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindClickInChestsButton" Tag="clickinchests" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindBreakBlocksButton" Tag="breakblocks" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindAimAssistButton" Tag="aimassist" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindTriggerbotButton" Tag="triggerbot" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindSpeedBridgeButton" Tag="speedbridge" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindGtbHelperButton" Tag="gtbhelper" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindNametagsButton" Tag="nametags" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindChestEspButton" Tag="chestesp" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindClosestPlayerButton" Tag="closestplayer" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindReachButton" Tag="reach" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindVelocityButton" Tag="velocity" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindAutoTotemButton" Tag="autototem" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                    <Button x:Name="KeybindPanicButton" Tag="panic" Click="KeybindButton_Click" Style="{StaticResource DarkButton}" Margin="0,0,8,8" Width="170"/>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Risky">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border x:Name="ReachCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Reach" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="ReachAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
+                                <CheckBox Content="Enable Reach" IsChecked="{Binding ReachEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0">
+                                    <TextBlock Text="Min Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachMin, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachMin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Max Range" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachMax, StringFormat={}{0:0.0}}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="3.0" Maximum="6.0" TickFrequency="0.1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachMax, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding ReachChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="0" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding ReachChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="VelocityCard" Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Velocity" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="VelocityAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
+                                <TextBlock Text="idk if you should use it outside of singleplayer"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,0,0,8"/>
+                                <CheckBox Content="Enable Velocity" IsChecked="{Binding VelocityEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0">
+                                    <TextBlock Text="Horizontal (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityHorizontal}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityHorizontal, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Vertical (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityVertical}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityVertical, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Chance (%)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding VelocityChance}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding VelocityChance, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="AutoTotemCard" Style="{StaticResource ControlCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="AutoTotem" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                <TextBlock x:Name="AutoTotemAvailabilityText" Text="Available" Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8"/>
+                                <CheckBox Content="Enable AutoTotem" IsChecked="{Binding AutoTotemEnabled, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}"/>
+
+                                <DockPanel Margin="0,10,0,0">
+                                    <TextBlock Text="Mode" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                </DockPanel>
+                                <ComboBox SelectedIndex="{Binding AutoTotemMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                          Style="{StaticResource DarkComboBox}"
+                                          Height="28" Margin="0,2,0,0">
+                                    <ComboBoxItem Content="Smart (health + elytra)"/>
+                                    <ComboBoxItem Content="Strict (always hold)"/>
+                                </ComboBox>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Health Threshold" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding AutoTotemHealth}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="0" Maximum="36" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding AutoTotemHealth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <DockPanel Margin="0,8,0,0">
+                                    <TextBlock Text="Delay (ticks)" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                    <TextBlock Text="{Binding AutoTotemDelay}" Foreground="{DynamicResource DimTextBrush}" FontSize="12" HorizontalAlignment="Right" DockPanel.Dock="Right" />
+                                </DockPanel>
+                                <Slider Minimum="0" Maximum="20" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Value="{Binding AutoTotemDelay, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        Style="{StaticResource DarkSlider}"/>
+
+                                <CheckBox Content="Elytra" IsChecked="{Binding AutoTotemElytra, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}" Margin="0,8,0,0"/>
+
+                                <DockPanel Margin="0,10,0,0">
+                                    <TextBlock Text="Behavior" Foreground="{DynamicResource TextBrush}" FontSize="12" DockPanel.Dock="Left" />
+                                </DockPanel>
+                                <ComboBox SelectedIndex="{Binding AutoTotemBehaviorMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          Style="{StaticResource DarkComboBox}"
+                                          Height="28" Margin="0,2,0,0">
+                                    <ComboBoxItem Content="Ghost (inventory only)"/>
+                                    <ComboBoxItem Content="Anarchy (may flag on servers)"/>
+                                </ComboBox>
+                                <TextBlock Text="Anarchy works without opening inventory but may trigger anticheat flags on servers with GrimAC or Matrix."
+                                           Foreground="#FFA500"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Margin="0,4,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding AutoTotemBehaviorMode}" Value="1">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        
+            <TabItem Header="Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel Margin="12">
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="Reload Mappings" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,8" />
+                                <TextBlock x:Name="ReloadMappingsAvailabilityText"
+                                           Text="Available"
+                                           Foreground="{DynamicResource DimTextBrush}"
+                                           FontSize="11"
+                                           Margin="0,0,0,6"/>
+                                <TextBlock Text="Use this if something is not working properly (missing overlays, broken nametags, stale in-game data after injection)." Foreground="{DynamicResource DimTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                <Button x:Name="ReloadMappingsButton"
+                                        Content="Reload Mappings"
+                                        Click="ReloadMappingsButton_Click"
+                                        Style="{StaticResource DarkButton}"
+                                        Width="170"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource ControlCardStyle}" Margin="0,0,0,12">
+                            <StackPanel>
+                                <TextBlock Text="GUI Customization" Foreground="{DynamicResource TextBrush}" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" />
+                                
+                                <TextBlock Text="External GUI Palette" Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,0,0,4" />
+                                <TextBlock Text="Click a palette preview to apply it instantly." Foreground="{DynamicResource DimTextBrush}" FontSize="11" Margin="0,0,0,8" />
+                                <WrapPanel Margin="0,0,0,6">
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Slate" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Slate" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#0A0B0F" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#12141A" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#181B22" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#C7625A"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Ink" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Ink" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#08090B" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#101115" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#16181C" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#B0B6C0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Graphite" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Graphite" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#0B0B0D" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#131316" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#19191C" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#B89B82"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Steel" Click="GuiPaletteButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Steel" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#08090C" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#0F1218" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#161A21" Margin="0,0,4,0"/>
+                                                <Border Width="34" Height="12" CornerRadius="3" Background="#6B8DAB"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                                <TextBlock Foreground="{DynamicResource DimTextBrush}" FontSize="11">
+                                    <Run Text="Current palette: "/>
+                                    <Run Text="{Binding GuiTheme}" Foreground="{DynamicResource AccentBrush}"/>
+                                </TextBlock>
+
+                                <TextBlock Text="Module List Style" Foreground="{DynamicResource DimTextBrush}" FontSize="12" Margin="0,10,0,4" />
+                                <WrapPanel Margin="0,0,0,6">
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Default" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Default" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#30000000" CornerRadius="3" BorderBrush="#30FFFFFF" BorderThickness="1">
+                                                <Grid>
+                                                    <Border Width="4" HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Minimal" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Minimal" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#20000000" CornerRadius="3">
+                                                <Grid>
+                                                    <Border Width="3" HorizontalAlignment="Right" Background="{DynamicResource AccentBrush}"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="{DynamicResource AccentBrush}" FontSize="10" HorizontalAlignment="Right" Margin="0,2,6,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Outlined" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Outlined" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#2A000000" CornerRadius="3" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1.3">
+                                                <TextBlock Text="Autoclicker" Foreground="{DynamicResource AccentBrush}" FontSize="10" Margin="10,2,0,0"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Glass" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Glass" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="#16000000" CornerRadius="3" BorderBrush="#55FFFFFF" BorderThickness="1">
+                                                <Grid>
+                                                    <Border Width="4" HorizontalAlignment="Left" Background="#90FFFFFF"/>
+                                                    <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Width="170" Margin="0,0,8,8" Style="{StaticResource PreviewCardButtonStyle}" Tag="Bold" Click="ModuleStyleButton_Click">
+                                        <StackPanel>
+                                            <TextBlock Text="Bold" Foreground="{DynamicResource TextBrush}" FontSize="12" FontWeight="SemiBold"/>
+                                            <Border Height="18" Margin="0,6,0,0" Background="{DynamicResource AccentBrush}" CornerRadius="3">
+                                                <TextBlock Text="Autoclicker" Foreground="White" FontSize="10" Margin="10,2,0,0"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Button>
+                                </WrapPanel>
+                                <TextBlock Foreground="{DynamicResource DimTextBrush}" FontSize="11">
+                                    <Run Text="Current module list style: "/>
+                                    <Run Text="{Binding ModuleListStyle}" Foreground="{DynamicResource AccentBrush}"/>
+                                </TextBlock>
+
+                                <CheckBox Content="Show 'aoko' Logo" IsChecked="{Binding ShowLogo, Mode=TwoWay}" Style="{StaticResource ModuleSwitch}" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

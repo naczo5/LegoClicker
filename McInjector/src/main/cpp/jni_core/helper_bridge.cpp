@@ -1,6 +1,6 @@
 // jni_core/helper_bridge.cpp
 #include "helper_bridge.h"
-#include "lego_helper.inc"   // kLegoHelperClassBytes[], kLegoHelperClassLen
+#include "aoko_helper.inc"   // kAokoHelperClassBytes[], kAokoHelperClassLen
 #include <cstring>
 
 namespace HelperBridge {
@@ -32,18 +32,18 @@ bool Load(JNIEnv* env, jobject classLoader) {
     if (!defineClass) return false;
 
     // Copy class bytes into a jbyteArray
-    jbyteArray ba = env->NewByteArray(kLegoHelperClassLen);
+    jbyteArray ba = env->NewByteArray(kAokoHelperClassLen);
     if (!ba) { env->ExceptionClear(); return false; }
-    env->SetByteArrayRegion(ba, 0, kLegoHelperClassLen,
-                            reinterpret_cast<const jbyte*>(kLegoHelperClassBytes));
+    env->SetByteArrayRegion(ba, 0, kAokoHelperClassLen,
+                            reinterpret_cast<const jbyte*>(kAokoHelperClassBytes));
 
     // Class name as jstring
-    jstring jname = env->NewStringUTF("com/legoclicker/helper/LegoHelper");
+    jstring jname = env->NewStringUTF("com/aoko/helper/AokoHelper");
     if (!jname) { env->DeleteLocalRef(ba); return false; }
 
     // Call defineClass
     jclass defined = (jclass)env->CallObjectMethod(
-        classLoader, defineClass, jname, ba, (jint)0, (jint)kLegoHelperClassLen);
+        classLoader, defineClass, jname, ba, (jint)0, (jint)kAokoHelperClassLen);
     if (env->ExceptionCheck()) { env->ExceptionClear(); defined = nullptr; }
 
     env->DeleteLocalRef(jname);
@@ -51,7 +51,7 @@ bool Load(JNIEnv* env, jobject classLoader) {
 
     if (!defined) {
         // Class may already be defined — try loading it
-        defined = (jclass)env->FindClass("com/legoclicker/helper/LegoHelper");
+        defined = (jclass)env->FindClass("com/aoko/helper/AokoHelper");
         if (env->ExceptionCheck()) { env->ExceptionClear(); defined = nullptr; }
     }
     if (!defined) return false;

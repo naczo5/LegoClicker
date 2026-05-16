@@ -1,6 +1,6 @@
 #pragma once
 // jni_core/helper_bridge.h
-// Loads LegoHelper.class into the game JVM and exposes a typed C++ call to
+// Loads AokoHelper.class into the game JVM and exposes a typed C++ call to
 // collectEntityFrame().
 //
 // Usage (once, during discovery):
@@ -33,7 +33,7 @@ struct EntityFrame {
     std::vector<EntitySnapshot> entities;
 };
 
-// Load LegoHelper.class into the JVM via classLoader.defineClass().
+// Load AokoHelper.class into the JVM via classLoader.defineClass().
 // Safe to call multiple times — no-op if already loaded.
 // Returns true if the class is ready.
 bool Load(JNIEnv* env, jobject classLoader);
@@ -45,7 +45,7 @@ bool IsLoaded();
 // Call during DLL detach or bridge shutdown.
 void Unload(JNIEnv* env);
 
-// Call LegoHelper.collectEntityFrame() and decode the result into frame.
+// Call AokoHelper.collectEntityFrame() and decode the result into frame.
 // Any of the Field/Method arguments may be nullptr — the helper handles nulls.
 // Returns the number of entities written, or -1 on error.
 int CollectEntities(
